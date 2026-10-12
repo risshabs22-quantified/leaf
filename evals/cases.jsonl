@@ -1,0 +1,8 @@
+// One JSON object per line. Lines starting with // are ignored. Put photos in evals/images/.
+// Use photos you took, or ones whose license allows reuse (record it in evals/README.md).
+// split: "tune" (tune prompts on these) or "test" (held out; report these, never tune on them)
+// tag: groups cases for the escalation report, e.g. clear, poor_photo, abiotic
+// {"image": "evals/images/tomato_early_blight_1.jpg", "expected": ["early blight"], "notes": "", "region": "Ohio", "split": "tune", "tag": "clear"}
+// {"image": "evals/images/basil_downy_mildew_1.jpg", "expected": ["downy mildew"], "notes": "fuzzy grey underneath", "region": "Florida", "split": "tune", "tag": "clear"}
+// {"image": "evals/images/pepper_sunscald_1.jpg", "expected": ["sunscald", "sun scald"], "notes": "", "region": "Texas", "split": "test", "tag": "abiotic"}
+// {"image": "evals/images/blurry_leaf_1.jpg", "expected": ["early blight"], "notes": "", "region": "", "split": "test", "tag": "poor_photo"}

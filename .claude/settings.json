@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(make setup)",
+      "Bash(make smoke)",
+      "Bash(make smoke-all)",
+      "Bash(make test)",
+      "Bash(make lint)",
+      "Bash(make fmt)",
+      "Bash(make check)",
+      "Bash(make run)",
+      "Bash(make eval)",
+      "Bash(make docker-build)",
+      "Bash(make help)",
+      "Bash(.venv/bin/pytest *)",
+      "Bash(.venv/bin/ruff *)",
+      "Bash(.venv/bin/python scripts/*)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git switch *)",
+      "Bash(git push origin *)",
+      "Bash(curl -s *)",
+      "WebSearch",
+      "WebFetch(domain:docs.tokenfactory.nebius.com)",
+      "WebFetch(domain:docs.nebius.com)",
+      "WebFetch(domain:nebius.com)",
+      "WebFetch(domain:docs.tavily.com)",
+      "WebFetch(domain:code.claude.com)",
+      "WebFetch(domain:huggingface.co)",
+      "WebFetch(domain:build.nvidia.com)",
+      "WebFetch(domain:github.com)"
+    ],
+    "ask": [
+      "Bash(make deploy*)",
+      "Bash(*deploy_nebius.sh*)",
+      "Bash(nebius *)",
+      "Bash(docker push *)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.local)",
+      "Read(./.env.production)",
+      "Bash(*.env)",
+      "Bash(*.env *)",
+      "Bash(*.env.local*)",
+      "Bash(*.env.production*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * --force*)",
+      "Bash(git push * -f*)",
+      "Bash(git push * +*)",
+      "Bash(rm -rf *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/format_py.py\""
+          }
+        ]
+      }
+    ]
+  }
+}

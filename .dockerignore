@@ -1,0 +1,12 @@
+.env
+.env.*
+.venv
+.git
+.claude
+__pycache__
+*.pyc
+tests
+evals
+docs
+scripts
+node_modules
