@@ -143,6 +143,7 @@ class ModelCall(BaseModel):
 
 class DiagnoseResponse(BaseModel):
     case_id: str = ""  # journal id: the share link is /c/<case_id>
+    owner_token: str = ""  # given only to the creator; allows check-ins (never shared)
     observation: Observation
     diagnosis: Diagnosis
     plan: CarePlan

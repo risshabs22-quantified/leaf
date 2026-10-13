@@ -205,7 +205,46 @@ def test_a_rate_not_in_the_cited_passage_is_dropped_and_one_that_is_stays():
     )
     flags = code_checks(plan, read_case())
     assert len(plan.steps) == 1 and "2 tablespoons" in plan.steps[0].action
-    assert flags[0].verdict == "dropped" and "5 tablespoons" in flags[0].reason
+    assert flags[0].verdict == "dropped" and "5 tbsp" in flags[0].reason
+
+
+@pytest.mark.parametrize(
+    ("step", "kept"),
+    [
+        ("Use 0.5 ml per litre", True),
+        ("Use 5 ml per litre", False),  # 5 ml is not "0.5 ml"
+        ("Use two tablespoons per gallon", True),
+        ("Use 2 tbsp per gallon", True),
+        ("Use a 1% solution", False),
+        ("Use a 0.1 percent solution", True),
+        ("Use three capfuls", False),
+        ("Dilute 1:5", False),
+        ("Dilute 1:10", True),
+        ("Use 3 tablespoonfuls", False),
+    ],
+)
+def test_amounts_are_compared_as_values_not_substrings(step, kept):
+    passage = "Use 0.5 ml per litre, a 0.1% solution, or 2 tablespoons per gallon; bleach 1:10."
+    plan = plan_of((step, [1]))
+    code_checks(plan, read_case(passage))
+    assert bool(plan.steps) is kept
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Apply fungicides weekly",
+        "Keep spraying",
+        "Use insecticidal soap",
+        "Dust with sulfur",
+        "Try baking soda",
+        "Use hydrogen peroxide",
+    ],
+)
+def test_chemical_wording_variants_get_the_label_reminder(text):
+    plan = plan_of((text, [1]))
+    code_checks(plan, read_case(f"{text}."))
+    assert plan.steps[0].action.endswith("Follow the product label.")
 
 
 def test_chemical_steps_always_say_follow_the_label():
@@ -235,11 +274,73 @@ async def test_the_judge_drops_unsupported_steps_and_flags_partial_ones(settings
     assert [f.verdict for f in flags] == ["partial", "dropped"]
 
 
-async def test_an_unavailable_judge_leaves_the_code_checks_standing(settings):
+async def test_an_unavailable_judge_flags_steps_and_drops_chemical_ones(settings):
     leaf, _, _ = make_leaf(settings, {})
-    plan = plan_of(("Remove infected lower leaves.", [1]))
-    assert await judge(leaf.llm, settings, plan, read_case(), []) == []
-    assert len(plan.steps) == 1
+    plan = plan_of(
+        ("Remove infected lower leaves.", [1]),
+        ("Apply copper fungicide at 2 tablespoons per gallon.", [1]),
+    )
+    flags = await judge(leaf.llm, settings, plan, read_case(), [])
+    assert [s.action for s in plan.steps] == ["Remove infected lower leaves."]
+    assert plan.steps[0].flag.startswith("Not checked")
+    assert [f.verdict for f in flags] == ["partial", "dropped"]
+
+
+async def test_a_step_the_judge_skips_is_not_kept(settings):
+    leaf, _, _ = make_leaf(
+        settings, {"claim_check": {"verdicts": [{"step": 1, "verdict": "supported"}]}}
+    )
+    plan = plan_of(("Remove infected lower leaves.", [1]), ("Remove all leaves.", [1]))
+    await judge(leaf.llm, settings, plan, read_case(), [])
+    assert [s.action for s in plan.steps] == ["Remove infected lower leaves."]
+
+
+def test_a_summary_with_an_unsourced_amount_is_replaced():
+    from backend.claims import check_summary
+
+    plan = CarePlan(summary="Spray 5 ml per litre weekly.", steps=[])
+    flags = check_summary(plan, "Use 0.5 ml per litre.")
+    assert "5 ml" not in plan.summary and flags[0].verdict == "dropped"
+
+
+def test_blend_never_merges_a_broad_name_into_specific_diseases():
+    from backend.critic import blend
+
+    first = [
+        Hypothesis(name="Early blight", probability=0.5),
+        Hypothesis(name="Late blight", probability=0.35),
+    ]
+    out = blend(first, [Hypothesis(name="Blight", probability=0.6)], 0.5)
+    assert {h.name for h in out} == {"Early blight", "Late blight", "Blight"}
+
+
+def test_a_disagreeing_second_opinion_escalates_even_without_naming_an_alternative():
+    silent = CriticOpinion(
+        alternative="", alternative_probability=0.0, leading_probability=0.65, agrees=False
+    )
+    case = case_with(("Early blight", 0.8))
+    conf = combine(case, silent)
+    assert conf.disagreement and "disagree" in escalation_reason(case, conf, silent)
+    assert CriticOpinion().agrees is False  # a reply without a vote counts as disagreement
+
+
+def test_the_second_opinions_alternative_never_outranks_the_leader():
+    case = case_with(("Early blight", 0.5), ("Septoria", 0.2))
+    add_alternative(case, opinion(agrees=False, alt="Late blight", alt_p=0.8))
+    assert case.differential[0].name == "Early blight"
+    assert case.differential[1].name == "Late blight (second opinion)"
+    assert case.differential[1].probability <= case.differential[0].probability
+
+
+async def test_a_plan_with_no_surviving_steps_escalates(settings):
+    unsupported = {"verdicts": [{"step": i, "verdict": "unsupported"} for i in range(1, 9)]}
+    deep, _, _ = deep_for(
+        settings,
+        [turn(search(), finish(("Early blight", 0.85, ["E1"])))],
+        responses={**RESP, "claim_check": unsupported},
+    )
+    res, _ = await collect(deep)
+    assert not res.plan.steps and res.plan.escalate
 
 
 async def test_leaf_reads_trusted_sources_itself_when_the_investigator_read_none():

@@ -12,6 +12,7 @@ import asyncio
 import base64
 import io
 import json
+import secrets
 import sqlite3
 import time
 from pathlib import Path
@@ -47,6 +48,7 @@ class JournalEntry(BaseModel):
     photos: list[str] = Field(default_factory=list)  # thumbnails, base64 JPEG
     labels: list[str] = Field(default_factory=list)
     checkins: list[CheckIn] = Field(default_factory=list)
+    owner_token: str = Field(default_factory=lambda: secrets.token_urlsafe(16))
 
     def latest_photo(self) -> str | None:
         for c in reversed(self.checkins):
@@ -137,9 +139,31 @@ class SQLiteJournal:
         return await asyncio.to_thread(self._purge)
 
 
+SHARED_FIELDS = (
+    "case_id",
+    "mode",
+    "status",
+    "notice",
+    "observation",
+    "diagnosis",
+    "differential",
+    "plan",
+    "sources",
+    "confidence",
+    "critic",
+    "summary",
+    "low_confidence",
+    "claim_flags",
+    "handoff",
+)
+
+
 def public_view(entry: JournalEntry) -> dict[str, Any]:
-    """What a share link shows: the report and check-ins, without internal model traces."""
-    report = {k: v for k, v in entry.report.items() if k not in ("trace", "steps")}
+    """What a share link shows. A whitelist, so new report fields stay private by default;
+    the gardener's notes and answers (kept in the lab handoff's history) are never shared."""
+    report = {k: v for k, v in entry.report.items() if k in SHARED_FIELDS}
+    if isinstance(report.get("handoff"), dict):
+        report["handoff"] = {k: v for k, v in report["handoff"].items() if k != "history"}
     return {
         "id": entry.id,
         "created": entry.created,

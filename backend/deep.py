@@ -18,7 +18,14 @@ from pydantic import BaseModel, Field
 
 from backend.agent import AgentError, AgentResult, Investigator
 from backend.case import Case, Evidence, Hypothesis, Photo, StepRecord, normalise_differential
-from backend.claims import ClaimFlag, code_checks, ensure_passages, judge, write_plan
+from backend.claims import (
+    ClaimFlag,
+    check_summary,
+    code_checks,
+    ensure_passages,
+    judge,
+    write_plan,
+)
 from backend.conditions import WeatherClient
 from backend.critic import (
     Confidence,
@@ -68,11 +75,9 @@ def escalation_reason(case: Case, confidence: Confidence, critic: CriticOpinion 
     if not hyps:
         return "Leaf could not reach a diagnosis."
     top = hyps[0]
-    if confidence.disagreement and critic is not None and critic.alternative:
-        return (
-            f"Leaf and its second opinion disagree ({top.name} vs {critic.alternative}). "
-            "A diagnostic lab can tell them apart."
-        )
+    if confidence.disagreement:
+        alt = f" ({top.name} vs {critic.alternative})" if critic and critic.alternative else ""
+        return f"Leaf and its second opinion disagree{alt}. A diagnostic lab can tell them apart."
     if len(hyps) > 1 and top.probability - hyps[1].probability < AMBIGUITY_MARGIN:
         return f"{top.name} and {hyps[1].name} are too close to call from photos."
     if confidence.quality == "poor":
@@ -341,7 +346,6 @@ class DeepLeaf:
         if isinstance(critic_result, BaseException):
             log.warning("second opinion failed for %s: %r", case.id, critic_result)
         add_alternative(case, critic)
-        case.differential.sort(key=lambda h: h.probability, reverse=True)
         confidence = combine(case, critic)
         await emit(
             {
@@ -352,7 +356,11 @@ class DeepLeaf:
         )
         for call in trace:
             case.add_trace(call)
+        sources_text = " ".join(" ".join(s.passages) for s in case.sources)
+        flags += check_summary(plan, sources_text)
         reason = escalation_reason(case, confidence, critic)
+        if not reason and not plan.steps:
+            reason = "Leaf could not ground a care plan in the sources it read."
         if reason:
             plan.escalate = True
             plan.escalate_reason = f"{reason} {plan.escalate_reason}".strip()

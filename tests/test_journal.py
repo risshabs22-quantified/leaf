@@ -22,6 +22,10 @@ ADVICE = {
 }
 
 
+def owner(report: dict) -> dict:
+    return {"x-leaf-owner": report["owner_token"]}
+
+
 def jpeg(size=(1600, 1200)) -> bytes:
     buf = io.BytesIO()
     Image.new("RGB", size, (60, 120, 50)).save(buf, format="JPEG")
@@ -143,6 +147,7 @@ def test_a_spreading_check_in_escalates_and_keeps_only_real_citations(settings):
         ).json()
         view = c.post(
             f"/api/cases/{r['case_id']}/checkin",
+            headers=owner(r),
             data={"notes": "worse"},
             files={"image": ("b.jpg", jpeg(), "image/jpeg")},
         ).json()
@@ -171,7 +176,9 @@ def test_a_stable_check_in_does_not_escalate(settings):
             files={"image": ("a.jpg", jpeg(), "image/jpeg")},
         ).json()
         view = c.post(
-            f"/api/cases/{r['case_id']}/checkin", files={"image": ("b.jpg", jpeg(), "image/jpeg")}
+            f"/api/cases/{r['case_id']}/checkin",
+            headers=owner(r),
+            files={"image": ("b.jpg", jpeg(), "image/jpeg")},
         ).json()
     assert view["checkins"][0]["status"] == "stable" and not view["checkins"][0]["escalate"]
 
@@ -181,10 +188,12 @@ def test_check_in_uploads_get_the_photo_size_limit_not_the_small_default(setting
         r = c.post("/api/diagnose", data={"notes": "spots"}).json()
         big = c.post(
             f"/api/cases/{r['case_id']}/checkin",
+            headers=owner(r),
             files={"image": ("b.jpg", b"\\0" * (11 * 1024 * 1024), "image/jpeg")},
         )
         ok = c.post(
             f"/api/cases/{r['case_id']}/checkin",
+            headers=owner(r),
             files={"image": ("b.jpg", jpeg((3000, 3000)), "image/jpeg")},
         )
     assert big.status_code == 413 and ok.status_code == 200
@@ -197,8 +206,8 @@ def test_check_ins_are_capped_per_case(settings, monkeypatch):
     with api(settings) as (c, _):
         r = c.post("/api/diagnose", data={"notes": "spots"}).json()
         url = f"/api/cases/{r['case_id']}/checkin"
-        first = c.post(url, files={"image": ("b.jpg", jpeg(), "image/jpeg")})
-        second = c.post(url, files={"image": ("b.jpg", jpeg(), "image/jpeg")})
+        first = c.post(url, files={"image": ("b.jpg", jpeg(), "image/jpeg")}, headers=owner(r))
+        second = c.post(url, files={"image": ("b.jpg", jpeg(), "image/jpeg")}, headers=owner(r))
     assert first.status_code == 200 and second.status_code == 409
 
 
@@ -218,7 +227,45 @@ def test_check_in_steps_get_the_label_rule_and_lose_unsourced_rates(settings):
     with api(settings, responses=resp) as (c, _):
         r = c.post("/api/diagnose", data={"notes": "spots"}).json()
         view = c.post(
-            f"/api/cases/{r['case_id']}/checkin", files={"image": ("b.jpg", jpeg(), "image/jpeg")}
+            f"/api/cases/{r['case_id']}/checkin",
+            headers=owner(r),
+            files={"image": ("b.jpg", jpeg(), "image/jpeg")},
         ).json()
     steps = [s["action"] for s in view["checkins"][0]["steps"]]
     assert steps == ["Spray copper fungicide weekly. Follow the product label."]
+
+
+def test_a_share_link_alone_cannot_add_check_ins(settings):
+    with api(settings) as (c, _):
+        r = c.post("/api/diagnose", data={"notes": "spots"}).json()
+        url = f"/api/cases/{r['case_id']}/checkin"
+        none = c.post(url, files={"image": ("b.jpg", jpeg(), "image/jpeg")})
+        wrong = c.post(
+            url, files={"image": ("b.jpg", jpeg(), "image/jpeg")}, headers={"x-leaf-owner": "guess"}
+        )
+    assert none.status_code == 403 and wrong.status_code == 403
+
+
+def test_the_share_view_hides_the_token_notes_and_answers(settings):
+    script = [
+        turn(("ask_user", {"reason": "Rings would separate them.", "questions": ["Rings?"]})),
+        turn(finish(("Early blight", 0.5, []), ("Septoria", 0.45, []))),
+    ]
+    with api(settings, script=script) as (c, _):
+        first = c.post("/api/deep", data={"notes": "MY PRIVATE NOTE"}).json()
+        done = c.post(
+            f"/api/deep/{first['case_id']}/answers", json={"answers": ["MY ANSWER"]}
+        ).json()
+        view = c.get(f"/api/cases/{done['case_id']}").text
+    assert done["owner_token"] and done["owner_token"] not in view
+    assert "MY PRIVATE NOTE" not in view and "MY ANSWER" not in view
+
+
+def test_the_deep_cap_is_not_spent_by_a_refused_request(settings):
+    import asyncio
+
+    with api(settings) as (c, _):
+        before = app.state.deep_cap.left
+        app.state.slots = asyncio.Semaphore(0)
+        r = c.post("/api/deep", data={"notes": "tomato"})
+        assert r.status_code == 503 and app.state.deep_cap.left == before

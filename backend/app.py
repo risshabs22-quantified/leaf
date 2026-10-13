@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import secrets
 import time
 from collections import defaultdict, deque
 from collections.abc import Awaitable, Callable
@@ -378,6 +379,8 @@ def _deep_work(
     """What to run for a new case: Deep, or Quick with a notice once today's Deep cap is used."""
     deep: DeepLeaf = request.app.state.deep
     notes, region = notes[:2000], region[:100]
+    if request.app.state.slots.locked():  # a request that will be refused must not spend the cap
+        raise HTTPException(503, "Leaf is busy right now. Please try again in a minute.")
     if not request.app.state.deep_cap.take():
         cap = request.app.state.leaf.settings.deep_daily_cap
         notice = (
@@ -583,7 +586,8 @@ async def save_report(
             labels=labels[: len(thumbs)],
         )
         report.case_id = entry.id
-        entry.report = report.model_dump(mode="json")
+        report.owner_token = entry.owner_token  # only the creator gets it; it allows check-ins
+        entry.report = report.model_dump(mode="json", exclude={"owner_token"})
         await request.app.state.journal.put(entry)
     except Exception:  # noqa: BLE001 - the gardener still gets the diagnosis
         log.exception("could not save the report to the journal")
@@ -601,6 +605,9 @@ async def get_case(request: Request, case_id: str) -> dict:
     return public_view(await _entry(request, case_id))
 
 
+_checkin_locks: dict[str, asyncio.Lock] = {}
+
+
 @app.post("/api/cases/{case_id}/checkin")
 async def checkin(
     request: Request,
@@ -610,6 +617,10 @@ async def checkin(
 ) -> dict:
     check_limits(request)
     entry = await _entry(request, case_id)
+    # A share link is read-only: check-ins need the owner token given to the report's creator.
+    token = request.headers.get("x-leaf-owner", "")
+    if not token or not secrets.compare_digest(token, entry.owner_token):
+        raise HTTPException(403, "Only the person who created this report can add a check-in.")
     data = await image.read(MAX_UPLOAD_BYTES + 1)
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "Photo is over 10 MB. Try a smaller one.")
@@ -628,9 +639,15 @@ async def checkin(
         )
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
-    entry.checkins.append(record)
-    await request.app.state.journal.put(entry)
-    return public_view(entry)
+    # Re-read under a per-report lock, so two check-ins at once cannot overwrite each other.
+    lock = _checkin_locks.setdefault(entry.id, asyncio.Lock())
+    async with lock:
+        fresh = await _entry(request, case_id)
+        fresh.checkins.append(record)
+        await request.app.state.journal.put(fresh)
+    if len(_checkin_locks) > 1000:
+        _checkin_locks.clear()
+    return public_view(fresh)
 
 
 if FRONTEND.exists():

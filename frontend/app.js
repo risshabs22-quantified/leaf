@@ -305,9 +305,11 @@ function render(d) {
   const saved = d.case_id && d.status !== "needs_answers";
   $("share").hidden = !saved;
   if (saved) {
-    const url = `${location.origin}/c/${encodeURIComponent(d.case_id)}`;
-    $("share-link").href = url;
-    $("share-link").textContent = url.replace(/^https?:\/\//, "");
+    // The owner token rides in the fragment, which browsers never send to the server.
+    const base = `${location.origin}/c/${encodeURIComponent(d.case_id)}`;
+    $("share-link").href = d.owner_token ? `${base}#k=${encodeURIComponent(d.owner_token)}` : base;
+    $("share-link").dataset.readonly = base;
+    try { if (d.owner_token) localStorage.setItem(`leaf-owner-${d.case_id}`, d.owner_token); } catch { /* private mode */ }
   }
   $("summary").textContent = d.summary || d.diagnosis.reasoning_summary;
   const byId = Object.fromEntries((d.evidence || []).map((e) => [e.id, e]));
@@ -441,7 +443,7 @@ function renderHandoff(d) {
 
 $("print").addEventListener("click", () => window.print());
 $("copy").addEventListener("click", async () => {
-  try { await navigator.clipboard.writeText($("share-link").href); $("copy").textContent = "Copied"; }
+  try { await navigator.clipboard.writeText($("share-link").dataset.readonly); $("copy").textContent = "Copied"; }
   catch { $("copy").textContent = "Copy failed: select the link instead"; }
 });
 

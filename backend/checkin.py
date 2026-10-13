@@ -7,12 +7,13 @@ Code, not a model, decides escalation: still spreading after a plan means a lab 
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from backend.claims import CHEMICAL, FOLLOW_LABEL, RATE
+from backend.claims import CHEMICAL, FOLLOW_LABEL, unsourced_amounts
 from backend.config import Settings
 from backend.journal import MAX_CHECKINS, CheckIn, JournalEntry, thumbnail
 from backend.models import LLM, ModelError, complete_json
@@ -89,9 +90,10 @@ async def check_in(
     if len(entry.checkins) >= MAX_CHECKINS:
         raise ValueError("This case already has the maximum number of check-ins.")
     before = entry.latest_photo()
+    now_thumb = await asyncio.to_thread(thumbnail, now_b64)  # image work stays off the loop
     if before and vision_model:
         try:
-            progress = await compare(llm, vision_model, before, thumbnail(now_b64), notes, trace)
+            progress = await compare(llm, vision_model, before, now_thumb, notes, trace)
         except ModelError:
             progress = Progress(change="Leaf could not compare the photos this time.")
     else:
@@ -136,17 +138,19 @@ async def check_in(
     valid = {s["id"] for s in sources}
     source_text = " ".join(
         f"{s.get('title', '')} {s.get('snippet', '')}" for s in report.get("sources", [])
-    ).lower()
+    )
     kept = []
     for step in advice.steps:
         step.source_ids = [i for i in step.source_ids if i in valid]
         text = f"{step.action} {step.why}"
-        if any(r.lower() not in source_text for r in RATE.findall(text)):
-            continue  # a rate the report's sources do not state
+        if not step.source_ids or unsourced_amounts(text, source_text):
+            continue  # every step cites a source, and states no amount its sources lack
         if CHEMICAL.search(text) and "label" not in text.lower():
             step.action = f"{step.action.rstrip('. ')}. {FOLLOW_LABEL}"
         kept.append(step)
     advice.steps = kept
+    if unsourced_amounts(advice.advice, source_text):
+        advice.advice = "Follow the steps below; each one cites its source."
     spreading = progress.status == "spreading"
     return CheckIn(
         status=progress.status,
@@ -155,5 +159,5 @@ async def check_in(
         steps=advice.steps[:4],
         escalate=spreading,
         escalate_reason=SPREADING_REASON if spreading else "",
-        photo=thumbnail(now_b64),
+        photo=now_thumb,
     )

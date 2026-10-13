@@ -5,6 +5,14 @@ const pct = (p) => `${Math.round((p || 0) * 100)}%`;
 const caseId = decodeURIComponent(location.pathname.split("/").filter(Boolean).pop() || "");
 const STATUS = { spreading: "Spreading", stable: "Stable", recovering: "Recovering", unclear: "Unclear" };
 let photo = null;
+// The owner token (from the creator's link fragment, or saved earlier) allows check-ins.
+const fromHash = new URLSearchParams(location.hash.slice(1)).get("k");
+let owner = fromHash;
+try {
+  if (fromHash) localStorage.setItem(`leaf-owner-${caseId}`, fromHash);
+  owner = owner || localStorage.getItem(`leaf-owner-${caseId}`);
+} catch { /* private mode: only the fragment works */ }
+if (fromHash) history.replaceState(null, "", location.pathname);  // keep the token off screen
 
 async function load() {
   const r = await fetch(`/api/cases/${encodeURIComponent(caseId)}`);
@@ -32,6 +40,8 @@ function draw(v) {
   $("steps").innerHTML = d.plan.steps.map((s) => `<li>${esc(s.action)}${s.source_ids.map((id) => `<a class="cite" href="#src${id}">[${id}]</a>`).join("")}${s.why ? `<span class="why">${esc(s.why)}</span>` : ""}</li>`).join("");
   $("sources").innerHTML = d.sources.map((s) => `<li id="src${s.id}"><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)}</a></li>`).join("") || `<li class="muted">No web sources.</li>`;
   $("no-checkins").hidden = v.checkins.length > 0;
+  $("checkin-form").hidden = !owner;
+  if (!owner) $("no-checkins").textContent = v.checkins.length ? "" : "No check-ins yet. Only the person who created this report can add them.";
   $("checkins").innerHTML = v.checkins.map((c) => {
     const when = new Date(c.at * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
     const steps = c.steps.map((s) => `<li>${esc(s.action)}${s.source_ids.map((id) => `<a class="cite" href="#src${id}">[${id}]</a>`).join("")}</li>`).join("");
@@ -56,7 +66,7 @@ $("checkin-form").addEventListener("submit", async (e) => {
   $("checkin-status").textContent = "Comparing with your last photo…";
   const btn = e.target.querySelector("button"); btn.disabled = true;
   try {
-    const r = await fetch(`/api/cases/${encodeURIComponent(caseId)}/checkin`, { method: "POST", body: fd });
+    const r = await fetch(`/api/cases/${encodeURIComponent(caseId)}/checkin`, { method: "POST", body: fd, headers: { "X-Leaf-Owner": owner || "" } });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(body.detail || `Something went wrong (${r.status}).`);
     draw(body);

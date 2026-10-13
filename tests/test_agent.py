@@ -34,7 +34,7 @@ CRITIC_AGREES = {
     "key_evidence": [],
     "argument": "Ringed spots with halos fit the leading diagnosis.",
 }
-ALL_SUPPORTED = {"verdicts": []}  # no verdicts: every step stands
+ALL_SUPPORTED = {"verdicts": [{"step": i, "verdict": "supported"} for i in range(1, 9)]}
 RESP = {
     "vision": OBS,
     "look_closer": LOOK,

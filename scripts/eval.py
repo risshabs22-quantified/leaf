@@ -79,11 +79,12 @@ async def run_deep(deep: DeepLeaf, case: dict, data: bytes) -> dict[str, Any]:
         stored = await deep.store.get(res.case_id)
         res = await deep.resume(stored, ["I'm not sure."] * len(res.questions))
     names = [h.name for h in res.differential] or [c.name for c in res.diagnosis.candidates]
-    conf = (
-        res.confidence.value
-        if res.confidence
-        else (res.differential[0].probability if res.differential else 0.0)
-    )
+    if res.confidence:
+        conf = res.confidence.value
+    elif res.differential:
+        conf = res.differential[0].probability
+    else:  # fell back to Quick: use Quick's own top confidence
+        conf = res.diagnosis.candidates[0].confidence if res.diagnosis.candidates else 0.0
     return {
         "names": names,
         "confidence": conf,

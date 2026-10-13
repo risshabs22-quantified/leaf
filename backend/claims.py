@@ -28,17 +28,109 @@ log = logging.getLogger("leaf.claims")
 
 MAX_AUTO_READS = 2
 CHEMICAL = re.compile(
-    r"\b(fungicide|bactericide|insecticide|pesticide|miticide|herbicide|copper|mancozeb|"
-    r"chlorothalonil|sulfur|sulphur|neem|spinosad|pyrethr\w*|bacillus|potassium bicarbonate|"
-    r"spray)\b",
+    r"\b(fungicid\w*|bactericid\w*|insecticid\w*|pesticid\w*|miticid\w*|herbicid\w*|"
+    r"spray\w*|copper|mancozeb|chlorothalonil|sulfur|sulphur|neem|spinosad|pyrethr\w*|"
+    r"bacillus|bicarbonate|baking soda|hydrogen peroxide|bleach|horticultural oil|"
+    r"(?:insecticidal |potassium )?soaps?|imidacloprid|captan|myclobutanil|streptomycin|"
+    r"bordeaux|azoxystrobin|propiconazole|tebuconazole|dust\w*)\b",
     re.IGNORECASE,
 )
-RATE = re.compile(
-    r"\b\d+(?:[.,]\d+)?\s*(?:%|percent|ml|millilit\w*|l\b|liters?|litres?|oz|ounces?|fl\.? ?oz|"
-    r"tbsp|tablespoons?|tsp|teaspoons?|g\b|grams?|kg|lbs?|pounds?|gal\w*|quarts?|pints?|"
-    r"cups?|ppm)",
-    re.IGNORECASE,
+NUMBER_WORDS = {
+    "a half": 0.5,
+    "half": 0.5,
+    "a quarter": 0.25,
+    "quarter": 0.25,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "twelve": 12,
+    "fifteen": 15,
+    "twenty": 20,
+}
+UNITS = {
+    "%": "%",
+    "percent": "%",
+    "per cent": "%",
+    "ml": "ml",
+    "milliliter": "ml",
+    "millilitre": "ml",
+    "cc": "ml",
+    "l": "l",
+    "liter": "l",
+    "litre": "l",
+    "oz": "oz",
+    "ounce": "oz",
+    "fl oz": "floz",
+    "tbsp": "tbsp",
+    "tablespoon": "tbsp",
+    "tsp": "tsp",
+    "teaspoon": "tsp",
+    "g": "g",
+    "gram": "g",
+    "kg": "kg",
+    "lb": "lb",
+    "pound": "lb",
+    "gal": "gal",
+    "gallon": "gal",
+    "qt": "qt",
+    "quart": "qt",
+    "pt": "pt",
+    "pint": "pt",
+    "cup": "cup",
+    "ppm": "ppm",
+    "capful": "capful",
+}
+_UNIT_RE = "|".join(sorted((re.escape(u) for u in UNITS), key=len, reverse=True))
+_NUM_RE = r"\d+(?:[.,]\d+)?(?:\s*/\s*\d+)?|" + "|".join(sorted(NUMBER_WORDS, key=len, reverse=True))
+# "(?![a-z])", not "\b": a "%" followed by a space has no word boundary after it.
+AMOUNT = re.compile(
+    rf"(?<![\d.,])({_NUM_RE})\s*-?\s*({_UNIT_RE})(?:ful)?(?:e?s)?(?![a-z])", re.IGNORECASE
 )
+RATIO = re.compile(r"(?<![\d.])(\d+)\s*:\s*(\d+)(?!\d|\.\d)")  # "1:10." ends a sentence
+RATE = AMOUNT  # whether a text states an amount at all
+
+
+def _value(num: str) -> float | None:
+    num = num.strip().lower().replace(",", ".")
+    if num in NUMBER_WORDS:
+        return float(NUMBER_WORDS[num])
+    if "/" in num:
+        a, _, b = num.partition("/")
+        try:
+            return float(a) / float(b)
+        except (ValueError, ZeroDivisionError):
+            return None
+    try:
+        return float(num)
+    except ValueError:
+        return None
+
+
+def amounts(text: str) -> set[tuple[float, str]]:
+    """Every dose, rate or ratio in a text as normalised (value, unit) pairs, so "5 ml" never
+    matches "0.5 ml" and "two tablespoons" equals "2 tbsp"."""
+    found: set[tuple[float, str]] = set()
+    for num, unit in AMOUNT.findall(text):
+        value = _value(num)
+        if value is not None:
+            found.add((round(value, 4), UNITS[unit.lower()]))
+    for a, b in RATIO.findall(text):
+        if float(b):
+            found.add((round(float(a) / float(b), 4), "ratio"))
+    return found
+
+
+def unsourced_amounts(text: str, sources_text: str) -> set[tuple[float, str]]:
+    return amounts(text) - amounts(sources_text)
+
+
 FOLLOW_LABEL = "Follow the product label."
 
 
@@ -142,17 +234,14 @@ def code_checks(plan: CarePlan, case: Case) -> list[ClaimFlag]:
             )
             continue
         cited = " ".join(read[i] for i in step.source_ids)
-        missing = [
-            r
-            for r in RATE.findall(text)
-            if r.lower().replace(",", ".") not in cited.replace(",", ".")
-        ]
+        missing = unsourced_amounts(text, cited)
         if missing:
+            value, unit = sorted(missing)[0]
             flags.append(
                 ClaimFlag(
                     step=step.action,
                     verdict="dropped",
-                    reason=f"The amount {missing[0]!r} is not in its source.",
+                    reason=f"The amount {value:g} {unit} is not in its source.",
                 )
             )
             continue
@@ -206,20 +295,15 @@ async def judge(
         )
     except ModelError as exc:
         log.warning("claim judge unavailable: %s", exc)
-        return []
+        return unchecked(plan)
     verdicts = {v.step: v for v in out.verdicts}
     flags: list[ClaimFlag] = []
     kept: list[PlanStep] = []
     for i, step in enumerate(plan.steps, start=1):
         v = verdicts.get(i)
-        if v and v.verdict == "unsupported":
-            flags.append(
-                ClaimFlag(
-                    step=step.action,
-                    verdict="dropped",
-                    reason=sanitize(v.note, 200) or "Its sources do not say this.",
-                )
-            )
+        if v is None or v.verdict == "unsupported":  # no verdict counts as not supported
+            reason = sanitize(v.note, 200) if v and v.note else "Its sources do not say this."
+            flags.append(ClaimFlag(step=step.action, verdict="dropped", reason=reason))
             continue
         if v and v.verdict == "partial":
             step.flag = sanitize(v.note, 200) or "Only partly supported by its sources."
@@ -227,3 +311,33 @@ async def judge(
         kept.append(step)
     plan.steps = kept
     return flags
+
+
+def unchecked(plan: CarePlan) -> list[ClaimFlag]:
+    """The judge could not run: say so on every step, and drop chemical steps, which are the
+    ones where an unchecked claim could do harm."""
+    flags, kept = [], []
+    for step in plan.steps:
+        if CHEMICAL.search(f"{step.action} {step.why}"):
+            reason = "Leaf could not check this chemical step against its source."
+            flags.append(ClaimFlag(step=step.action, verdict="dropped", reason=reason))
+            continue
+        step.flag = step.flag or "Not checked against its source this time."
+        flags.append(ClaimFlag(step=step.action, verdict="partial", reason=step.flag))
+        kept.append(step)
+    plan.steps = kept
+    return flags
+
+
+def check_summary(plan: CarePlan, sources_text: str) -> list[ClaimFlag]:
+    """The summary is shown too: an amount it states must also be in the sources."""
+    if unsourced_amounts(plan.summary, sources_text):
+        plan.summary = "Follow the steps below; each one cites its source."
+        return [
+            ClaimFlag(
+                step="summary",
+                verdict="dropped",
+                reason="The summary stated an amount its sources do not.",
+            )
+        ]
+    return []

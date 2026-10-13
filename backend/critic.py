@@ -32,7 +32,7 @@ class CriticOpinion(BaseModel):
     alternative: str = ""
     alternative_probability: float = Field(0.0, ge=0.0, le=1.0)
     leading_probability: float = Field(0.5, ge=0.0, le=1.0)
-    agrees: bool = True
+    agrees: bool = False  # a reply that omits its vote counts as disagreement (escalates)
     key_evidence: list[str] = Field(default_factory=list)
     argument: str = ""
 
@@ -178,22 +178,23 @@ def core_name(name: str) -> str:
 
 def add_alternative(case: Case, critic: CriticOpinion | None) -> None:
     """Show the critic's alternative in the differential if the investigator left it out."""
-    if critic is None or not critic.alternative:
-        return
+    if critic is None or not critic.alternative or critic.agrees:
+        return  # an agreeing critic's alternative was only argued, not proposed
     alt = core_name(critic.alternative)
-    if not alt or any(
-        alt == core_name(h.name) or alt in core_name(h.name) or core_name(h.name) in alt
-        for h in case.differential
-    ):
+    if not alt or any(alt == core_name(h.name) for h in case.differential):
         return
-    case.differential.append(
-        Hypothesis(
-            name=f"{critic.alternative} (second opinion)",
-            probability=min(critic.alternative_probability, MAX_PROBABILITY),
-            evidence_for=critic.key_evidence,
-        )
+    # Shown, but never above the leader: the plan was written for the leader, and a
+    # disagreeing second opinion escalates the case instead of silently swapping the answer.
+    leader = case.differential[0] if case.differential else None
+    p = min(critic.alternative_probability, MAX_PROBABILITY)
+    if leader is not None:
+        p = min(p, leader.probability)
+    alt_h = Hypothesis(
+        name=f"{critic.alternative} (second opinion)",
+        probability=p,
+        evidence_for=critic.key_evidence,
     )
-    case.differential = case.differential[:5]
+    case.differential = ([leader, alt_h] + case.differential[1:])[:5] if leader else [alt_h]
 
 
 def blend(first: list[Hypothesis], final: list[Hypothesis], w_first: float) -> list[Hypothesis]:
@@ -209,7 +210,8 @@ def blend(first: list[Hypothesis], final: list[Hypothesis], w_first: float) -> l
     for weight, hyps in ((1 - w_first, final), (w_first, first)):
         for h in hyps:
             key = core_name(h.name) or h.name.lower()
-            match = next((k for k in merged if k == key or k in key or key in k), None)
+            # Exact disease names only: "blight" must not swallow early and late blight.
+            match = key if key in merged else None
             if match is None:
                 merged[key] = Hypothesis(
                     name=h.name,
