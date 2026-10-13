@@ -9,6 +9,48 @@ let history = [];      // chat turns
 const STEPS = ["Looking closely at the leaf…", "Nemotron Ultra is weighing likely causes…",
   "Searching extension guides…", "Nemotron Lightning is writing your plan…"];
 
+// Hero graph: one node per pipeline step, in the same order as STEPS.
+const NODES = ["vision", "diagnose", "search", "plan"];
+const nodeEl = (n) => document.querySelector(`[data-node="${n}"]`);
+const timeEl = (n) => document.querySelector(`[data-time="${n}"]`);
+
+function setGraphState(kind, label) {
+  const g = $("graph-state");
+  g.className = `pill ${kind}`.trim();
+  g.textContent = label;
+}
+
+function runGraph(active, hasPhoto) {
+  NODES.forEach((n, k) => { nodeEl(n).className = "node" + (k < active ? " done" : k === active ? " active" : ""); });
+  if (!hasPhoto) nodeEl("vision").className = "node skipped";
+}
+
+function resetGraph() {
+  NODES.forEach((n) => { nodeEl(n).className = "node"; timeEl(n).textContent = ""; });
+}
+
+// Settle the graph from the real trace: model, latency and failures come from the backend.
+function finishGraph(d) {
+  const byStep = Object.fromEntries(d.trace.map((t) => [t.step, t]));
+  NODES.forEach((n) => {
+    const el = nodeEl(n), t = byStep[n];
+    timeEl(n).textContent = t && t.latency_ms ? (t.latency_ms / 1000).toFixed(1) + "s" : "";
+    if (n === "search") el.className = "node " + (d.sources.length ? "done" : "skipped");
+    else if (!t) el.className = "node skipped";
+    else el.className = "node " + (t.note && t.note.startsWith("failed") ? "failed" : "done");
+    if (t && n !== "search") el.querySelector(".node-model").textContent = t.model;
+  });
+  setGraphState("done", "Done");
+}
+
+// Show the real model IDs from the backend instead of hard-coding them in the page.
+fetch("/api/health").then((r) => r.json()).then((h) => {
+  const m = h.models || {};
+  const set = (n, text) => { if (text) document.querySelector(`[data-model="${n}"]`).textContent = text; };
+  set("vision", m.vision); set("diagnose", m.reason); set("plan", m.fast);
+  set("search", h.search === "TavilySearcher" ? "Tavily search" : "Search unavailable");
+}).catch(() => {});
+
 function setPhoto(file) {
   if (!file || !file.type.startsWith("image/")) return;
   photo = file;
@@ -34,18 +76,24 @@ async function diagnose(answers = "") {
   fd.append("answers", answers);
 
   $("go").disabled = true; $("rerun").disabled = true;
-  let i = 0;
-  $("status").textContent = STEPS[0];
-  const timer = setInterval(() => { i = Math.min(i + 1, STEPS.length - 1); $("status").textContent = STEPS[i]; }, 6000);
+  let i = photo ? 0 : 1; // no photo: the vision step is skipped
+  resetGraph(); setGraphState("running", "Running"); runGraph(i, !!photo);
+  $("status").textContent = STEPS[i];
+  const timer = setInterval(() => {
+    i = Math.min(i + 1, STEPS.length - 1);
+    $("status").textContent = STEPS[i]; runGraph(i, !!photo);
+  }, 6000);
   try {
     const r = await fetch("/api/diagnose", { method: "POST", body: fd });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(body.detail || `Something went wrong (${r.status}).`);
     last = body; history = [];
     render(body);
+    finishGraph(body);
     $("status").textContent = "";
   } catch (err) {
     $("status").textContent = err.message;
+    resetGraph(); setGraphState("error", "Failed");
   } finally {
     clearInterval(timer);
     $("go").disabled = false; $("rerun").disabled = false;

@@ -5,84 +5,188 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Leaf · plant doctor</title>
 <meta name="description" content="Snap a sick leaf, get a cited care plan. Powered by NVIDIA Nemotron on Nebius Token Factory.">
+<meta name="theme-color" content="#0a0d0b">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230a0d0b'/%3E%3Cpath d='M7 25C7 13 14 7 26 6c0 12-6 19-17 19z' fill='%2376b900'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<header class="top">
-  <div class="brand"><span class="mark" aria-hidden="true"></span>Leaf</div>
-  <p class="tag">Snap a sick leaf. Get a cited care plan.</p>
+<a class="skip" href="#intake-h">Skip to the diagnosis form</a>
+
+<header class="nav">
+  <div class="nav-in">
+    <a class="brand" href="#top" aria-label="Leaf home">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M5 27C5 14 12 7 27 5c0 14-7 22-19 22z"/><path class="vein" d="M5 27C12 19 17 14 23 9"/></svg>
+      <span>Leaf</span>
+    </a>
+    <nav class="links" aria-label="Sections">
+      <a href="#workbench">Diagnose</a>
+      <a href="#how">How it works</a>
+      <a href="#trust">Safety</a>
+    </nav>
+    <a class="btn btn-green nav-cta" href="#workbench">Diagnose a plant</a>
+  </div>
 </header>
 
-<main class="layout">
-  <section class="card intake" aria-labelledby="intake-h">
-    <h1 id="intake-h">What's wrong with my plant?</h1>
-    <label class="drop" id="drop">
-      <input id="file" type="file" accept="image/*">
-      <img id="preview" alt="" hidden>
-      <span id="drop-text">Tap to take or choose a photo<br><small>or drag one here</small></span>
-    </label>
-    <label class="field">What have you noticed? <span class="opt">(optional)</span>
-      <textarea id="notes" rows="3" maxlength="2000" placeholder="e.g. Brown spots started on the bottom leaves a week ago after lots of rain"></textarea>
-    </label>
-    <label class="field">Where are you? <span class="opt">(state or region, optional)</span>
-      <input id="region" maxlength="100" placeholder="e.g. Ohio">
-    </label>
-    <button id="go" class="primary">Diagnose</button>
-    <p id="status" class="status" role="status" aria-live="polite"></p>
-  </section>
-
-  <section id="results" class="results" hidden aria-live="polite">
-    <div id="banner" class="banner"></div>
-
-    <div class="card">
-      <h2>Likely causes</h2>
-      <p id="summary" class="muted"></p>
-      <ol id="candidates" class="candidates"></ol>
+<section class="hero" id="top">
+  <div class="hero-in">
+    <div class="hero-copy">
+      <h1 class="hero-h">Find out what's wrong with your plant.</h1>
+      <p class="hero-sub">Photograph a sick leaf and describe what you've seen. Leaf weighs the likely causes, searches extension-office guides, and writes a care plan that cites its sources.</p>
+      <div class="hero-actions">
+        <a class="btn btn-green" href="#workbench">Diagnose a plant</a>
+        <a class="btn btn-ghost" href="#how">See how Leaf thinks</a>
+      </div>
+      <p class="hero-note">Runs on NVIDIA Nemotron models through Nebius Token Factory.</p>
     </div>
 
-    <div id="followups" class="card" hidden>
-      <h2>A few quick questions</h2>
-      <p class="muted">Your answers help Leaf tell similar problems apart.</p>
-      <div id="questions"></div>
-      <button id="rerun" class="secondary">Update diagnosis</button>
-    </div>
+    <figure class="graph" aria-labelledby="graph-cap">
+      <figcaption id="graph-cap" class="graph-cap">
+        <span class="graph-title">Live agent run</span>
+        <span id="graph-state" class="pill" role="status" aria-live="polite">Idle</span>
+      </figcaption>
+      <ol class="nodes" id="nodes">
+        <li class="node" data-node="vision">
+          <span class="dot" aria-hidden="true"></span>
+          <div class="node-body">
+            <div class="node-name">Look at the photo</div>
+            <div class="node-model" data-model="vision">Vision model</div>
+          </div>
+          <span class="node-time" data-time="vision"></span>
+        </li>
+        <li class="node" data-node="diagnose">
+          <span class="dot" aria-hidden="true"></span>
+          <div class="node-body">
+            <div class="node-name">Weigh the causes</div>
+            <div class="node-model" data-model="diagnose">Nemotron Ultra</div>
+          </div>
+          <span class="node-time" data-time="diagnose"></span>
+        </li>
+        <li class="node" data-node="search">
+          <span class="dot" aria-hidden="true"></span>
+          <div class="node-body">
+            <div class="node-name">Search extension guides</div>
+            <div class="node-model" data-model="search">Tavily search</div>
+          </div>
+          <span class="node-time" data-time="search"></span>
+        </li>
+        <li class="node" data-node="plan">
+          <span class="dot" aria-hidden="true"></span>
+          <div class="node-body">
+            <div class="node-name">Write the care plan</div>
+            <div class="node-model" data-model="plan">Nemotron Lightning</div>
+          </div>
+          <span class="node-time" data-time="plan"></span>
+        </li>
+      </ol>
+    </figure>
+  </div>
+</section>
 
-    <div class="card">
-      <h2>Your care plan</h2>
-      <p id="plan-summary"></p>
-      <ol id="steps" class="steps"></ol>
-      <p id="checkin" class="checkin"></p>
-    </div>
+<main id="workbench" class="bench">
+  <div class="layout">
+    <section class="panel intake" aria-labelledby="intake-h">
+      <h2 id="intake-h" class="panel-h">What's wrong with my plant?</h2>
+      <label class="drop" id="drop">
+        <input id="file" type="file" accept="image/*">
+        <img id="preview" alt="Your photo" hidden>
+        <span id="drop-text">
+          <svg class="drop-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h3l1.5-2h7L17 7h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+          Tap to take or choose a photo<br><small>or drag one here</small>
+        </span>
+      </label>
+      <label class="field">What have you noticed? <span class="opt">(optional)</span>
+        <textarea id="notes" rows="3" maxlength="2000" placeholder="e.g. Brown spots started on the bottom leaves a week ago after lots of rain"></textarea>
+      </label>
+      <label class="field">Where are you? <span class="opt">(state or region, optional)</span>
+        <input id="region" maxlength="100" placeholder="e.g. Ohio">
+      </label>
+      <button id="go" class="btn btn-green btn-block">Diagnose</button>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </section>
 
-    <div class="card">
-      <h2>Sources</h2>
-      <ol id="sources" class="sources"></ol>
-    </div>
+    <section id="results" class="results" hidden aria-live="polite">
+      <div id="banner" class="banner"></div>
 
-    <div class="card chat">
-      <h2>Ask a follow-up</h2>
-      <div id="chatlog" class="chatlog"></div>
-      <form id="chatform" class="chatform">
-        <input id="chatin" maxlength="2000" placeholder="e.g. Can I still eat the tomatoes?" aria-label="Your question">
-        <button class="secondary">Ask</button>
-      </form>
-    </div>
+      <div class="panel">
+        <h2 class="panel-h">Likely causes</h2>
+        <p id="summary" class="muted"></p>
+        <ol id="candidates" class="candidates"></ol>
+      </div>
 
-    <details class="card trace">
-      <summary>How Leaf thought</summary>
-      <p class="muted">Every model call runs on Nebius Token Factory. NVIDIA Nemotron does the reasoning and writing.</p>
-      <table><thead><tr><th>Step</th><th>Model</th><th>Time</th><th>Tokens</th></tr></thead><tbody id="tracebody"></tbody></table>
-      <p id="obs" class="muted small"></p>
-    </details>
-  </section>
+      <div id="followups" class="panel" hidden>
+        <h2 class="panel-h">A few quick questions</h2>
+        <p class="muted">Your answers help Leaf tell similar problems apart.</p>
+        <div id="questions"></div>
+        <button id="rerun" class="btn btn-outline">Update diagnosis</button>
+      </div>
+
+      <div class="panel">
+        <h2 class="panel-h">Your care plan</h2>
+        <p id="plan-summary"></p>
+        <ol id="steps" class="steps"></ol>
+        <p id="checkin" class="checkin"></p>
+      </div>
+
+      <div class="panel">
+        <h2 class="panel-h">Sources</h2>
+        <ol id="sources" class="sources"></ol>
+      </div>
+
+      <div class="panel chat">
+        <h2 class="panel-h">Ask a follow-up</h2>
+        <div id="chatlog" class="chatlog"></div>
+        <form id="chatform" class="chatform">
+          <input id="chatin" maxlength="2000" placeholder="e.g. Can I still eat the tomatoes?" aria-label="Your question">
+          <button class="btn btn-outline">Ask</button>
+        </form>
+      </div>
+
+      <details class="panel trace">
+        <summary>How Leaf thought</summary>
+        <p class="muted">Every model call runs on Nebius Token Factory. NVIDIA Nemotron does the reasoning and writing.</p>
+        <div class="table-wrap">
+          <table><thead><tr><th scope="col">Step</th><th scope="col">Model</th><th scope="col">Time</th><th scope="col">Tokens in / out</th></tr></thead><tbody id="tracebody"></tbody></table>
+        </div>
+        <p id="obs" class="muted small"></p>
+      </details>
+    </section>
+  </div>
 </main>
 
-<footer class="foot">
-  Leaf gives guidance, not certainty. For food crops and any chemical, follow the product label and check with your local extension office.
-  <br>Built with NVIDIA Nemotron on Nebius Token Factory and Tavily search.
+<section class="how" id="how" aria-labelledby="how-h">
+  <div class="how-in">
+    <h2 id="how-h" class="section-h">Four steps, each by the model best suited to it.</h2>
+    <p class="section-sub">Leaf shows its work. Every step is listed with the model that ran it and how long it took.</p>
+    <ol class="tiles">
+      <li class="tile">
+        <h3>Look</h3>
+        <p>A vision model reads the photo and lists only what it can see: the plant, the symptoms, and where they appear. It does not diagnose.</p>
+      </li>
+      <li class="tile">
+        <h3>Reason</h3>
+        <p>Nemotron Ultra weighs the likely causes against the evidence for and against each, and asks follow-up questions when causes look alike.</p>
+      </li>
+      <li class="tile">
+        <h3>Search</h3>
+        <p>Tavily searches for extension-office and university guidance, so advice rests on sources you can open and read.</p>
+      </li>
+      <li class="tile">
+        <h3>Write</h3>
+        <p>Nemotron Lightning turns the diagnosis and sources into a short care plan, with a date to check back in.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<footer class="foot" id="trust">
+  <div class="foot-in">
+    <p class="foot-lead">Leaf gives guidance, not certainty.</p>
+    <p>When Leaf isn't confident, it says so and points you to your local extension office. For food crops and any chemical, follow the product label.</p>
+    <p class="foot-small">Built with NVIDIA Nemotron on Nebius Token Factory and Tavily search. Open source under the MIT license.</p>
+  </div>
 </footer>
 <script src="/static/app.js"></script>
 </body>
