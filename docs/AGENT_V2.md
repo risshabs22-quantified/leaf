@@ -220,10 +220,10 @@ Acceptance:
 - Added in M3: the investigation starts from a first differential (the Quick diagnosis step), behind `LEAF_DEEP_SEED`, because live cases showed the investigator anchoring on its first crop; the eval compares seeded and unseeded Deep
 
 ### M4: live interface
-- [ ] SSE endpoint and client, incremental rendering, reconnect-safe
-- [ ] Re-ranking differential chart, evidence cards, weather strip with attribution, lab handoff view
-- [ ] Up to 3 photos with phone camera support; Quick / Deep toggle; Deep daily cap message
-- [ ] Checked at 375 px and 1440 px with zero console errors and no CSP violations
+- [x] SSE endpoints (`/api/deep/stream`, `/api/deep/{id}/answers/stream`) with keep-alives; the case runs as a task under the concurrency cap and deadline and is cancelled if the client leaves; the client renders each event as it arrives. Not reconnect-resumable: a dropped stream asks the gardener to try again
+- [x] Re-ranking differential chart (FLIP animation, off for reduced motion), live log of each step and its reason, evidence list, weather strip with indices, caveat and Open-Meteo attribution, second opinion, confidence with its factors, plan flags, and a printable lab handoff (photos come from the page, never the server)
+- [x] Up to 3 labelled photos (close-up, whole plant, underside; `accept=image/*` so phones offer the camera), browser location rounded to 1 decimal in the page, Quick / Deep toggle (Quick by default until the eval says otherwise), Deep cases left today
+- [x] Checked in a browser at 1440 and 375 px with a live Deep case: zero console errors, no CSP violations, no horizontal overflow
 
 ### M5: plant journal and check-ins (cut this first)
 - [ ] SQLite store, unguessable ids, 30-day expiry, read-only share page, no images in logs

@@ -6,6 +6,7 @@ Run locally:  uvicorn backend.app:app --reload
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from collections import defaultdict, deque
@@ -13,10 +14,10 @@ from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
-from typing import Annotated, TypeVar
+from typing import Annotated, Any, TypeVar
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.datastructures import UploadFile as StarletteUploadFile
@@ -191,6 +192,7 @@ app.add_middleware(
     limits={
         "/api/diagnose": MAX_UPLOAD_BYTES + 256 * 1024,
         "/api/deep": MAX_DEEP_PHOTOS * MAX_UPLOAD_BYTES + 256 * 1024,
+        "/api/deep/stream": MAX_DEEP_PHOTOS * MAX_UPLOAD_BYTES + 256 * 1024,
         "/api/chat": 256 * 1024,
     },
     default=64 * 1024,
@@ -322,18 +324,12 @@ class AnswersRequest(BaseModel):
     answers: list[Annotated[str, Field(max_length=400)]] = Field(..., max_length=3)
 
 
-@app.post("/api/deep", response_model=DeepResponse)
-async def deep(
-    request: Request,
-    notes: Annotated[str, Form()] = "",
-    region: Annotated[str, Form()] = "",
-    lat: Annotated[float | None, Form()] = None,
-    lon: Annotated[float | None, Form()] = None,
-) -> DeepResponse:
-    check_limits(request)
-    # Photos and labels are read from the form directly: browsers differ in how they send an
-    # empty file input (a file with no name, or a plain string), and either must be skipped
-    # without shifting the labels of the photos after it.
+async def _deep_inputs(
+    request: Request, notes: str, region: str, lat: float | None, lon: float | None
+) -> tuple[list[tuple[str, str, str]], float | None, float | None]:
+    """Shared by the JSON and streaming endpoints. Photos and labels are read from the form
+    directly: browsers differ in how they send an empty file input (a file with no name, or
+    a plain string), and either must be skipped without shifting the labels after it."""
     form = await request.form()
     labels = [str(x) for x in form.getlist("labels")]
     pairs = [
@@ -345,44 +341,177 @@ async def deep(
         raise HTTPException(400, f"Send at most {MAX_DEEP_PHOTOS} photos.")
     if not pairs and not notes.strip():
         raise HTTPException(400, "Add a photo or describe what you see.")
-    if lat is not None and lon is not None and not (-90 <= lat <= 90 and -180 <= lon <= 180):
+    if lat is None or lon is None or not (-90 <= lat <= 90 and -180 <= lon <= 180):
         lat = lon = None
-    photos = await _read_photos(pairs)
+    return await _read_photos(pairs), lat, lon
+
+
+def _deep_work(
+    request: Request, photos, notes: str, region: str, lat, lon
+) -> tuple[Callable[[Any], Awaitable[DeepResponse]], float | None]:
+    """What to run for a new case: Deep, or Quick with a notice once today's Deep cap is used."""
     deep: DeepLeaf = request.app.state.deep
+    notes, region = notes[:2000], region[:100]
     if not request.app.state.deep_cap.take():
         cap = request.app.state.leaf.settings.deep_daily_cap
-        return await run_limited(
-            request,
-            lambda: deep.quick_only(
-                photos=photos,
-                notes=notes[:2000],
-                region=region[:100],
-                notice=f"Deep mode has reached today's limit of {cap} cases, "
-                "so this is a Quick diagnosis.",
-            ),
+        notice = (
+            f"Deep mode has reached today's limit of {cap} cases, so this is a Quick diagnosis."
         )
-    return await run_limited(
-        request,
-        lambda: deep.start(
-            photos=photos, notes=notes[:2000], region=region[:100], lat=lat, lon=lon
+        return (
+            lambda emit: deep.quick_only(photos=photos, notes=notes, region=region, notice=notice),
+            None,
+        )
+    return (
+        lambda emit: deep.start(
+            photos=photos, notes=notes, region=region, lat=lat, lon=lon, emit=emit
         ),
-        timeout=_deep_deadline(request),
+        _deep_deadline(request),
     )
+
+
+async def _ignore_event(_: dict[str, Any]) -> None:
+    return None
+
+
+@app.post("/api/deep", response_model=DeepResponse)
+async def deep(
+    request: Request,
+    notes: Annotated[str, Form()] = "",
+    region: Annotated[str, Form()] = "",
+    lat: Annotated[float | None, Form()] = None,
+    lon: Annotated[float | None, Form()] = None,
+) -> DeepResponse:
+    check_limits(request)
+    photos, lat, lon = await _deep_inputs(request, notes, region, lat, lon)
+    work, timeout = _deep_work(request, photos, notes, region, lat, lon)
+    return await run_limited(request, lambda: work(_ignore_event), timeout=timeout)
+
+
+async def _waiting_case(request: Request, case_id: str):
+    case = await request.app.state.deep.store.get(case_id[:64])
+    if case is None:
+        raise HTTPException(404, "This case has expired or does not exist. Start a new one.")
+    return case
 
 
 @app.post("/api/deep/{case_id}/answers", response_model=DeepResponse)
 async def deep_answers(request: Request, case_id: str, body: AnswersRequest) -> DeepResponse:
     check_limits(request)
+    case = await _waiting_case(request, case_id)
     deep: DeepLeaf = request.app.state.deep
-    case = await deep.store.get(case_id[:64])
-    if case is None:
-        raise HTTPException(404, "This case has expired or does not exist. Start a new one.")
     try:
         return await run_limited(
             request, lambda: deep.resume(case, body.answers), timeout=_deep_deadline(request)
         )
     except CaseStateError as exc:
         raise HTTPException(409, str(exc)) from exc
+
+
+KEEPALIVE_S = 15  # comment lines keep proxies from closing a quiet stream
+
+
+def _event_stream(
+    request: Request, work: Callable[[Any], Awaitable[DeepResponse]], timeout: float | None
+) -> StreamingResponse:
+    """Run one case and stream its events as server-sent events, ending with the result.
+
+    The case runs as a task under the concurrency cap and deadline; events reach the client
+    as they happen. If the client goes away, the case is cancelled.
+    """
+    slots: asyncio.Semaphore = request.app.state.slots
+    if slots.locked():
+        raise HTTPException(503, "Leaf is busy right now. Please try again in a minute.")
+    deadline = timeout or request.app.state.leaf.settings.deadline_s
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def emit(event: dict[str, Any]) -> None:
+        await queue.put(event)
+
+    async def runner() -> None:
+        async with slots:
+            try:
+                res = await asyncio.wait_for(work(emit), timeout=deadline)
+                await queue.put({"type": "result", "response": res.model_dump(mode="json")})
+            except TimeoutError:
+                await queue.put(
+                    {
+                        "type": "error",
+                        "status": 504,
+                        "detail": "That took too long. Please try again.",
+                    }
+                )
+            except ModelError:
+                await queue.put(
+                    {
+                        "type": "error",
+                        "status": 502,
+                        "detail": "Leaf's models are busy right now. Please try again.",
+                    }
+                )
+            except CaseStateError as exc:
+                await queue.put({"type": "error", "status": 409, "detail": str(exc)})
+            except Exception:  # noqa: BLE001 - the stream must end cleanly, never hang
+                log.exception("streamed case failed")
+                await queue.put(
+                    {
+                        "type": "error",
+                        "status": 500,
+                        "detail": "Something went wrong. Please try again.",
+                    }
+                )
+            finally:
+                await queue.put(None)
+
+    task = asyncio.create_task(runner())
+
+    async def body():
+        try:
+            while True:
+                try:
+                    item = await asyncio.wait_for(queue.get(), KEEPALIVE_S)
+                except TimeoutError:
+                    yield ": keep-alive\n\n"
+                    continue
+                if item is None:
+                    break
+                yield f"data: {json.dumps(item, default=str)}\n\n"
+        finally:
+            if not task.done():
+                task.cancel()  # the client left: stop spending on this case
+
+    return StreamingResponse(
+        body(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/api/deep/stream")
+async def deep_stream(
+    request: Request,
+    notes: Annotated[str, Form()] = "",
+    region: Annotated[str, Form()] = "",
+    lat: Annotated[float | None, Form()] = None,
+    lon: Annotated[float | None, Form()] = None,
+) -> StreamingResponse:
+    check_limits(request)
+    photos, lat, lon = await _deep_inputs(request, notes, region, lat, lon)
+    work, timeout = _deep_work(request, photos, notes, region, lat, lon)
+    return _event_stream(request, work, timeout)
+
+
+@app.post("/api/deep/{case_id}/answers/stream")
+async def deep_answers_stream(
+    request: Request, case_id: str, body: AnswersRequest
+) -> StreamingResponse:
+    check_limits(request)
+    case = await _waiting_case(request, case_id)
+    if case.status != "needs_answers":
+        raise HTTPException(409, "This case is not waiting for answers.")
+    deep: DeepLeaf = request.app.state.deep
+    return _event_stream(
+        request, lambda emit: deep.resume(case, body.answers, emit), _deep_deadline(request)
+    )
 
 
 if FRONTEND.exists():

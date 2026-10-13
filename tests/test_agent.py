@@ -875,3 +875,71 @@ async def test_even_a_failed_quick_fallback_answers_instead_of_erroring(settings
     deep, _, _ = deep_for(settings, ["no tools", "still none"], responses=resp)
     res, _ = await collect(deep, notes="spots")
     assert res.status == "fallback" and res.plan.escalate and "busy" in res.notice
+
+
+# ---------------------------------------------------------------- streaming (SSE)
+
+
+def stream_events(client, url, **kw):
+    import json as _json
+
+    with client.stream("POST", url, **kw) as r:
+        assert r.status_code == 200, r.read()
+        assert r.headers["content-type"].startswith("text/event-stream")
+        return [_json.loads(line[6:]) for line in r.iter_lines() if line.startswith("data: ")]
+
+
+def test_a_streamed_case_sends_each_step_then_the_result(settings):
+    script = [
+        turn(look(), diff(("Early blight", 0.6, ["E1"]))),
+        turn(search()),
+        turn(finish(("Early blight", 0.8, ["E1", "E2"]))),
+    ]
+    with api(settings, script) as (c, _):
+        events = stream_events(
+            c,
+            "/api/deep/stream",
+            data={"notes": "tomato"},
+            files=[("images", ("a.jpg", photo_bytes(), "image/jpeg"))],
+        )
+    types = [e["type"] for e in events]
+    assert types[0] == "case" and types[-1] == "result"
+    for t in ("first_look", "step", "step_done", "differential", "critic", "done"):
+        assert t in types
+    assert types.index("step") < types.index("critic") < types.index("result")
+    result = events[-1]["response"]
+    assert result["mode"] == "deep" and result["status"] == "done"
+    assert "full_b64" not in str(events) and "view_b64" not in str(events)
+
+
+def test_a_streamed_case_past_the_cap_streams_a_quick_result(settings):
+    with api(settings, []) as (c, _):
+        app.state.deep_cap = DailyCap(0)
+        events = stream_events(c, "/api/deep/stream", data={"notes": "tomato spots"})
+    assert events[-1]["type"] == "result" and events[-1]["response"]["mode"] == "quick"
+
+
+def test_a_busy_server_refuses_to_start_a_stream(settings):
+    import asyncio
+
+    with api(settings, []) as (c, _):
+        app.state.slots = asyncio.Semaphore(0)
+        r = c.post("/api/deep/stream", data={"notes": "tomato"})
+    assert r.status_code == 503
+
+
+def test_answers_can_be_streamed_too(settings):
+    script = [
+        turn(("ask_user", {"reason": "Rings would separate them.", "questions": ["Rings?"]})),
+        turn(finish(("Early blight", 0.8, []))),
+    ]
+    with api(settings, script) as (c, _):
+        first = stream_events(c, "/api/deep/stream", data={"notes": "tomato"})
+        result = first[-1]["response"]
+        assert result["status"] == "needs_answers"
+        assert {"type": "questions", "questions": ["Rings?"]} in first
+        done = stream_events(
+            c, f"/api/deep/{result['case_id']}/answers/stream", json={"answers": ["yes"]}
+        )
+        stale = c.post(f"/api/deep/{result['case_id']}/answers/stream", json={"answers": ["yes"]})
+    assert done[-1]["response"]["status"] == "done" and stale.status_code == 409

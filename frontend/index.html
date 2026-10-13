@@ -34,21 +34,45 @@
   <section class="intake" aria-labelledby="intake-h">
     <h1 id="intake-h" class="sr-only">Diagnose a plant</h1>
 
-    <label class="drop" id="drop">
-      <input id="file" type="file" accept="image/*">
-      <img id="preview" alt="Your photo" hidden>
-      <span id="drop-text" class="drop-text"><span class="link">Choose a photo</span> or drop one here</span>
-    </label>
+    <fieldset class="mode">
+      <legend class="field-label">How should Leaf work?</legend>
+      <label class="mode-opt"><input type="radio" name="mode" value="quick" checked> <span><span class="mode-name">Quick</span> <span class="mode-note">One careful look, about 15 seconds.</span></span></label>
+      <label class="mode-opt"><input type="radio" name="mode" value="deep"> <span><span class="mode-name">Deep</span> <span class="mode-note">Works the case like a plant clinic: looks closer, checks your weather, reads sources and gets a second opinion. About a minute.</span></span></label>
+      <p id="deep-left" class="small muted" hidden></p>
+    </fieldset>
+
+    <div class="photos" role="group" aria-labelledby="photos-h">
+      <p id="photos-h" class="field-label">Photos <span class="opt">Up to three; the first is used in Quick mode</span></p>
+      <div class="slots">
+        <label class="slot drop" data-label="close-up">
+          <input type="file" accept="image/*" class="photo-input">
+          <img alt="" hidden>
+          <span class="slot-text"><span class="link">Close-up</span> of a damaged leaf</span>
+        </label>
+        <label class="slot drop" data-label="whole plant">
+          <input type="file" accept="image/*" class="photo-input">
+          <img alt="" hidden>
+          <span class="slot-text"><span class="link">Whole plant</span></span>
+        </label>
+        <label class="slot drop" data-label="underside">
+          <input type="file" accept="image/*" class="photo-input">
+          <img alt="" hidden>
+          <span class="slot-text"><span class="link">Underside</span> of a leaf</span>
+        </label>
+      </div>
+    </div>
 
     <label class="field">
       <span class="field-label">What have you noticed? <span class="opt">Optional</span></span>
       <textarea id="notes" rows="3" maxlength="2000" placeholder="Brown spots started on the bottom leaves a week ago, after lots of rain"></textarea>
     </label>
 
-    <label class="field">
-      <span class="field-label">Where are you? <span class="opt">State or region, optional</span></span>
-      <input id="region" maxlength="100" placeholder="Ohio" autocomplete="address-level1">
-    </label>
+    <div class="field">
+      <label for="region" class="field-label">Where are you? <span class="opt">City and state; used for your local weather</span></label>
+      <input id="region" maxlength="100" placeholder="Columbus, Ohio" autocomplete="address-level2">
+      <button type="button" id="locate" class="textbtn">Use my location instead</button>
+      <span id="locate-status" class="small muted" role="status" aria-live="polite"></span>
+    </div>
 
     <button id="go" class="cta" type="button"><span class="cta-text">Diagnose</span><svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
     <p id="status" class="status" role="status" aria-live="polite"></p>
@@ -57,36 +81,46 @@
       <figcaption class="sr-only">Progress</figcaption>
       <span id="graph-state" class="run-state" role="status" aria-live="polite">Idle</span>
       <ol class="nodes" id="nodes">
-        <li class="node" data-node="vision">
-          <span class="dot" aria-hidden="true"></span>
-          <span class="node-name">Look at the photo</span>
-          <span class="node-model" data-model="vision">Vision model</span>
-          <span class="node-time" data-time="vision"></span>
-        </li>
-        <li class="node" data-node="diagnose">
-          <span class="dot" aria-hidden="true"></span>
-          <span class="node-name">Weigh the causes</span>
-          <span class="node-model" data-model="diagnose">Nemotron Ultra</span>
-          <span class="node-time" data-time="diagnose"></span>
-        </li>
-        <li class="node" data-node="search">
-          <span class="dot" aria-hidden="true"></span>
-          <span class="node-name">Search extension guides</span>
-          <span class="node-model" data-model="search">Tavily search</span>
-          <span class="node-time" data-time="search"></span>
-        </li>
-        <li class="node" data-node="plan">
-          <span class="dot" aria-hidden="true"></span>
-          <span class="node-name">Write the care plan</span>
-          <span class="node-model" data-model="plan">Nemotron Lightning</span>
-          <span class="node-time" data-time="plan"></span>
-        </li>
+        <li class="node" data-node="vision"><span class="dot" aria-hidden="true"></span><span class="node-name">Look at the photo</span><span class="node-model" data-model="vision">Vision model</span><span class="node-time" data-time="vision"></span></li>
+        <li class="node" data-node="diagnose"><span class="dot" aria-hidden="true"></span><span class="node-name">Weigh the causes</span><span class="node-model" data-model="diagnose">Nemotron Ultra</span><span class="node-time" data-time="diagnose"></span></li>
+        <li class="node" data-node="search"><span class="dot" aria-hidden="true"></span><span class="node-name">Search extension guides</span><span class="node-model" data-model="search">Tavily search</span><span class="node-time" data-time="search"></span></li>
+        <li class="node" data-node="plan"><span class="dot" aria-hidden="true"></span><span class="node-name">Write the care plan</span><span class="node-model" data-model="plan">Nemotron Lightning</span><span class="node-time" data-time="plan"></span></li>
       </ol>
     </figure>
+
+    <section id="live" class="live" hidden aria-labelledby="live-h">
+      <h2 id="live-h" class="sr-only">What Leaf is doing</h2>
+      <div class="live-chart">
+        <p class="field-label">What it could be</p>
+        <ol id="differential" class="differential" aria-live="polite"></ol>
+      </div>
+      <ol id="log" class="log" aria-live="polite"></ol>
+    </section>
   </section>
 
   <section id="results" class="results" hidden aria-live="polite">
     <p id="banner" class="banner"></p>
+    <p id="confidence" class="confidence" hidden></p>
+    <details id="confidence-why" class="why-box" hidden>
+      <summary>How Leaf worked out its confidence</summary>
+      <ul id="confidence-parts" class="small"></ul>
+    </details>
+
+    <section id="handoff" class="block handoff" hidden aria-labelledby="handoff-h">
+      <h2 id="handoff-h">Take this to a plant clinic</h2>
+      <p id="handoff-reason"></p>
+      <p><a id="handoff-lab" href="https://www.npdn.org/lab_directory" target="_blank" rel="noopener">Find your state's plant diagnostic lab</a> <span class="muted small">(National Plant Diagnostic Network)</span></p>
+      <p id="handoff-notice" class="small muted"></p>
+      <p class="field-label">How to collect and send a sample</p>
+      <ol id="handoff-steps" class="steps small"></ol>
+      <p class="small muted">From <span id="handoff-sources"></span>.</p>
+      <div id="handoff-print" class="print-only">
+        <p class="field-label">Case summary for the lab</p>
+        <div id="handoff-photos" class="print-photos"></div>
+        <dl id="handoff-facts" class="facts"></dl>
+      </div>
+      <button type="button" id="print" class="cta cta-small"><span class="cta-text">Print this for the lab</span><svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
+    </section>
 
     <section class="block">
       <h2>Likely causes</h2>
@@ -94,18 +128,37 @@
       <ol id="candidates" class="candidates"></ol>
     </section>
 
+    <section id="second" class="block" hidden>
+      <h2>Second opinion</h2>
+      <p id="second-text"></p>
+    </section>
+
     <section id="followups" class="block" hidden>
       <h2>A few quick questions</h2>
       <p class="muted">Your answers help Leaf tell similar problems apart.</p>
       <div id="questions"></div>
-      <button id="rerun" class="cta cta-small" type="button"><span class="cta-text">Update diagnosis</span><svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
+      <button id="rerun" class="cta cta-small" type="button"><span class="cta-text">Send answers</span><svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
+    </section>
+
+    <section id="weather" class="block" hidden>
+      <h2>Your last two weeks of weather</h2>
+      <p id="weather-line"></p>
+      <div id="weather-strip" class="weather-strip" role="img"></div>
+      <ul id="weather-indices" class="indices small"></ul>
+      <p class="small muted"><span id="weather-caveat"></span> <a href="https://open-meteo.com/" target="_blank" rel="noopener">Weather data by Open-Meteo.com</a></p>
     </section>
 
     <section class="block">
       <h2>Your care plan</h2>
       <p id="plan-summary"></p>
       <ol id="steps" class="steps"></ol>
+      <p id="claims" class="small muted" hidden></p>
       <p id="checkin" class="checkin"></p>
+    </section>
+
+    <section id="evidence-block" class="block" hidden>
+      <h2>Evidence</h2>
+      <ol id="evidence" class="evidence-list small"></ol>
     </section>
 
     <section class="block">
@@ -125,6 +178,7 @@
     <details class="trace block">
       <summary>How Leaf thought</summary>
       <p class="muted">Every model call runs on Nebius Token Factory. NVIDIA Nemotron does the reasoning and writing.</p>
+      <p id="cost" class="small muted"></p>
       <div class="table-wrap">
         <table><thead><tr><th scope="col">Step</th><th scope="col">Model</th><th scope="col">Time</th><th scope="col">Tokens in / out</th></tr></thead><tbody id="tracebody"></tbody></table>
       </div>
@@ -138,6 +192,7 @@
 <footer class="foot">
   <span>Open source, MIT license</span>
   <span>Built with NVIDIA Nemotron on Nebius Token Factory and Tavily search</span>
+  <span><a href="https://open-meteo.com/" target="_blank" rel="noopener">Weather data by Open-Meteo.com</a></span>
 </footer>
 <script src="/static/app.js"></script>
 </body>
