@@ -38,7 +38,7 @@ from backend.critic import (
 from backend.crops import infer_crop
 from backend.handoff import LabHandoff, build_handoff
 from backend.models import ModelError, complete_json
-from backend.pipeline import AMBIGUITY_MARGIN, LOW_CONFIDENCE, Leaf, is_low_confidence
+from backend.pipeline import AMBIGUITY_MARGIN, Leaf, is_low_confidence
 from backend.prompts import DIAGNOSE_SYSTEM, sanitize
 from backend.schemas import (
     Candidate,
@@ -69,20 +69,28 @@ async def _ignore(_: dict[str, Any]) -> None:
     return None
 
 
+# Fitted on the tune split (44 logged Deep cases, docs/AGENT_V2.md): Deep's combined confidence
+# runs lower than Quick's raw scores, so its threshold is lower, and a second opinion escalates
+# on its own only when it gives the leader under even odds.
+DEEP_LOW_CONFIDENCE = 0.5
+CRITIC_ESCALATES_BELOW = 0.5
+
+
 def escalation_reason(case: Case, confidence: Confidence, critic: CriticOpinion | None) -> str:
     """Why Leaf hands this case to a lab, most specific reason first; "" when it does not."""
     hyps = case.differential
     if not hyps:
         return "Leaf could not reach a diagnosis."
     top = hyps[0]
-    if confidence.disagreement:
+    strong = critic is None or critic.leading_probability < CRITIC_ESCALATES_BELOW
+    if confidence.disagreement and strong:
         alt = f" ({top.name} vs {critic.alternative})" if critic and critic.alternative else ""
         return f"Leaf and its second opinion disagree{alt}. A diagnostic lab can tell them apart."
     if len(hyps) > 1 and top.probability - hyps[1].probability < AMBIGUITY_MARGIN:
         return f"{top.name} and {hyps[1].name} are too close to call from photos."
     if confidence.quality == "poor":
         return "The photos are too unclear for a confident diagnosis."
-    if confidence.value < LOW_CONFIDENCE:
+    if confidence.value < DEEP_LOW_CONFIDENCE:
         return f"Leaf is only {round(confidence.value * 100)}% confident."
     return ""
 

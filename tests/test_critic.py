@@ -316,12 +316,32 @@ def test_blend_never_merges_a_broad_name_into_specific_diseases():
 
 def test_a_disagreeing_second_opinion_escalates_even_without_naming_an_alternative():
     silent = CriticOpinion(
-        alternative="", alternative_probability=0.0, leading_probability=0.65, agrees=False
+        alternative="", alternative_probability=0.0, leading_probability=0.4, agrees=False
     )
     case = case_with(("Early blight", 0.8))
     conf = combine(case, silent)
     assert conf.disagreement and "disagree" in escalation_reason(case, conf, silent)
     assert CriticOpinion().agrees is False  # a reply without a vote counts as disagreement
+
+
+def test_a_mild_disagreement_lowers_confidence_but_does_not_force_a_lab():
+    # Fitted rule: the critic escalates on its own only when it gives the leader under 50%.
+    mild = CriticOpinion(
+        alternative="Septoria", alternative_probability=0.3, leading_probability=0.65, agrees=False
+    )
+    case = case_with(("Early blight", 0.8))
+    conf = combine(case, mild)
+    assert conf.disagreement and conf.value == 0.65
+    assert escalation_reason(case, conf, mild) == ""
+
+
+def test_deep_escalates_below_its_own_fitted_threshold():
+    from backend.deep import DEEP_LOW_CONFIDENCE
+
+    agree = opinion(lead=0.45)
+    case = case_with(("Early blight", 0.5))
+    conf = combine(case, agree)
+    assert conf.value < DEEP_LOW_CONFIDENCE and "confident" in escalation_reason(case, conf, agree)
 
 
 def test_the_second_opinions_alternative_never_outranks_the_leader():

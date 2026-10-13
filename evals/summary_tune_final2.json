@@ -1,0 +1,45 @@
+{
+ "split": "tune",
+ "label": "final2",
+ "summary": {
+  "deep": {
+   "cases": 22,
+   "errors": 0,
+   "top1": 0.545,
+   "top3": 0.727,
+   "brier": 0.2272,
+   "escalated": 0.909,
+   "escalation_precision": 0.45,
+   "escalation_recall": 0.9,
+   "mean_cost_usd": 0.0562,
+   "mean_tavily_credits": 2.5,
+   "mean_seconds": 43.4,
+   "reliability": [
+    {
+     "bin": "0.0-0.5",
+     "cases": 12,
+     "mean_confidence": 0.29,
+     "accuracy": 0.333
+    },
+    {
+     "bin": "0.5-0.6",
+     "cases": 5,
+     "mean_confidence": 0.568,
+     "accuracy": 1.0
+    },
+    {
+     "bin": "0.6-0.7",
+     "cases": 4,
+     "mean_confidence": 0.632,
+     "accuracy": 0.75
+    },
+    {
+     "bin": "0.7-0.8",
+     "cases": 1,
+     "mean_confidence": 0.783,
+     "accuracy": 0.0
+    }
+   ]
+  }
+ }
+}
