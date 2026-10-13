@@ -435,7 +435,7 @@ async def test_prose_after_a_nudge_forces_finish_instead_of_giving_up(settings):
     res, events = await collect(deep)
     assert {"type": "limit", "limit": "no tool call"} in events
     assert llm.tool_kwargs[-1]["tool_choice"] == FORCE_FINISH
-    assert res.differential[0].probability == 0.8 and res.summary
+    assert res.investigator_differential[0].probability == 0.8 and res.summary
 
 
 async def test_when_finish_never_comes_the_last_prose_becomes_the_summary(settings):
@@ -465,7 +465,7 @@ async def test_long_arguments_are_shown_without_breaking(settings):
 async def test_an_unexpected_bug_in_the_agent_still_falls_back_to_quick(settings):
     deep, _, _ = deep_for(settings, [])
 
-    async def boom(case, emit):
+    async def boom(case, emit, deadline=None):
         raise KeyError("a bug")
 
     deep.investigator.run = boom
@@ -515,7 +515,7 @@ async def test_ask_user_pauses_the_case_and_answers_resume_it(settings):
     assert {"type": "questions", "questions": res.questions} in events
     case = await deep.store.get(res.case_id)
     done = await deep.resume(case, ["Yes, clear rings", "Yes"])
-    assert done.status == "done" and done.differential[0].probability == 0.85
+    assert done.status == "done" and done.investigator_differential[0].probability == 0.85
     answers_msg = next(m for m in last_turn(llm) if m["role"] == "tool" and m["name"] == "ask_user")
     assert "clear rings" in answers_msg["content"]
     assert "ask_user" not in llm.tool_kwargs[-1]["tools"]  # one round of questions per case
@@ -827,7 +827,7 @@ async def test_finish_without_hypotheses_uses_the_recorded_differential(settings
     ]
     deep, _, _ = deep_for(settings, script)
     res, _ = await collect(deep)
-    assert res.status == "done" and res.differential[0].name == "Late blight"
+    assert res.status == "done" and res.investigator_differential[0].name == "Late blight"
 
 
 async def test_overlong_text_is_trimmed_not_refused(settings):

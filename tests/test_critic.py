@@ -261,3 +261,30 @@ def test_the_alternative_is_not_added_twice_under_another_spelling():
         case, opinion(agrees=False, alt="Bacterial spot (Xanthomonas spp.)", alt_p=0.38)
     )
     assert len(case.differential) == 2
+
+
+def test_blend_combines_both_views_by_disease_name():
+    from backend.critic import blend
+
+    first = [
+        Hypothesis(name="Early blight (Alternaria solani)", probability=0.8),
+        Hypothesis(name="Septoria leaf spot", probability=0.1),
+    ]
+    final = [
+        Hypothesis(
+            name="Septoria leaf spot (Septoria lycopersici)", probability=0.6, evidence_for=["E1"]
+        ),
+        Hypothesis(name="Early blight", probability=0.3),
+    ]
+    out = blend(first, final, 0.4)
+    assert [h.name for h in out][0].startswith("Early blight")  # 0.6*0.3+0.4*0.8 = 0.50 vs 0.40
+    assert out[0].probability == 0.5 and out[1].probability == 0.4
+    assert out[1].evidence_for == ["E1"]  # evidence ids come from the investigator
+
+
+def test_blend_weight_zero_is_the_investigator_alone():
+    from backend.critic import blend
+
+    final = [Hypothesis(name="Rust", probability=0.7)]
+    assert blend([Hypothesis(name="Scab", probability=0.9)], final, 0.0)[0].name == "Rust"
+    assert blend([], final, 0.4)[0].name == "Rust"

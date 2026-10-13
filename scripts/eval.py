@@ -79,8 +79,10 @@ async def run_deep(deep: DeepLeaf, case: dict, data: bytes) -> dict[str, Any]:
         stored = await deep.store.get(res.case_id)
         res = await deep.resume(stored, ["I'm not sure."] * len(res.questions))
     names = [h.name for h in res.differential] or [c.name for c in res.diagnosis.candidates]
-    conf = res.confidence.value if res.confidence else (
-        res.differential[0].probability if res.differential else 0.0
+    conf = (
+        res.confidence.value
+        if res.confidence
+        else (res.differential[0].probability if res.differential else 0.0)
     )
     return {
         "names": names,
@@ -91,6 +93,13 @@ async def run_deep(deep: DeepLeaf, case: dict, data: bytes) -> dict[str, Any]:
         "asked": asked,
         "mode_used": res.mode,
         "tools": [s.tool for s in res.steps if s.ok],
+        # Inputs for scripts/calibrate.py, which refits the blend and confidence offline.
+        "first": [[h.name, h.probability] for h in res.first_differential],
+        "investigator": [
+            [h.name, h.probability, len(h.evidence_for)] for h in res.investigator_differential
+        ],
+        "critic": res.critic.model_dump() if res.critic else None,
+        "confidence_parts": res.confidence.model_dump() if res.confidence else None,
     }
 
 
@@ -168,23 +177,38 @@ async def main() -> int:
             start = time.time()
             try:
                 data = img.read_bytes()
-                out = await (run_quick(leaf, case, data) if mode == "quick"
-                             else run_deep(deep, case, data))
+                out = await (
+                    run_quick(leaf, case, data) if mode == "quick" else run_deep(deep, case, data)
+                )
             except (ValueError, ModelError, TimeoutError) as exc:
-                row = {"mode": mode, "case": case, "error": str(exc)[:300], "top1": False,
-                       "top3": False}
+                row = {
+                    "mode": mode,
+                    "case": case,
+                    "error": str(exc)[:300],
+                    "top1": False,
+                    "top3": False,
+                }
                 print(f"✗ [{mode}] {case['image']}: error, counted as a miss ({exc})")
                 results[mode].append(row)
                 return
         secs = round(time.time() - start, 1)
         h1, h3 = hit(out["names"], case["expected"], 1), hit(out["names"], case["expected"], 3)
-        row = {"mode": mode, "label": label, "case": case, "top1": h1, "top3": h3,
-               "seconds": secs, **out}
+        row = {
+            "mode": mode,
+            "label": label,
+            "case": case,
+            "top1": h1,
+            "top3": h3,
+            "seconds": secs,
+            **out,
+        }
         results[mode].append(row)
         mark = "✓" if h1 else ("~" if h3 else "✗")
-        print(f"{mark} [{mode}] {case['image'].split('/')[-1]}: expected {case['expected'][0]!r} "
-              f"got {[n[:30] for n in out['names'][:2]]} conf {out['confidence']:.2f} "
-              f"{'ESC ' if out['escalate'] else ''}{secs}s ${out['cost']:.3f}")
+        print(
+            f"{mark} [{mode}] {case['image'].split('/')[-1]}: expected {case['expected'][0]!r} "
+            f"got {[n[:30] for n in out['names'][:2]]} conf {out['confidence']:.2f} "
+            f"{'ESC ' if out['escalate'] else ''}{secs}s ${out['cost']:.3f}"
+        )
 
     await asyncio.gather(*(one(m, c) for m in modes for c in cases))
 

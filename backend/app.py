@@ -22,8 +22,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
+from backend.checkin import check_in
 from backend.config import Settings, get_settings
 from backend.deep import CaseStateError, DeepLeaf, DeepResponse
+from backend.journal import JournalEntry, MemoryJournal, SQLiteJournal, public_view, thumbnail
 from backend.models import ModelError, TokenFactory
 from backend.pipeline import Leaf
 from backend.schemas import ChatRequest, ChatResponse, DiagnoseResponse
@@ -127,13 +129,28 @@ class BodyLimitMiddleware:
     declared Content-Length, then by counting bytes as they stream in.
     """
 
-    def __init__(self, app, limits: dict[str, int], default: int):
+    def __init__(
+        self,
+        app,
+        limits: dict[str, int],
+        default: int,
+        pattern_limits: list[tuple[str, str, int]] | None = None,
+    ):
         self.app, self.limits, self.default = app, limits, default
+        self.pattern_limits = pattern_limits or []  # (path prefix, path suffix, limit)
+
+    def limit_for(self, path: str) -> int:
+        if path in self.limits:
+            return self.limits[path]
+        for prefix, suffix, limit in self.pattern_limits:
+            if path.startswith(prefix) and path.endswith(suffix):
+                return limit
+        return self.default
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
-        limit = self.limits.get(scope["path"], self.default)
+        limit = self.limit_for(scope["path"])
         declared = dict(scope["headers"]).get(b"content-length", b"")
         if declared.isdigit() and int(declared) > limit:
             return await JSONResponse({"detail": BodyTooLarge().detail}, 413)(scope, receive, send)
@@ -183,6 +200,12 @@ async def lifespan(app: FastAPI):
     if deep is None or deep.leaf is not app.state.leaf:
         app.state.deep = DeepLeaf(app.state.leaf, MemoryCaseStore())
     app.state.deep_cap = DailyCap(app.state.leaf.settings.deep_daily_cap)
+    path = app.state.leaf.settings.journal_path
+    if getattr(app.state, "journal", None) is None:
+        app.state.journal = MemoryJournal() if path in ("", "memory") else SQLiteJournal(path)
+    removed = await app.state.journal.purge()
+    if removed:
+        log.info("journal: removed %d expired entries", removed)
     yield
 
 
@@ -196,6 +219,7 @@ app.add_middleware(
         "/api/chat": 256 * 1024,
     },
     default=64 * 1024,
+    pattern_limits=[("/api/cases/", "/checkin", MAX_UPLOAD_BYTES + 256 * 1024)],
 )
 
 
@@ -277,7 +301,7 @@ async def diagnose(
             image_b64, mime = await asyncio.to_thread(prepare_image, data)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-    return await run_limited(
+    result = await run_limited(
         request,
         lambda: request.app.state.leaf.diagnose(
             image_b64=image_b64,
@@ -287,6 +311,8 @@ async def diagnose(
             answers=answers[:2000],
         ),
     )
+    await save_report(request, result, "quick", [image_b64] if image_b64 else [], ["photo"])
+    return result
 
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -384,7 +410,11 @@ async def deep(
     check_limits(request)
     photos, lat, lon = await _deep_inputs(request, notes, region, lat, lon)
     work, timeout = _deep_work(request, photos, notes, region, lat, lon)
-    return await run_limited(request, lambda: work(_ignore_event), timeout=timeout)
+    result = await run_limited(request, lambda: work(_ignore_event), timeout=timeout)
+    await save_report(
+        request, result, result.mode, [v for _, _, v in photos], [lb for lb, _, _ in photos]
+    )
+    return result
 
 
 async def _waiting_case(request: Request, case_id: str):
@@ -400,18 +430,29 @@ async def deep_answers(request: Request, case_id: str, body: AnswersRequest) -> 
     case = await _waiting_case(request, case_id)
     deep: DeepLeaf = request.app.state.deep
     try:
-        return await run_limited(
+        result = await run_limited(
             request, lambda: deep.resume(case, body.answers), timeout=_deep_deadline(request)
         )
     except CaseStateError as exc:
         raise HTTPException(409, str(exc)) from exc
+    await save_report(
+        request,
+        result,
+        result.mode,
+        [p.view_b64 for p in case.photos],
+        [p.label for p in case.photos],
+    )
+    return result
 
 
 KEEPALIVE_S = 15  # comment lines keep proxies from closing a quiet stream
 
 
 def _event_stream(
-    request: Request, work: Callable[[Any], Awaitable[DeepResponse]], timeout: float | None
+    request: Request,
+    work: Callable[[Any], Awaitable[DeepResponse]],
+    timeout: float | None,
+    photos: list[tuple[str, str]] | None = None,
 ) -> StreamingResponse:
     """Run one case and stream its events as server-sent events, ending with the result.
 
@@ -431,6 +472,13 @@ def _event_stream(
         async with slots:
             try:
                 res = await asyncio.wait_for(work(emit), timeout=deadline)
+                await save_report(
+                    request,
+                    res,
+                    res.mode,
+                    [v for v, _ in photos or []],
+                    [lb for _, lb in photos or []],
+                )
                 await queue.put({"type": "result", "response": res.model_dump(mode="json")})
             except TimeoutError:
                 await queue.put(
@@ -497,7 +545,7 @@ async def deep_stream(
     check_limits(request)
     photos, lat, lon = await _deep_inputs(request, notes, region, lat, lon)
     work, timeout = _deep_work(request, photos, notes, region, lat, lon)
-    return _event_stream(request, work, timeout)
+    return _event_stream(request, work, timeout, [(v, lb) for lb, _, v in photos])
 
 
 @app.post("/api/deep/{case_id}/answers/stream")
@@ -510,8 +558,79 @@ async def deep_answers_stream(
         raise HTTPException(409, "This case is not waiting for answers.")
     deep: DeepLeaf = request.app.state.deep
     return _event_stream(
-        request, lambda emit: deep.resume(case, body.answers, emit), _deep_deadline(request)
+        request,
+        lambda emit: deep.resume(case, body.answers, emit),
+        _deep_deadline(request),
+        [(p.view_b64, p.label) for p in case.photos],
     )
+
+
+async def save_report(
+    request: Request, report: DiagnoseResponse, mode: str, views: list[str], labels: list[str]
+) -> None:
+    """Keep a finished report in the journal and put its id on the response. A case waiting
+    for answers is saved when it finishes. A journal failure never fails the diagnosis."""
+    if getattr(report, "status", "done") == "needs_answers":
+        return
+    settings = request.app.state.leaf.settings
+    try:
+        thumbs = [await asyncio.to_thread(thumbnail, v) for v in views[:MAX_DEEP_PHOTOS]]
+        entry = JournalEntry(
+            id=getattr(report, "case_id", "") or JournalEntry().id,
+            expires=time.time() + settings.journal_days * 86400,
+            mode="deep" if mode == "deep" else "quick",
+            photos=thumbs,
+            labels=labels[: len(thumbs)],
+        )
+        report.case_id = entry.id
+        entry.report = report.model_dump(mode="json")
+        await request.app.state.journal.put(entry)
+    except Exception:  # noqa: BLE001 - the gardener still gets the diagnosis
+        log.exception("could not save the report to the journal")
+
+
+async def _entry(request: Request, case_id: str) -> JournalEntry:
+    entry = await request.app.state.journal.get(case_id[:64])
+    if entry is None:
+        raise HTTPException(404, "This report has expired or does not exist.")
+    return entry
+
+
+@app.get("/api/cases/{case_id}")
+async def get_case(request: Request, case_id: str) -> dict:
+    return public_view(await _entry(request, case_id))
+
+
+@app.post("/api/cases/{case_id}/checkin")
+async def checkin(
+    request: Request,
+    case_id: str,
+    image: Annotated[UploadFile, File()],
+    notes: Annotated[str, Form()] = "",
+) -> dict:
+    check_limits(request)
+    entry = await _entry(request, case_id)
+    data = await image.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "Photo is over 10 MB. Try a smaller one.")
+    try:
+        view_b64, _ = await asyncio.to_thread(prepare_image, data)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    leaf: Leaf = request.app.state.leaf
+    trace: list = []
+    try:
+        record = await run_limited(
+            request,
+            lambda: check_in(
+                leaf.llm, leaf.settings, leaf.vision_model, entry, view_b64, notes[:1000], trace
+            ),
+        )
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    entry.checkins.append(record)
+    await request.app.state.journal.put(entry)
+    return public_view(entry)
 
 
 if FRONTEND.exists():
@@ -520,3 +639,7 @@ if FRONTEND.exists():
     @app.get("/", include_in_schema=False)
     async def index() -> FileResponse:
         return FileResponse(FRONTEND / "index.html")
+
+    @app.get("/c/{case_id}", include_in_schema=False)
+    async def case_page(case_id: str) -> FileResponse:
+        return FileResponse(FRONTEND / "case.html")  # the page loads /api/cases/<id>

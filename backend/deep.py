@@ -20,7 +20,14 @@ from backend.agent import AgentError, AgentResult, Investigator
 from backend.case import Case, Evidence, Hypothesis, Photo, StepRecord, normalise_differential
 from backend.claims import ClaimFlag, code_checks, ensure_passages, judge, write_plan
 from backend.conditions import WeatherClient
-from backend.critic import Confidence, CriticOpinion, add_alternative, combine, second_opinion
+from backend.critic import (
+    Confidence,
+    CriticOpinion,
+    add_alternative,
+    blend,
+    combine,
+    second_opinion,
+)
 from backend.crops import infer_crop
 from backend.handoff import LabHandoff, build_handoff
 from backend.models import ModelError, complete_json
@@ -94,6 +101,8 @@ class DeepResponse(DiagnoseResponse):
     notice: str = ""
     questions: list[str] = Field(default_factory=list)
     differential: list[Hypothesis] = Field(default_factory=list)
+    first_differential: list[Hypothesis] = Field(default_factory=list)
+    investigator_differential: list[Hypothesis] = Field(default_factory=list)
     evidence: list[Evidence] = Field(default_factory=list)
     steps: list[StepRecord] = Field(default_factory=list)
     photos: list[PhotoInfo] = Field(default_factory=list)
@@ -206,6 +215,7 @@ class DeepLeaf:
         case.differential = normalise_differential(
             [{"name": c.name, "probability": c.confidence} for c in diagnosis.candidates], set()
         )
+        case.first_differential = [h.model_copy() for h in case.differential]
         if case.differential:
             await emit(
                 {
@@ -280,6 +290,8 @@ class DeepLeaf:
         """Second opinion, confidence, plan from passages, claim check, escalation, handoff."""
         s = self.leaf.settings
         trace: list[ModelCall] = []
+        case.investigator_differential = [h.model_copy() for h in case.differential]
+        case.differential = blend(case.first_differential, case.differential, s.deep_blend_first)
 
         async def plan_and_check() -> tuple[CarePlan, list[ClaimFlag]]:
             # Reading sources, writing the plan and checking it do not need the second
@@ -424,6 +436,8 @@ class DeepLeaf:
             status=status,
             questions=case.questions if status == "needs_answers" else [],
             differential=case.differential,
+            first_differential=case.first_differential,
+            investigator_differential=case.investigator_differential,
             evidence=case.evidence,
             steps=case.steps,
             photos=[
@@ -471,9 +485,8 @@ class DeepLeaf:
                 tavily_credits=case.tavily_credits,
             )
         return DeepResponse(
-            **quick.model_dump(),
+            **{**quick.model_dump(), "case_id": case.id},
             mode="quick",
-            case_id=case.id,
             status="fallback",
             notice=notice or "Deep mode could not finish this case, so this is a Quick diagnosis.",
             steps=case.steps,

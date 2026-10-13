@@ -80,6 +80,8 @@ class Case(BaseModel):
     photos: list[Photo] = Field(default_factory=list)
     messages: list[dict[str, Any]] = Field(default_factory=list)
     differential: list[Hypothesis] = Field(default_factory=list)
+    first_differential: list[Hypothesis] = Field(default_factory=list)  # from the first look
+    investigator_differential: list[Hypothesis] = Field(default_factory=list)  # before blending
     evidence: list[Evidence] = Field(default_factory=list)
     sources: list[SourceRef] = Field(default_factory=list)
     steps: list[StepRecord] = Field(default_factory=list)

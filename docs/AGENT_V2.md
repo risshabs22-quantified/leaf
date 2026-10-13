@@ -226,9 +226,9 @@ Acceptance:
 - [x] Checked in a browser at 1440 and 375 px with a live Deep case: zero console errors, no CSP violations, no horizontal overflow
 
 ### M5: plant journal and check-ins (cut this first)
-- [ ] SQLite store, unguessable ids, 30-day expiry, read-only share page, no images in logs
-- [ ] Check-in comparison (spreading, stable, recovering) and plan update
-- [ ] Persistence decision implemented
+- [x] Journal behind `JournalStore` (`backend/journal.py`): SQLite by default (`LEAF_JOURNAL_PATH`, `memory` for tests), 128-bit ids, 30-day expiry with purge at startup, read-only share page at `/c/<id>` (no model traces), 512 px thumbnails only, nothing logged. Quick and Deep reports are both saved; a case waiting for answers is saved when it finishes; a journal failure never fails a diagnosis
+- [x] Check-ins (`backend/checkin.py`): vision compares the last photo with the new one (spreading, stable, recovering, or unclear when the photos show different leaves), Lightning updates the advice citing the report's own sources, code escalates anything still spreading, drops unsourced rates and adds the label reminder; up to 20 per case
+- [ ] Persistence decision (yours): Nebius Serverless Endpoints lose their local disk when stopped (docs.nebius.com/serverless/overview). Options: (a) mount an Object Storage bucket and add an object-per-entry `JournalStore` (about $0.07 a month at 600 cases with 3 thumbnails, 30-day retention; SQLite on a mounted bucket is not safe), or (b) keep SQLite and accept that share links reset when the endpoint restarts. Not built until you choose
 
 ### M6: Quick vs Deep evals and README
 - [ ] Licensed eval set (15-20 cases at least) with licences in `evals/README.md`

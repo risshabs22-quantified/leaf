@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import os
+
+os.environ["LEAF_JOURNAL_PATH"] = "memory"  # tests never write a journal file
+
 import copy
 import itertools
 import json
@@ -15,6 +19,8 @@ from backend.pipeline import Leaf
 from backend.prompts import (
     AGENT_SYSTEM,
     CHAT_SYSTEM,
+    CHECKIN_PLAN_SYSTEM,
+    CHECKIN_VISION_SYSTEM,
     CLAIM_CHECK_SYSTEM,
     CRITIC_SYSTEM,
     DIAGNOSE_SYSTEM,
@@ -83,6 +89,8 @@ def step_of(messages: list[dict[str, Any]]) -> str:
         PLAN_DEEP_SYSTEM: "plan",
         CRITIC_SYSTEM: "critic",
         CLAIM_CHECK_SYSTEM: "claim_check",
+        CHECKIN_VISION_SYSTEM: "checkin_compare",
+        CHECKIN_PLAN_SYSTEM: "checkin_plan",
     }.get(system, "repair")
 
 

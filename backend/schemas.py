@@ -142,6 +142,7 @@ class ModelCall(BaseModel):
 
 
 class DiagnoseResponse(BaseModel):
+    case_id: str = ""  # journal id: the share link is /c/<case_id>
     observation: Observation
     diagnosis: Diagnosis
     plan: CarePlan

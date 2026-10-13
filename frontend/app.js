@@ -302,6 +302,13 @@ function render(d) {
   }
 
   renderConfidence(d);
+  const saved = d.case_id && d.status !== "needs_answers";
+  $("share").hidden = !saved;
+  if (saved) {
+    const url = `${location.origin}/c/${encodeURIComponent(d.case_id)}`;
+    $("share-link").href = url;
+    $("share-link").textContent = url.replace(/^https?:\/\//, "");
+  }
   $("summary").textContent = d.summary || d.diagnosis.reasoning_summary;
   const byId = Object.fromEntries((d.evidence || []).map((e) => [e.id, e]));
   if (deep && d.differential && d.differential.length) {
@@ -433,6 +440,10 @@ function renderHandoff(d) {
 }
 
 $("print").addEventListener("click", () => window.print());
+$("copy").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText($("share-link").href); $("copy").textContent = "Copied"; }
+  catch { $("copy").textContent = "Copy failed: select the link instead"; }
+});
 
 // ------------------------------------------------------------------ answers and chat
 

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Leaf · plant report</title>
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M6 26C6 14 13 7 26 6c0 13-7 20-18 20z' fill='none' stroke='%232f6b3a' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M6 26C12 19 17 14 22 10' fill='none' stroke='%232f6b3a' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <a href="/" class="brand" aria-label="Leaf home">
+    <svg class="mark" viewBox="0 0 48 64" role="img" aria-label="Leaf"><path d="M9 57C5 33 17 12 41 6c3 25-8 45-30 51" /><path d="M9 57C17 41 26 27 37 14" /><path d="M17 44l-7-3M22 36l-8-2M27 28l-8-1M23 40l9-1M29 31l9-2" /></svg>
+  </a>
+</header>
+<main class="page">
+  <p id="loading" class="muted">Loading the report…</p>
+  <section id="report" hidden>
+    <h1 id="title" class="lede"></h1>
+    <p id="meta" class="small muted"></p>
+    <div id="photos" class="slots"></div>
+    <p id="verdict" class="banner"></p>
+
+    <section class="block">
+      <h2>Likely causes</h2>
+      <p id="summary" class="muted"></p>
+      <ol id="candidates" class="candidates"></ol>
+    </section>
+
+    <section class="block">
+      <h2>Care plan</h2>
+      <p id="plan-summary"></p>
+      <ol id="steps" class="steps"></ol>
+    </section>
+
+    <section class="block" id="checkins-block">
+      <h2>Check-ins</h2>
+      <ol id="checkins" class="log"></ol>
+      <p id="no-checkins" class="muted">No check-ins yet. Send a new photo in a few days to see whether it is spreading, stable or recovering.</p>
+      <form id="checkin-form" class="field">
+        <label class="slot drop"><input type="file" accept="image/*" id="checkin-photo"><img alt="" hidden><span class="slot-text"><span class="link">Choose a new photo</span> of the same leaves</span></label>
+        <label class="field"><span class="field-label">Anything new? <span class="opt">Optional</span></span><input id="checkin-notes" maxlength="1000" placeholder="I removed the spotted leaves on Monday"></label>
+        <button class="cta" type="submit"><span class="cta-text">Check in</span><svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
+        <p id="checkin-status" class="status" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <section class="block">
+      <h2>Sources</h2>
+      <ol id="sources" class="sources"></ol>
+    </section>
+    <p class="small muted">This report is private to anyone with its link and is deleted <span id="expires"></span>. Leaf gives guidance, not certainty; for food crops and any chemical, follow the product label.</p>
+  </section>
+</main>
+<footer class="foot">
+  <span>Open source, MIT license</span>
+  <span>Built with NVIDIA Nemotron on Nebius Token Factory and Tavily search</span>
+  <span><a href="https://open-meteo.com/" target="_blank" rel="noopener">Weather data by Open-Meteo.com</a></span>
+</footer>
+<script src="/static/case.js"></script>
+</body>
+</html>

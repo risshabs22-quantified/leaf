@@ -193,3 +193,32 @@ def add_alternative(case: Case, critic: CriticOpinion | None) -> None:
         )
     )
     case.differential = case.differential[:5]
+
+
+def blend(first: list[Hypothesis], final: list[Hypothesis], w_first: float) -> list[Hypothesis]:
+    """Ensemble the first differential with the investigator's final one, by disease name.
+
+    Two views of the same case that err on different cases are more accurate together. Evidence
+    ids come from the investigator's list; a hypothesis only one view named keeps that view's
+    weighted share. The weight is calibrated on the tune split.
+    """
+    if not first or not final or w_first <= 0:
+        return [h.model_copy() for h in final] or [h.model_copy() for h in first]
+    merged: dict[str, Hypothesis] = {}
+    for weight, hyps in ((1 - w_first, final), (w_first, first)):
+        for h in hyps:
+            key = core_name(h.name) or h.name.lower()
+            match = next((k for k in merged if k == key or k in key or key in k), None)
+            if match is None:
+                merged[key] = Hypothesis(
+                    name=h.name,
+                    probability=0.0,
+                    evidence_for=list(h.evidence_for),
+                    evidence_against=list(h.evidence_against),
+                )
+                match = key
+            merged[match].probability += weight * h.probability
+    out = sorted(merged.values(), key=lambda h: h.probability, reverse=True)[:5]
+    for h in out:
+        h.probability = round(min(h.probability, MAX_PROBABILITY), 3)
+    return out
