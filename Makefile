@@ -38,7 +38,7 @@ docker-build:  ## Build the container
 docker-run:  ## Run the container with your .env
 	docker run --rm -p 8000:8000 --env-file .env leaf:dev
 
-deploy:  ## Deploy to a Nebius Serverless Endpoint (needs IMAGE and SUBNET_ID)
+deploy:  ## Deploy to a Nebius Serverless Endpoint (needs IMAGE; DRY_RUN=1 validates only)
 	./scripts/deploy_nebius.sh
 
 eval:  ## Score Leaf on evals/cases.jsonl (spends credits)

@@ -157,14 +157,16 @@ The public demo protects itself and its credits: uploads are size- and pixel-lim
 
 ## Feedback on Nebius and NVIDIA
 
-What we learned building on Token Factory with Nemotron (October 2026):
+The full write-up, with reproduction steps, impact and a suggestion for each item, is in
+[`docs/FEEDBACK.md`](docs/FEEDBACK.md). The short version:
 
-- **Native tool calling on Nemotron 3 Ultra and Super worked first time** through the OpenAI-compatible API, 1-2 s per turn, with parallel tool calls emitted on their own and reasoning returned separately in `reasoning_content`. Streaming tool-call deltas also worked.
-- **Do not combine `tools` with `response_format`.** With both, Ultra stopped calling tools and wrote JSON text instead. This is not documented; it took a probe to find.
-- **`chat_template_kwargs` is honoured, but the key differs by model family**: Nemotron reads `enable_thinking`, Kimi reads `thinking`. Turning Kimi's thinking off made our vision step 3x faster and 4x cheaper with equally specific observations; documenting the per-model key would save others the search.
-- **Reasoning tokens count toward `max_tokens`**, so a reasoning model can return empty or truncated JSON. We retry once with a doubled budget and count the tokens of both attempts toward cost.
-- **`/models?verbose=true` includes per-token prices**, which let us meter cost per case live. The public catalog listed Super with `status: "error"` while it answered every request, so we check `/models` at startup instead of trusting the catalog.
-- **We missed an NVIDIA vision model, guard model and reranker on Token Factory.** A served NVIDIA VLM would let Leaf run fully on NVIDIA models.
+- **Do not combine `tools` with `response_format`**: Ultra silently stops calling tools.
+- **The thinking switch differs by model family**: Nemotron reads `enable_thinking`, Kimi reads `thinking`. The right key made our vision step 3x faster and 4x cheaper.
+- **The public catalog listed Super as `error`** while it answered every request.
+- **No NVIDIA vision, guard, embedding or reranker model is served**, so Leaf's photo step cannot run on NVIDIA.
+- **Reasoning tokens count toward `max_tokens`**, which returns empty or truncated JSON unless budgets are generous.
+- `tool_choice="required"` produced duplicate calls; Nemotron sometimes answers in prose or invents tool names mid-agent; run-to-run variance at temperature 1.0 is large; there is no cached-input price for agent loops.
+- What worked well: native tool calling (1-2 s per turn, parallel calls), separate `reasoning_content`, and per-token prices in `/models?verbose=true`, which power Leaf's live cost meter.
 
 ## License
 
