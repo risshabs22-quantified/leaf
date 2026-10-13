@@ -97,7 +97,7 @@ fetch("/api/health").then((r) => r.json()).then((h) => {
   set("search", h.search === "TavilySearcher" ? "Tavily search" : "Search unavailable");
   if (h.deep) {
     const left = h.deep.left_today;
-    $("deep-left").textContent = left > 0 ? `Deep cases left today: ${left}.` : "Deep mode has reached today's limit; Quick still works.";
+    $("deep-left").textContent = left > 0 ? `Investigations left today (Deep, and Auto when it looks further): ${left}.` : "Today's investigations are used up; Auto and Quick still give a quick diagnosis.";
     $("deep-left").hidden = false;
   }
 }).catch(() => {});

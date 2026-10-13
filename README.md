@@ -12,11 +12,23 @@ Built for the [Nebius x NVIDIA Global AI Hackathon](https://nebiusglobalaihackat
 
 Gardeners lose plants because early symptoms look alike: a fungal leaf spot, a nutrient problem and sun scorch can all start as brown patches. Search results are generic and forums disagree. A plant clinic works a case differently: it takes a history, looks closely, checks the weather, forms a differential, tests each hypothesis and only then advises, or asks for a sample. Leaf does that workflow in about a minute and shows every step. It does not claim to beat experts; it says when you need one.
 
-## Two modes
+## Three modes, three verdicts
 
-**Quick** (about 15 seconds, under 1 cent): one careful look at the photo, a structured diagnosis by Nemotron 3 Ultra, Tavily search, and a care plan by Nemotron 3.5 Lightning. Quick is the default.
+**Auto** (the default; 15 seconds to about a minute, about 4 cents on average): runs Quick first, and only when Quick is not confident does it open a Deep investigation, seeded with Quick's look at the photo, its differential, evidence and sources so nothing is repeated. The page shows when and why Leaf decided to look further ("Quick was unsure: early blight is most likely, but Septoria leaf spot is close behind").
 
-**Deep** (about a minute, about 5 cents): an investigator agent works the case with tools, streamed live to the page.
+**Quick** (about 15 seconds, under 1 cent): one careful look at the photo, a structured diagnosis by Nemotron 3 Ultra, Tavily search, and a care plan by Nemotron 3.5 Lightning.
+
+**Deep** (about 40 seconds, about 5 cents): an investigator agent works the case with tools, streamed live to the page.
+
+Every answer ends in one of three verdicts, decided in code (`backend/verdict.py`), never by the model:
+
+| Verdict | When | What you get |
+| --- | --- | --- |
+| **Confident** | the leading cause is well ahead, the photo is usable, nothing high-stakes is in play | a cited care plan |
+| **Likely** | a clear favourite, but a weaker lead, a close second, or a second opinion that leans elsewhere | the care plan, what to watch for that would change the diagnosis, and when to send a sample |
+| **Send to a lab** | the causes are spread out, the photo is too poor, the second opinion strongly disagrees, or a high-stakes condition is in the top two or at 20% or more anywhere | a printable case summary and your state's plant diagnostic lab |
+
+High-stakes conditions are the ones where a wrong guess hurts more than the gardener's plant: late blight (spores travel miles; extension services ask growers to report it), tomato brown rugose fruit virus, sudden oak death, citrus greening, Ralstonia race 3 biovar 2, boxwood blight, spotted lanternfly and box tree moth, each with its APHIS or extension source in `backend/diseases.py`.
 
 ```mermaid
 flowchart TD
@@ -34,8 +46,9 @@ flowchart TD
     P --> K[Claim check: code + Lightning drop unsupported steps]
     C --> X{Confidence in code}
     K --> X
-    X -- confident --> R[Cited care plan + check-in date]
-    X -- unsure, tie, disagreement, poor photo --> H[Lab handoff: printable packet + state lab link]
+    X -- Confident --> R[Cited care plan + check-in date]
+    X -- Likely --> W[Care plan + what to watch for + when to send a sample]
+    X -- Send to a lab: spread out, disagreement, poor photo, high-stakes --> H[Lab handoff: printable packet + state lab link]
 ```
 
 | Step | Model (all calls via Nebius Token Factory) |
@@ -57,13 +70,32 @@ The investigator's tools, all read-only:
 | `ask_user` | Stops with up to 3 questions that would separate the top two causes |
 | `update_differential`, `finish` | Record the ranking, with the evidence ids behind each cause |
 
-**Enforced in code, not left to the model:** 8 counted tool calls, per-tool caps, a dollar budget, a hard 90-second clock with a forced finish, parallel calls counted, Ultra-to-Super fallback per turn, and a fall back to Quick if the investigation fails for any reason. Probabilities are capped at 0.9. The final confidence combines the investigation, the second opinion, photo quality and evidence coverage; low confidence, a near-tie, a poor photo or a disagreeing second opinion always escalates.
+**Enforced in code, not left to the model:** 8 counted tool calls, per-tool caps, a dollar budget, a hard 90-second clock with a forced finish, parallel calls counted, Ultra-to-Super fallback per turn, and a fall back to Quick if the investigation fails for any reason. Probabilities are capped at 0.9. The final confidence combines the investigation, the second opinion, photo quality and evidence coverage, and the verdict comes from it in code. If the investigator never searched, Leaf searches for the leading diagnosis itself before writing the plan, so every plan step can cite a passage it read.
 
-## Does Deep help? (measured)
+## Quick, Deep and Auto (measured)
 
-`scripts/eval.py` runs Quick and Deep on the same labelled photos and reports top-1 and top-3 accuracy, the Brier score of the reported confidence (lower is better), escalation precision and recall (an escalation is "right" when the top answer was wrong), cost and time per case. `scripts/calibrate.py` refits Deep's blend and disagreement rule offline from the logged runs.
+`scripts/eval.py` runs each mode on the same labelled photos and reports top-1 and top-3 accuracy, how often each verdict was right, the lab-referral rate, the Brier score of the reported confidence (lower is better), cost and time per case. Names are scored through `backend/diseases.py`, so "Alternaria solani" counts as early blight and "bacterial speck" does not count as bacterial spot. `scripts/fit_verdicts.py` fits the verdict thresholds and `scripts/calibrate.py` Deep's blend, both offline from logged runs.
 
-**Tune split, 22 licensed field photos across ten conditions** (`evals/README.md`). This split was used to tune Leaf, so its numbers are optimistic; the held-out test split of our own phone photos is still being collected. Every run is listed, not just the best one:
+**Tune split: 52 licensed photos, 31 diseases, 15 abiotic problems, 6 pests** (`evals/README.md`). These photos were used to tune Leaf, including the verdict thresholds, so the numbers are optimistic; the held-out test split of our own phone photos is still being collected and nothing has been tuned on it. One run per mode, 13 October 2026:
+
+| Mode | Top-1 | Top-3 | When it said Confident | Likely right | Sent to a lab | Brier | Cost / case | Time / case |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Quick | 52% | 75% | right 11 of 12 | 15 of 37 (top-3: 25) | 3 (6%) | 0.264 | $0.009 | 16 s |
+| Deep | 56% | 73% | right 7 of 8 | 14 of 24 (top-3: 18) | 20 (38%) | 0.210 | $0.054 | 40 s |
+| **Auto** | **58%** | 73% | **right 14 of 16** | 10 of 23 | 13 (25%) | **0.204** | $0.037 | 31 s |
+
+Auto's row is live; Quick's and Deep's verdict columns replay their logged runs through the final thresholds, which were fitted on those same runs, so they flatter Quick and Deep slightly. Auto investigated 69% of cases.
+
+What this shows, read plainly:
+
+- **Auto is the default because it beat Quick on this split**: 3 more cases right at top-1 (58% vs 52%), better calibrated (Brier 0.204 vs 0.264), about 4 times the cost. On 52 cases one case is about 2 points and repeat runs of the same mode vary by several points, so this is a modest lead, not a proven one.
+- **"Confident" means something.** When Leaf said Confident it was right 14 of 16 times in Auto (and 11 of 12 in Quick's replay). It says Confident on about a third of cases.
+- **"Likely" is where the misses are.** More than half of Quick's and Auto's Likely answers were wrong at top-1 (Deep: 10 of 24), though the right answer is usually in the top three; that is why Likely comes with what to watch for and when to send a sample.
+- **Lab referrals:** 9 of Auto's 13 were warranted (the top answer was wrong, or the condition was late blight). Three of the four late blight photos went to a lab; late blight is also the condition Leaf misses most, because the vision model reports a powdery coating on its lesions.
+- **Where Leaf is wrong**, from looking at all 25 Quick misses (`docs/ACCURACY_AUDIT.md`): 12 reasoning errors (10 with the right answer in the top three, the kind Deep fixes), 6 where the vision model missed or invented a feature, 7 photos that are genuinely ambiguous, 0 naming mismatches.
+- **A structured symptom checklist in the vision step did not help** (top-1 48% with it, 52% without; it fixed 5 cases and broke 7), so it is off by default.
+
+Earlier runs on the first 22 photos, kept for the record (escalation then meant a yes/no flag, before the three verdicts):
 
 | Run | Mode | Top-1 | Top-3 | Brier | Escalated | Escalation precision / recall | Cost / case | Time / case |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -75,20 +107,11 @@ The investigator's tools, all read-only:
 | after review fixes | Deep | 55% | 73% | 0.227 | 91% | 0.45 / 0.9 | $0.056 | 43 s |
 | shipped rules | Deep | 41% | 64% | 0.268 | 82% | 0.667 / 0.923 | $0.056 | 51 s |
 
-What this shows, read plainly:
-
-- **Accuracy: no clear winner.** Deep's top-1 ranged from 36% to 55% across 5 runs (mean 45%); Quick scored 50%. On 22 cases one case is 4.5 points, and run-to-run variance (temperature 1.0 models) is about ±10 points.
-- **Calibration: Deep is better.** Its mean Brier score is 0.234 against Quick's 0.278. Quick tends to say 70-80% while being right about half the time.
-- **Knowing when it is wrong: Deep is much better, at a price.** Deep escalated 88% of its wrong answers on average (Quick: 41%), but it also escalates many correct ones (68%-91% of all cases). Fitting the escalation rules on logged runs (`scripts/calibrate.py`) predicted fewer escalations than the next live run produced: 22 cases are too few to tune on reliably.
-- **Cost and time:** Quick about $0.008 and 12-15 s per case; Deep about $0.056 and 45-65 s, well under its 10-cent budget.
-
-So **Quick is the default**, and Deep is offered as the careful mode: slower and more expensive, honest about uncertainty, and grounded in sources it read. The rule we set ourselves is that Deep becomes the default only if it beats Quick on the held-out test split; it has not had that chance yet.
-
-What the investigation does reliably add, whatever the accuracy: a ranked differential tied to evidence the gardener can inspect, local weather and published disease-risk indices, plans that cite only passages Leaf read (with unsupported steps removed), a second opinion, and a lab handoff when the case needs one.
+What the investigation adds whatever the accuracy: a ranked differential tied to evidence the gardener can inspect, local weather and published disease-risk indices, plans that cite only passages Leaf read (with unsupported steps removed), a second opinion, and a lab handoff when the case needs one.
 
 ## Plant journal
 
-Every finished report is saved for 30 days under an unguessable link (`/c/<id>`) you can share. Come back with a new photo to check in: Leaf compares it with the last one (spreading, stable or recovering), updates the advice, and escalates anything still spreading. Only small thumbnails are kept, never your full uploads. Storage is SQLite by default behind a small interface, so another backend can plug in.
+Every finished report is saved for 30 days under an unguessable link (`/c/<id>`) you can share. Come back with a new photo to check in: Leaf compares it with the last one (spreading, stable or recovering), updates the advice, and escalates anything still spreading. Only small thumbnails are kept, never your full uploads. Storage sits behind a small interface: SQLite locally, or an S3-compatible Object Storage bucket in production (`LEAF_JOURNAL_BUCKET`). `scripts/pin_case.py <id> --until 2027-01-31` keeps a demo link alive past the 30 days.
 
 ## Nebius and NVIDIA usage
 

@@ -36,14 +36,14 @@
 
     <fieldset class="mode">
       <legend class="field-label">How should Leaf work?</legend>
-      <label class="mode-opt"><input type="radio" name="mode" value="quick" checked> <span><span class="mode-name">Quick</span> <span class="mode-note">One careful look, about 15 seconds.</span></span></label>
-      <label class="mode-opt"><input type="radio" name="mode" value="auto"> <span><span class="mode-name">Auto</span> <span class="mode-note">Quick first. If Leaf isn't sure, it goes on to investigate like Deep and tells you why.</span></span></label>
+      <label class="mode-opt"><input type="radio" name="mode" value="auto" checked> <span><span class="mode-name">Auto</span> <span class="mode-note">A quick look first. If Leaf isn't sure, it investigates further and tells you why. 15 seconds to about a minute.</span></span></label>
+      <label class="mode-opt"><input type="radio" name="mode" value="quick"> <span><span class="mode-name">Quick</span> <span class="mode-note">One careful look, about 15 seconds.</span></span></label>
       <label class="mode-opt"><input type="radio" name="mode" value="deep"> <span><span class="mode-name">Deep</span> <span class="mode-note">Works the case like a plant clinic: looks closer, checks your weather, reads sources and gets a second opinion. About a minute.</span></span></label>
       <p id="deep-left" class="small muted" hidden></p>
     </fieldset>
 
     <div class="photos" role="group" aria-labelledby="photos-h">
-      <p id="photos-h" class="field-label">Photos <span class="opt">Up to three; the first is used in Quick mode</span></p>
+      <p id="photos-h" class="field-label">Photos <span class="opt">Up to three; a quick look uses the first</span></p>
       <div class="slots">
         <label class="slot drop" data-label="close-up">
           <input type="file" accept="image/*" class="photo-input">

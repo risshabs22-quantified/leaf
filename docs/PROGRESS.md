@@ -14,14 +14,15 @@ Keep it short: newest entries first.
 | Real Token Factory calls | done | `make smoke-all`: Ultra 627 ms, Super fallback 788 ms, Lightning 477 ms |
 | Vision model confirmed | done | `make smoke` picks `moonshotai/Kimi-K2.6` (no NVIDIA vision model listed) |
 | Tavily live | done | `make smoke-all` OK; live `/api/diagnose` returned 6 sources |
-| Eval set (15-20 photos) | todo | `make eval` summary |
+| Eval set | tune split done (52 Commons photos); test split waiting on the user's phone photos | `evals/README.md`, `docs/ACCURACY_AUDIT.md` |
+| Three verdicts and Auto mode (Auto is the default) | done | README "Quick, Deep and Auto (measured)" |
 | Deployed on Nebius Serverless Endpoint | todo | public URL + `/api/health` |
 | README final, video, Devpost draft | todo | `/submission-check` |
 
 ## Next
-0. **Leaf v2:** M0-M6 built and pushed (see `docs/AGENT_V2.md`). Waiting on the user: phone photos for the test split (`evals/images/test/`), the journal storage choice for Nebius, then deploy, video and Devpost.
-1. Run Leaf locally (`make run`) on 3 real photos (image path + vision step is still untested live); tune prompts with `/eval-leaf`.
-2. Try real leaf photos (only a synthetic leaf has been used); add 15-20 to `evals/` and run `/eval-leaf`.
+0. **Test split:** the user's own phone photos into `evals/images/test/`, then one run per mode (never tune on them).
+1. **Deploy (around Oct 17-18, after approval):** quote the cost of the smallest preset to Dec 15 first, then create the journal bucket and give the user the exact steps and env lines; fix `scripts/deploy_nebius.sh` (preset, disk, secrets) once the `nebius` CLI is installed and its flags are checked.
+2. Late blight is the most-missed condition (the vision model reports a powdery coating on its lesions); a targeted `look_closer` question for sporulation or water-soaked margins is the next accuracy lead.
 3. Deployment: set `LEAF_TRUSTED_PROXY_HOPS` to the real number of proxies in front of the endpoint (default 1; 0 if none).
 
 ## Blockers
@@ -30,8 +31,10 @@ Keep it short: newest entries first.
 ## Eval log
 | Date | Cases | Top-1 | Top-3 | Escalated | Change |
 | --- | --- | --- | --- | --- | --- |
+| 2026-10-13 | 52 tune | Quick 52% / Deep 56% / Auto 58% | 75% / 73% / 73% | lab 6% / 38% / 25% | three verdicts, Auto, fitted thresholds; checklist off (48% with it) |
 
 ## Session log
+- 2026-10-13: Accuracy sprint. Canonical condition names with look-alikes and high-stakes conditions (`backend/diseases.py`); naming caused 0 misses. Tune split grown to 52 Commons photos (CC0, public domain, CC BY, CC BY-SA; every file's licence, author, source and changes in `evals/README.md`). Every Quick miss classified (`docs/ACCURACY_AUDIT.md`): 12 reasoning, 6 vision, 7 ambiguous. The vision checklist did not help (5 fixed, 7 broken) and is off. Three verdicts in code (Confident / Likely / Send to a lab; a high-stakes condition at 20% anywhere goes to a lab), thresholds fitted on the tune split. Auto mode (Quick, then Deep only when unsure, seeded with Quick's work) beat Quick (58% vs 52% top-1, Brier 0.204 vs 0.264) and is the default. Found and fixed: Deep sent cases to a lab because the investigator finished without searching (no sources, every plan step dropped); Leaf now searches itself. Object Storage journal backend (`LEAF_JOURNAL_BUCKET`, not created) and `scripts/pin_case.py` for long-lived demo links. Token Factory spend about $5.7.
 - 2026-10-13: Leaf v2 M4-M6. M4: live Deep interface over server-sent events (live log, re-ranking differential, weather strip, second opinion, confidence, printable lab handoff), Quick/Deep toggle. M5: plant journal (SQLite behind an interface, 30 days, thumbnails only), share page `/c/<id>`, check-ins with an owner token. M6: Quick vs Deep evals with offline calibration; three review passes fixed, among others, a claim check that could pass a 10x dose, a fail-open claim judge, a blend that merged distinct diseases, and share links that exposed notes. Calibrated on the tune split: blend 0.7, critic vote, Deep threshold 0.5. Quick stays the default until the test split is in. 311 tests.
 - 2026-10-12: Leaf v2 M3 and the M2 review fixes. Second opinion (Super, evidence only), confidence combined in code, plan from read passages only, claim check (code then Lightning), lab handoff with NPDN state link and sampling checklist, first differential seeding. Review fixes: a forced finish that times out keeps the recorded differential, a failed Quick fallback answers instead of a 504, per-turn budget estimates add up, refunds for calls skipped before running, geocoding prefers big cities and uses every comma part, TOMCAST banded in the source's Fahrenheit labels, Wallin runs break at data gaps, stricter URL checks, alerts work with browser location. Live: the critic caught the late-blight case (argued from the white growth) and escalated; on early blight Deep still sometimes drifts to Septoria. Eval tooling (Quick vs Deep, Brier, reliability, escalation precision/recall) built. 264 tests.
 - 2026-10-12: Leaf v2 M2 and the M1 review fixes. Tools: `get_conditions` (Open-Meteo, cached; Smith, Hutton, Wallin for potato, TOMCAST for tomato, general summary otherwise), `read_source` (Tavily extract, case URLs only), `check_alerts` (news, last month). Review fixes: a single hard deadline for the whole case (a hanging model now falls back to Quick in under 8 s instead of a 504), billed cost of retried and failed attempts counted, per-call budget check, cancelled cases marked failed, model-written text sanitised before reuse, photo labels stay with their photo, the fake LLM enforces the tool-message protocol. Honest live result: Quick beat Deep on a late-blight photo; prompt and caps improved Deep to 1 of 2. 197 tests.
