@@ -135,10 +135,16 @@ class TokenFactory:
                 resp = await client.chat.completions.create(**kwargs, extra_body=extra_body or None)
             except BadRequestError as exc:
                 msg = str(exc).lower()
-                if use_template and ("chat_template" in msg or "extra" in msg):
+                # Only learn from errors that name the parameter, so an unrelated 400
+                # cannot switch a feature off for the life of the process.
+                if use_template and any(k in msg for k in ("chat_template", "enable_thinking")):
+                    log.info("%s rejects chat_template_kwargs; not sending it again", model)
                     self._no_template_kwargs.add(model)
                     continue
-                if use_json and ("response_format" in msg or "json" in msg):
+                if use_json and any(
+                    k in msg for k in ("response_format", "json_object", "json mode", "guided_json")
+                ):
+                    log.info("%s rejects response_format; not sending it again", model)
                     self._no_json_mode.add(model)
                     continue
                 raise ModelError(f"{model}: bad request: {exc}") from exc
@@ -152,12 +158,16 @@ class TokenFactory:
             latency = int((time.perf_counter() - start) * 1000)
             choice = resp.choices[0] if resp.choices else None
             text = strip_think((choice.message.content or "") if choice else "")
-            if not text.strip():
+            # JSON cut off by the token limit is as useless as an empty reply: reasoning models
+            # can spend most of max_tokens thinking. (Truncated prose is still readable.)
+            truncated = json_mode and getattr(choice, "finish_reason", None) == "length"
+            if not text.strip() or truncated:
                 # Reasoning tokens count toward max_tokens; give it more room once.
                 if not doubled and tokens < 16000:
                     tokens, doubled = tokens * 2, True
                     continue
-                raise ModelError(f"{model}: empty content (reasoning may have used max_tokens)")
+                why = "truncated at max_tokens" if text.strip() else "empty content"
+                raise ModelError(f"{model}: {why} (reasoning may have used max_tokens)")
             usage = resp.usage
             result = CallResult(
                 text=text,
@@ -200,13 +210,29 @@ def strip_think(text: str) -> str:
 def extract_json(text: str) -> dict[str, Any]:
     """Parse the first JSON object in a model reply (tolerates code fences and chatter)."""
     text = strip_think(text)
+    decoder = json.JSONDecoder()
     fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
     if fenced:
-        text = fenced.group(1)
-    start, end = text.find("{"), text.rfind("}")
-    if start == -1 or end <= start:
+        try:
+            return json.loads(fenced.group(1))
+        except json.JSONDecodeError:
+            pass
+    starts = [m.start() for m in re.finditer(r"\{", text)]
+    if not starts:
         raise json.JSONDecodeError("no JSON object found", text, 0)
-    return json.loads(text[start : end + 1])
+    for n, start in enumerate(starts):
+        try:
+            obj, end = decoder.raw_decode(text, start)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        # The first object may be followed by chatter. A later one must be the final thing
+        # in the reply: otherwise it is a fragment of a broken outer object, and returning
+        # it would pass off a partial answer as a whole one.
+        if n == 0 or not text[end:].strip().strip("`").strip():
+            return obj
+    raise json.JSONDecodeError("no JSON object found", text, 0)
 
 
 async def complete_json(
@@ -240,7 +266,8 @@ async def complete_json(
                 temperature=temperature,
             )
         except ModelError as exc:
-            trace.append(ModelCall(step=step, model=model, latency_ms=0, note=f"failed: {exc}"))
+            log.warning("%s call failed: %s", step, exc)  # detail stays server-side
+            trace.append(ModelCall(step=step, model=model, latency_ms=0, note="failed"))
             errors.append(str(exc))
             continue
         try:
@@ -260,10 +287,12 @@ async def complete_json(
 async def _repair(
     llm: LLM, model: str, bad: str, schema: type[T], step: str, trace: list[ModelCall]
 ) -> T | None:
+    brace = bad.find("{")  # skip reasoning prose so the cut never drops the JSON itself
+    body = bad[brace:] if brace != -1 else bad
     prompt = (
         "Rewrite the text below as ONE valid JSON object matching this JSON Schema. "
         "Output only the JSON.\n\nSchema:\n"
-        f"{json.dumps(schema.model_json_schema())}\n\nText:\n{bad[:6000]}"
+        f"{json.dumps(schema.model_json_schema())}\n\nText:\n{body[:6000]}"
     )
     try:
         res = await llm.complete(

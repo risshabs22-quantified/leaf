@@ -12,7 +12,8 @@ from backend.schemas import Source
 
 log = logging.getLogger("leaf.search")
 
-TRUSTED_SUFFIXES = (".edu", ".gov", ".ac.uk", ".gc.ca", "rhs.org.uk", "extension.org")
+# Hosts match as "the domain itself or any subdomain of it", never as a bare suffix.
+TRUSTED_DOMAINS = ("edu", "gov", "ac.uk", "gc.ca", "rhs.org.uk", "extension.org")
 CACHE_TTL_S = 24 * 3600
 CACHE_MAX = 500
 
@@ -61,8 +62,8 @@ class NullSearcher:
 
 def _trust(url: str) -> int:
     """1 for university, government and extension-service hosts; 0 otherwise."""
-    host = urlparse(url).netloc.lower().split(":")[0]
-    return 1 if host.endswith(TRUSTED_SUFFIXES) or host.startswith("extension.") else 0
+    host = (urlparse(url).hostname or "").lower().rstrip(".")
+    return 1 if any(host == d or host.endswith("." + d) for d in TRUSTED_DOMAINS) else 0
 
 
 def rank_sources(results: list[dict[str, Any]], limit: int = 6) -> list[Source]:
@@ -78,9 +79,9 @@ def rank_sources(results: list[dict[str, Any]], limit: int = 6) -> list[Source]:
     return [
         Source(
             id=i + 1,
-            title=(r.get("title") or r["url"])[:200],
+            title=str(r.get("title") or r["url"])[:200],
             url=r["url"],
-            snippet=(r.get("content") or "")[:600],
+            snippet=str(r.get("content") or "")[:600],
         )
         for i, r in enumerate(ordered[:limit])
     ]

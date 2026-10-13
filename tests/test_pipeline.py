@@ -137,9 +137,27 @@ def test_trusted_hosts_match_exactly():
 
     assert _trust("https://extension.umn.edu/x") == 1
     assert _trust("https://www.usda.gov/x") == 1
-    assert _trust("https://extension.example.org/x") == 1
+    assert _trust("https://ask.extension.org/x") == 1
+    assert _trust("https://www.rhs.org.uk/x") == 1
     assert _trust("https://best-browser-extension.com/x") == 0
     assert _trust("https://myeducation.blog/x") == 0
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://fakeextension.org/x",  # bare suffix match
+        "https://myrhs.org.uk/x",
+        "https://extension.evil.com/x",  # "extension." prefix is not a trust signal
+        "https://example.edu.evil.com/x",  # trusted name used as a subdomain label
+        "https://evil.com/?u=https://a.edu",  # trusted host only in the query string
+        "not a url",
+    ],
+)
+def test_lookalike_hosts_are_not_trusted(url):
+    from backend.search import _trust
+
+    assert _trust(url) == 0
 
 
 async def test_tavily_results_are_cached():

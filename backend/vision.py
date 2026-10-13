@@ -11,16 +11,20 @@ import io
 import logging
 from typing import Any
 
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from backend.config import VISION_PREFERENCE, Settings
 from backend.models import LLM, ModelError, complete_json
-from backend.prompts import VISION_SYSTEM
+from backend.prompts import VISION_SYSTEM, sanitize
 from backend.schemas import ModelCall, Observation
 
 log = logging.getLogger("leaf.vision")
 
 MAX_SIDE = 1024  # downscale before sending: cheaper, faster, enough detail for leaves
+# Kimi (the current vision model) reasons before it answers: measured at 1.4k-2.4k tokens of
+# thinking for a ~300-token JSON reply. Reasoning counts toward max_tokens, so leave headroom.
+VISION_MAX_TOKENS = 4000
+MAX_PIXELS = 40_000_000  # decoded size cap; a tiny file can declare a huge canvas
 
 
 def accepts_images(model: dict[str, Any]) -> bool:
@@ -57,11 +61,19 @@ async def discover_vision_model(llm: LLM, settings: Settings) -> str | None:
 
 
 def prepare_image(data: bytes) -> tuple[str, str]:
-    """Validate, downscale and JPEG-encode an upload. Returns (base64, mime)."""
+    """Validate, downscale and JPEG-encode an upload. Returns (base64, mime).
+
+    Raises ValueError (shown to the user as a 400) for anything that is not a readable,
+    reasonably sized image. CPU-bound: call it off the event loop.
+    """
     try:
-        img = Image.open(io.BytesIO(data))
+        img = Image.open(io.BytesIO(data))  # reads the header only
+        if img.width * img.height > MAX_PIXELS:
+            raise ValueError("That photo is too large to process. Try a smaller one.")
         img.load()
-    except (UnidentifiedImageError, OSError) as exc:
+        img = ImageOps.exif_transpose(img)  # phones store rotation in EXIF, not in the pixels
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+        # Decompression bombs surface here (or as a size error above), never as a 500.
         raise ValueError("That file isn't an image we can read. Try a JPG or PNG.") from exc
     img = img.convert("RGB")
     img.thumbnail((MAX_SIDE, MAX_SIDE))
@@ -77,10 +89,11 @@ async def describe(
     mime: str,
     notes: str,
     trace: list[ModelCall],
+    repair_model: str | None = None,
 ) -> Observation:
     user_text = "Describe this plant photo."
     if notes:
-        user_text += f"\n<gardener_notes>{notes}</gardener_notes>"
+        user_text += f"\n<gardener_notes>{sanitize(notes)}</gardener_notes>"
     messages = [
         {"role": "system", "content": VISION_SYSTEM},
         {
@@ -99,8 +112,9 @@ async def describe(
             messages=messages,
             schema=Observation,
             trace=trace,
-            max_tokens=1500,
+            max_tokens=VISION_MAX_TOKENS,
             temperature=0.4,
+            repair_model=repair_model,
         )
     except ModelError as exc:
         log.warning("vision step failed: %s", exc)

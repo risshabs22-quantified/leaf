@@ -10,10 +10,12 @@ Safety rules that matter are enforced in code, not left to the model.
 from __future__ import annotations
 
 import json
+import logging
+import re
 
 from backend.config import Settings
 from backend.models import LLM, ModelError, complete_json
-from backend.prompts import CHAT_SYSTEM, DIAGNOSE_SYSTEM, PLAN_SYSTEM
+from backend.prompts import CHAT_SYSTEM, DIAGNOSE_SYSTEM, PLAN_SYSTEM, sanitize
 from backend.schemas import (
     CarePlan,
     ChatRequest,
@@ -26,7 +28,10 @@ from backend.schemas import (
 from backend.search import Searcher, search_all
 from backend.vision import describe
 
+log = logging.getLogger("leaf.pipeline")
+
 LOW_CONFIDENCE = 0.6
+AMBIGUITY_MARGIN = 0.15  # top two causes closer than this: Leaf cannot tell them apart
 
 
 class Leaf:
@@ -50,7 +55,9 @@ class Leaf:
 
         # 1. Perception
         if image_b64 and self.vision_model:
-            obs = await describe(self.llm, self.vision_model, image_b64, mime, notes, trace)
+            obs = await describe(
+                self.llm, self.vision_model, image_b64, mime, notes, trace, s.fast_model
+            )
         elif image_b64:
             obs = Observation(
                 image_quality="poor",
@@ -62,9 +69,9 @@ class Leaf:
         # 2. Reasoning (Ultra, then Super, then Lightning)
         context = (
             f"<observations>{obs.model_dump_json()}</observations>\n"
-            f"<gardener_notes>{notes or 'none'}</gardener_notes>\n"
-            f"<region>{region or 'unknown'}</region>\n"
-            f"<follow_up_answers>{answers or 'none'}</follow_up_answers>"
+            f"<gardener_notes>{sanitize(notes) or 'none'}</gardener_notes>\n"
+            f"<region>{sanitize(region) or 'unknown'}</region>\n"
+            f"<follow_up_answers>{sanitize(answers) or 'none'}</follow_up_answers>"
         )
         diagnosis = await complete_json(
             self.llm,
@@ -81,23 +88,29 @@ class Leaf:
             repair_model=s.fast_model,
         )
         diagnosis.candidates.sort(key=lambda c: c.confidence, reverse=True)
-        top = diagnosis.candidates[0].confidence if diagnosis.candidates else 0.0
-        # A poor photo is never a confident diagnosis, whatever the model scored.
-        low = top < LOW_CONFIDENCE or obs.image_quality == "poor"
+        scores = [c.confidence for c in diagnosis.candidates]
+        top = scores[0] if scores else 0.0
+        # Never confident when: no cause found, the best is weak, the top two are nearly
+        # tied, or the photo is poor, whatever the model scored.
+        low = (
+            top < LOW_CONFIDENCE
+            or (len(scores) > 1 and top - scores[1] < AMBIGUITY_MARGIN)
+            or obs.image_quality == "poor"
+        )
 
         # 3. Grounding (parallel web search)
         queries = diagnosis.search_queries or [
             f"{obs.plant_guess} {c.name}" for c in diagnosis.candidates[:2]
         ]
         if region:
-            queries = [f"{q} {region}" for q in queries]
+            queries = [f"{q} {sanitize(region, 100)}" for q in queries]
         sources = await search_all(self.searcher, queries)
 
         # 4. Writing (Lightning, fast)
         plan_input = (
             f"<diagnosis>{diagnosis.model_dump_json()}</diagnosis>\n"
-            f"<sources>{json.dumps([src.model_dump() for src in sources])}</sources>\n"
-            f"<region>{region or 'unknown'}</region>"
+            f"<sources>{json.dumps([_source_for_prompt(src) for src in sources])}</sources>\n"
+            f"<region>{sanitize(region) or 'unknown'}</region>"
         )
         try:
             plan = await complete_json(
@@ -143,19 +156,15 @@ class Leaf:
         )
 
     async def chat(self, req: ChatRequest) -> ChatResponse:
-        ctx = req.context
-        context = {
-            "diagnosis": ctx.diagnosis.model_dump(),
-            "plan": ctx.plan.model_dump(),
-            "sources": [{"id": src.id, "title": src.title, "url": src.url} for src in ctx.sources],
-        }
+        context = _chat_context(req.context)
         messages = [
             {"role": "system", "content": CHAT_SYSTEM},
             {"role": "user", "content": f"<context>{json.dumps(context)}</context>"},
             {"role": "assistant", "content": "Got it. What would you like to know?"},
-            *[t.model_dump() for t in req.history[-10:]],
+            *[{"role": t.role, "content": t.content[:2000]} for t in req.history[-10:]],
             {"role": "user", "content": req.message},
         ]
+        valid_ids = {src["id"] for src in context["sources"]}
         trace: list[ModelCall] = []
         for i, model in enumerate([self.settings.fast_model, self.settings.fallback_model]):
             try:
@@ -163,7 +172,61 @@ class Leaf:
                     model=model, messages=messages, thinking=False, max_tokens=800
                 )
                 trace.append(res.to_trace("chat", "fallback" if i else ""))
-                return ChatResponse(reply=res.text, trace=trace)
+                return ChatResponse(reply=_drop_unknown_citations(res.text, valid_ids), trace=trace)
             except ModelError as exc:
-                trace.append(ModelCall(step="chat", model=model, latency_ms=0, note=str(exc)))
+                log.warning("chat call failed: %s", exc)  # detail stays server-side
+                trace.append(ModelCall(step="chat", model=model, latency_ms=0, note="failed"))
         raise ModelError("chat: all models failed")
+
+
+def _source_for_prompt(src) -> dict:
+    """Web text is untrusted: keep it from closing the <sources> block."""
+    return {
+        "id": src.id,
+        "title": sanitize(src.title, 200),
+        "url": sanitize(src.url, 500),
+        "snippet": sanitize(src.snippet, 600),
+    }
+
+
+def _chat_context(ctx: DiagnoseResponse) -> dict:
+    """A bounded, sanitised view of a client-supplied diagnosis.
+
+    The client sends this back to us, so every list and string is capped: a forged or
+    oversized context can neither blow up the prompt nor smuggle in tags.
+    """
+    return {
+        "diagnosis": {
+            "summary": sanitize(ctx.diagnosis.reasoning_summary, 600),
+            "candidates": [
+                {
+                    "name": sanitize(c.name, 120),
+                    "category": c.category,
+                    "confidence": c.confidence,
+                    "evidence_for": [sanitize(e, 200) for e in c.evidence_for[:4]],
+                    "evidence_against": [sanitize(e, 200) for e in c.evidence_against[:4]],
+                }
+                for c in ctx.diagnosis.candidates[:5]
+            ],
+        },
+        "plan": {
+            "summary": sanitize(ctx.plan.summary, 800),
+            "steps": [
+                {"action": sanitize(s.action, 300), "why": sanitize(s.why, 300)}
+                for s in ctx.plan.steps[:8]
+            ],
+            "escalate": ctx.plan.escalate,
+            "escalate_reason": sanitize(ctx.plan.escalate_reason, 300),
+        },
+        "sources": [
+            {"id": s.id, "title": sanitize(s.title, 200), "url": sanitize(s.url, 300)}
+            for s in ctx.sources[:6]
+        ],
+    }
+
+
+def _drop_unknown_citations(reply: str, valid_ids: set[int]) -> str:
+    """Remove [n] markers that do not point at a real source."""
+    return re.sub(
+        r"\s?\[(\d+)\]", lambda m: m.group(0) if int(m.group(1)) in valid_ids else "", reply
+    )

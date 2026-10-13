@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from backend.app import build_leaf  # noqa: E402
 from backend.config import get_settings  # noqa: E402
+from backend.models import ModelError  # noqa: E402
 from backend.vision import prepare_image  # noqa: E402
 
 
@@ -58,7 +59,7 @@ async def main() -> int:
 
     leaf = await build_leaf(get_settings())
     out_path = ROOT / "evals" / "results.jsonl"
-    top1 = top3 = 0
+    top1 = top3 = failed = 0
     latencies: list[float] = []
     tokens = 0
     by_tag: dict[str, list[bool]] = defaultdict(list)
@@ -68,11 +69,18 @@ async def main() -> int:
             if not img_path.exists():
                 print(f"skip (missing image): {c['image']}")
                 continue
-            b64, mime = prepare_image(img_path.read_bytes())
             start = time.time()
-            res = await leaf.diagnose(
-                image_b64=b64, mime=mime, notes=c.get("notes", ""), region=c.get("region", "")
-            )
+            try:  # one bad image or model outage must not lose the rest of the run
+                b64, mime = prepare_image(img_path.read_bytes())
+                res = await leaf.diagnose(
+                    image_b64=b64, mime=mime, notes=c.get("notes", ""), region=c.get("region", "")
+                )
+            except (ValueError, ModelError) as exc:
+                failed += 1
+                print(f"✗ {c['image']}: error, counted as a miss ({exc})")
+                out.write(json.dumps({"case": c, "error": str(exc)[:300]}) + "\n")
+                out.flush()
+                continue
             secs = time.time() - start
             names = [cand.name for cand in res.diagnosis.candidates]
             h1, h3 = hit(names, c["expected"], 1), hit(names, c["expected"], 3)
@@ -91,14 +99,16 @@ async def main() -> int:
                 "seconds": round(secs, 1),
             }
             out.write(json.dumps(record) + "\n")
+            out.flush()
 
-    n = len(latencies)
-    if not n:
+    n = len(latencies) + failed
+    if not latencies:
         return 1
     escalated = sum(sum(v) for v in by_tag.values())
     print(
         f"\n{n} cases ({args.split}) | top-1 {top1 / n:.0%} | top-3 {top3 / n:.0%} | "
-        f"escalated {escalated / n:.0%} | mean {sum(latencies) / n:.1f}s | {tokens} tokens"
+        f"escalated {escalated / n:.0%} | mean {sum(latencies) / len(latencies):.1f}s | "
+        f"{tokens} tokens | {failed} errors"
     )
     print("escalation by tag: " + ", ".join(f"{t} {sum(v)}/{len(v)}" for t, v in by_tag.items()))
     return 0

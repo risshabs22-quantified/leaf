@@ -76,10 +76,14 @@ class FakeLLM:
         self.responses = responses
         self.failing = failing_models or set()
         self.calls: list[tuple[str, str]] = []
+        self.sent: list[tuple[str, list[dict[str, Any]]]] = []  # prompts, for injection tests
+        self.kwargs: list[tuple[str, dict[str, Any]]] = []  # call settings, e.g. max_tokens
 
-    async def complete(self, *, model, messages, **_: Any) -> CallResult:
+    async def complete(self, *, model, messages, **kwargs: Any) -> CallResult:
         step = step_of(messages)
         self.calls.append((step, model))
+        self.sent.append((step, messages))
+        self.kwargs.append((step, kwargs))
         if model in self.failing:
             raise ModelError(f"{model}: HTTP 503")
         out = self.responses[step]

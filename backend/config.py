@@ -58,6 +58,12 @@ class Settings:
     per_ip_per_hour: int = field(default_factory=lambda: _env_int("LEAF_PER_IP_PER_HOUR", 20))
     daily_cap: int = field(default_factory=lambda: _env_int("LEAF_DAILY_CAP", 200))
     request_timeout_s: int = field(default_factory=lambda: _env_int("LEAF_TIMEOUT_S", 120))
+    # Whole-request budget for one diagnosis or chat, across every model fallback.
+    deadline_s: int = field(default_factory=lambda: _env_int("LEAF_DEADLINE_S", 100))
+    # Requests allowed to run at once; extra ones get a quick 503 instead of queueing.
+    max_concurrent: int = field(default_factory=lambda: _env_int("LEAF_MAX_CONCURRENT", 8))
+    # Proxies in front of Leaf that append to X-Forwarded-For (0 = none, trust the socket).
+    trusted_proxy_hops: int = field(default_factory=lambda: _env_int("LEAF_TRUSTED_PROXY_HOPS", 1))
 
     def base_url_for(self, model: str) -> str:
         for pair in filter(None, self.model_base_urls.split(";")):

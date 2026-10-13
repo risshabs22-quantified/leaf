@@ -5,16 +5,18 @@ Run locally:  uvicorn backend.app:app --reload
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections import defaultdict, deque
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, TypeVar
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import Settings, get_settings
@@ -29,6 +31,15 @@ log = logging.getLogger("leaf.app")
 
 FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+MAX_LIMITER_KEYS = 10_000
+T = TypeVar("T")
+
+CSP = (
+    "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; "
+    "style-src-attr 'unsafe-inline'; font-src https://fonts.gstatic.com; "
+    "img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; "
+    "frame-ancestors 'none'; form-action 'self'"
+)
 
 
 class RateLimiter:
@@ -41,12 +52,19 @@ class RateLimiter:
         self.day = date.today()
         self.day_count = 0
 
+    def _evict(self, now: float) -> None:
+        """Drop idle IPs first, then the oldest entries; never reset everyone's counters."""
+        for ip in [ip for ip, q in self.hits.items() if not q or now - q[-1] > 3600]:
+            del self.hits[ip]
+        while len(self.hits) > MAX_LIMITER_KEYS * 9 // 10:
+            del self.hits[next(iter(self.hits))]  # dicts keep insertion order: oldest first
+
     def check(self, ip: str) -> None:
         now = time.time()
         if date.today() != self.day:
             self.day, self.day_count = date.today(), 0
-        if len(self.hits) > 10_000:  # bound memory if someone sprays fake IPs
-            self.hits.clear()
+        if len(self.hits) > MAX_LIMITER_KEYS:  # bound memory if someone sprays fake IPs
+            self._evict(now)
         if self.day_count >= self.daily_cap:
             raise HTTPException(429, "Leaf has hit today's demo limit. Please try tomorrow.")
         q = self.hits[ip]
@@ -58,13 +76,65 @@ class RateLimiter:
         self.day_count += 1
 
 
-def client_ip(request: Request) -> str:
-    """The last X-Forwarded-For hop is the one our platform's proxy appended; earlier
-    entries are client-supplied and can be spoofed to dodge the per-IP limit."""
-    fwd = request.headers.get("x-forwarded-for", "")
-    if fwd:
-        return fwd.split(",")[-1].strip()
+def client_ip(request: Request, hops: int = 1) -> str:
+    """Counting from the right, the `hops`-th X-Forwarded-For entry is the one our own
+    proxy appended; anything further left is client-supplied and can be spoofed to dodge
+    the per-IP limit. With hops=0 (no proxy in front) the header is ignored entirely."""
+    if hops > 0:
+        parts = [p.strip() for p in request.headers.get("x-forwarded-for", "").split(",")]
+        parts = [p for p in parts if p]
+        if len(parts) >= hops:
+            return parts[-hops]
     return request.client.host if request.client else "?"
+
+
+class BodyTooLarge(HTTPException):
+    def __init__(self) -> None:
+        super().__init__(413, "That request is too large.")
+
+
+class BodyLimitMiddleware:
+    """Refuse oversized bodies before they are buffered.
+
+    Starlette spools a whole multipart upload to memory or disk before our handler can
+    look at it, so the size check has to happen at the ASGI layer: first from the
+    declared Content-Length, then by counting bytes as they stream in.
+    """
+
+    def __init__(self, app, limits: dict[str, int], default: int):
+        self.app, self.limits, self.default = app, limits, default
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        limit = self.limits.get(scope["path"], self.default)
+        declared = dict(scope["headers"]).get(b"content-length", b"")
+        if declared.isdigit() and int(declared) > limit:
+            return await JSONResponse({"detail": BodyTooLarge().detail}, 413)(scope, receive, send)
+
+        seen = 0
+        started = False
+
+        async def limited_receive():
+            nonlocal seen
+            msg = await receive()
+            if msg["type"] == "http.request":
+                seen += len(msg.get("body", b""))
+                if seen > limit:
+                    raise BodyTooLarge()
+            return msg
+
+        async def tracking_send(msg):
+            nonlocal started
+            started = started or msg["type"] == "http.response.start"
+            await send(msg)
+
+        try:
+            await self.app(scope, limited_receive, tracking_send)
+        except BodyTooLarge as exc:
+            if started:
+                raise
+            await JSONResponse({"detail": exc.detail}, 413)(scope, receive, send)
 
 
 async def build_leaf(settings: Settings) -> Leaf:
@@ -80,12 +150,56 @@ async def build_leaf(settings: Settings) -> Leaf:
 async def lifespan(app: FastAPI):
     settings = get_settings()
     app.state.limiter = RateLimiter(settings.per_ip_per_hour, settings.daily_cap)
+    app.state.slots = asyncio.Semaphore(settings.max_concurrent)
     if not getattr(app.state, "leaf", None):
         app.state.leaf = await build_leaf(settings)
     yield
 
 
 app = FastAPI(title="Leaf", version="0.1.0", lifespan=lifespan)
+app.add_middleware(
+    BodyLimitMiddleware,
+    limits={"/api/diagnose": MAX_UPLOAD_BYTES + 256 * 1024, "/api/chat": 256 * 1024},
+    default=64 * 1024,
+)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    if not request.url.path.startswith(("/docs", "/redoc", "/openapi")):
+        response.headers.setdefault("Content-Security-Policy", CSP)
+    return response
+
+
+def check_limits(request: Request) -> None:
+    if request.app.state.slots.locked():  # shed load first so a 503 costs the user nothing
+        raise HTTPException(503, "Leaf is busy right now. Please try again in a minute.")
+    settings = request.app.state.leaf.settings
+    request.app.state.limiter.check(client_ip(request, settings.trusted_proxy_hops))
+
+
+async def run_limited(request: Request, work: Callable[[], Awaitable[T]]) -> T:
+    """Run one diagnosis or chat under the concurrency cap and the whole-request deadline.
+
+    Each model call has its own timeout and retries, which add up across fallbacks; the
+    deadline stops one request from holding a slot (and spending credits) for minutes.
+    """
+    leaf: Leaf = request.app.state.leaf
+    slots: asyncio.Semaphore = request.app.state.slots
+    if slots.locked():
+        raise HTTPException(503, "Leaf is busy right now. Please try again in a minute.")
+    async with slots:
+        try:
+            return await asyncio.wait_for(work(), timeout=leaf.settings.deadline_s)
+        except TimeoutError as exc:
+            log.error("request exceeded %ss deadline", leaf.settings.deadline_s)
+            raise HTTPException(504, "That took too long. Please try again.") from exc
+        except ModelError as exc:
+            log.error("model pipeline failed: %s", exc)
+            raise HTTPException(502, "Leaf's models are busy right now. Please try again.") from exc
 
 
 @app.get("/api/health")
@@ -112,7 +226,7 @@ async def diagnose(
     region: Annotated[str, Form()] = "",
     answers: Annotated[str, Form()] = "",
 ) -> DiagnoseResponse:
-    request.app.state.limiter.check(client_ip(request))
+    check_limits(request)
     if image is None and not notes.strip():
         raise HTTPException(400, "Add a photo or describe what you see.")
     image_b64 = mime = None
@@ -120,31 +234,26 @@ async def diagnose(
         data = await image.read(MAX_UPLOAD_BYTES + 1)
         if len(data) > MAX_UPLOAD_BYTES:
             raise HTTPException(413, "Photo is over 10 MB. Try a smaller one.")
-        try:
-            image_b64, mime = prepare_image(data)
+        try:  # image decoding is CPU-bound: keep it off the event loop
+            image_b64, mime = await asyncio.to_thread(prepare_image, data)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-    try:
-        return await request.app.state.leaf.diagnose(
+    return await run_limited(
+        request,
+        lambda: request.app.state.leaf.diagnose(
             image_b64=image_b64,
             mime=mime or "image/jpeg",
             notes=notes[:2000],
             region=region[:100],
             answers=answers[:2000],
-        )
-    except ModelError as exc:
-        log.error("diagnose failed: %s", exc)
-        raise HTTPException(502, "Leaf's models are busy right now. Please try again.") from exc
+        ),
+    )
 
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: Request, body: ChatRequest) -> ChatResponse:
-    request.app.state.limiter.check(client_ip(request))
-    try:
-        return await request.app.state.leaf.chat(body)
-    except ModelError as exc:
-        log.error("chat failed: %s", exc)
-        raise HTTPException(502, "Leaf's models are busy right now. Please try again.") from exc
+    check_limits(request)
+    return await run_limited(request, lambda: request.app.state.leaf.chat(body))
 
 
 if FRONTEND.exists():

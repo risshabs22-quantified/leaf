@@ -78,7 +78,9 @@ docs/       LEAF_PLAYBOOK.md (full build reference), PROGRESS.md
 
 ## Safety
 
-Leaf gives guidance, not certainty. Its prompts tell it to send people to product labels and never to give chemical mixing ratios that aren't in a cited source. In code, any low-confidence diagnosis or poor photo always escalates to the local extension office.
+Leaf gives guidance, not certainty. Its prompts tell it to send people to product labels and never to give chemical mixing ratios that aren't in a cited source. In code, any low-confidence diagnosis, any case where the top two causes are nearly tied, and any poor photo always escalates to the local extension office, whatever the model said. Source ids a model invents are removed from plans and chat replies.
+
+The public demo protects itself and its credits: uploads are size- and pixel-limited and decoded off the event loop, request bodies are capped before they are read, every diagnosis or chat runs under a concurrency cap and an overall deadline, and per-IP and daily limits apply. Text typed by users and text from the web is sanitised before it enters a prompt and treated as data, not instructions. Errors shown to users are generic; provider details stay in the server log.
 
 ## Feedback on Nebius and NVIDIA
 
