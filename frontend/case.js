@@ -35,7 +35,7 @@ function draw(v) {
   const word = { confident: "Confident", likely: "Likely", lab: "Send a sample to a lab" }[verdict];
   const banner = $("verdict");
   banner.className = verdict === "lab" ? "banner warn" : "banner ok";
-  banner.textContent = `${word}. ${d.verdict_reason || d.plan.escalate_reason || ""}`.trim();
+  banner.textContent = `${word}. ${d.verdict_reason || d.plan.escalate_reason || ""} ${d.notice || ""}`.trim();
   $("summary").textContent = d.summary || d.diagnosis.reasoning_summary || "";
   $("candidates").innerHTML = diff.map((h) => `<li class="cand"><div class="cand-head"><span class="cand-name">${esc(h.name)}</span><span>${pct(h.p)}</span></div><div class="bar"><span style="width:${Math.round(h.p * 100)}%"></span></div></li>`).join("");
   $("plan-summary").textContent = d.plan.summary;

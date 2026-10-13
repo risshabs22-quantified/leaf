@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import calendar
 import logging
 import time
+from collections.abc import Awaitable, Callable
+from datetime import date
 from typing import Any, Protocol
 from urllib.parse import urlparse
+
+import httpx
 
 from backend.models import gather_limited
 from backend.schemas import Source
@@ -37,6 +42,84 @@ class Searcher(Protocol):
         ...
 
 
+class SearchPaused(RuntimeError):
+    """Today's Tavily credit allowance is used up. Callers answer without fresh sources."""
+
+
+DEV_RESERVE_CREDITS = 100  # kept back each month for development and evals
+FALLBACK_DAILY_CAP = 30  # when the balance cannot be read
+
+
+def size_daily_cap(plan_limit: int, plan_usage: int, today: date, reserve: int) -> int:
+    """Spread what is left of this month's credits evenly over the days left in it, so a
+    scraper can never use up the month in a day."""
+    days_left = calendar.monthrange(today.year, today.month)[1] - today.day + 1
+    return max(0, (plan_limit - plan_usage - reserve) // days_left)
+
+
+async def tavily_balance(api_key: str) -> tuple[int, int]:
+    """(plan limit, credits used this month) from Tavily's usage endpoint."""
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(
+            "https://api.tavily.com/usage", headers={"Authorization": f"Bearer {api_key}"}
+        )
+        r.raise_for_status()
+        acct = r.json()["account"]
+        return int(acct["plan_limit"]), int(acct["plan_usage"])
+
+
+class CreditBudget:
+    """A daily allowance of Tavily credits, re-sized each day from the real monthly balance.
+
+    `balance` returns (plan limit, used); `max_daily` (LEAF_TAVILY_DAILY_CAP) is an optional
+    ceiling. If the balance cannot be read, the allowance falls back to a small fixed number.
+    """
+
+    def __init__(
+        self,
+        balance: Callable[[], Awaitable[tuple[int, int]]] | None,
+        *,
+        max_daily: int = 0,
+        reserve: int = DEV_RESERVE_CREDITS,
+        today: Callable[[], date] = date.today,
+    ):
+        self._balance, self.max_daily, self.reserve, self._today = (
+            balance,
+            max_daily,
+            reserve,
+            today,
+        )
+        self.day: date | None = None
+        self.cap = 0
+        self.used = 0
+
+    async def _refresh(self) -> None:
+        today = self._today()
+        if self.day == today:
+            return
+        cap = self.max_daily or FALLBACK_DAILY_CAP
+        if self._balance is not None:
+            try:
+                limit, used = await self._balance()
+                cap = size_daily_cap(limit, used, today, self.reserve)
+                if self.max_daily:
+                    cap = min(cap, self.max_daily)
+            except Exception as exc:  # noqa: BLE001 - never block Leaf on the usage endpoint
+                log.warning("Tavily balance unavailable (%s); daily cap %d", exc, cap)
+        self.day, self.cap, self.used = today, cap, 0
+        log.info("Tavily daily credit cap for %s: %d", today, cap)
+
+    async def take(self, credits: int = 1) -> None:
+        await self._refresh()
+        if self.used + credits > self.cap:
+            raise SearchPaused("Today's web-search allowance is used up.")
+        self.used += credits
+
+    @property
+    def paused(self) -> bool:
+        return self.day == self._today() and self.used >= self.cap
+
+
 class TavilySearcher:
     """Basic-depth search (1 credit per call). Queries are steered to extension guides.
 
@@ -44,10 +127,11 @@ class TavilySearcher:
     Tavily credits twice.
     """
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, budget: CreditBudget | None = None):
         from tavily import AsyncTavilyClient
 
         self._client = AsyncTavilyClient(api_key=api_key)
+        self.budget = budget
         self._cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
         self._extract_cache: dict[str, tuple[float, list[str]]] = {}
 
@@ -75,6 +159,8 @@ class TavilySearcher:
         }
         if time_range:
             kwargs["time_range"] = time_range
+        if self.budget:
+            await self.budget.take(1)
         resp = await self._client.search(query, **kwargs)
         results = resp.get("results", [])
         if len(self._cache) >= CACHE_MAX:
@@ -89,6 +175,8 @@ class TavilySearcher:
             return hit[1], 0
         # Basic depth with a relevance query returns the page's best ~800-character chunks;
         # tested Oct 2026, advanced depth gave the same chunks for twice the credits.
+        if self.budget:
+            await self.budget.take(1)
         resp = await self._client.extract(
             urls=[url], query=query, chunks_per_source=3, extract_depth="basic"
         )
@@ -101,6 +189,19 @@ class TavilySearcher:
             self._extract_cache.clear()
         self._extract_cache[key] = (time.time(), passages)
         return passages, 1  # basic extract: 1 credit per 5 successful URLs
+
+
+def search_paused(searcher: Searcher) -> bool:
+    """Has today's Tavily allowance run out? Then answers carry no fresh sources and say so."""
+    budget = getattr(searcher, "budget", None)
+    return bool(budget and budget.paused)
+
+
+PAUSED_NOTICE = (
+    "Leaf has used today's web-search allowance, so this answer is not backed by fresh "
+    "sources. The care plan sticks to general good practice; check with your local extension "
+    "office before using any product."
+)
 
 
 class NullSearcher:

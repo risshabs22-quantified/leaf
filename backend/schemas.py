@@ -243,6 +243,7 @@ class DiagnoseResponse(BaseModel):
     plan: CarePlan
     sources: list[Source]
     trace: list[ModelCall]
+    notice: str = ""  # something the gardener should know about how this answer was made
     low_confidence: bool  # True unless the verdict is "confident"
     verdict: Literal["confident", "likely", "lab"] = "likely"
     verdict_reason: str = ""

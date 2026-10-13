@@ -30,7 +30,14 @@ from backend.journal import JournalEntry, open_journal, public_view, thumbnail
 from backend.models import ModelError, TokenFactory
 from backend.pipeline import Leaf
 from backend.schemas import ChatRequest, ChatResponse, DiagnoseResponse
-from backend.search import NullSearcher, TavilySearcher
+from backend.search import (
+    CreditBudget,
+    NullSearcher,
+    Searcher,
+    TavilySearcher,
+    search_paused,
+    tavily_balance,
+)
 from backend.store import MemoryCaseStore
 from backend.vision import discover_vision_model, prepare_image, prepare_photo
 
@@ -183,9 +190,12 @@ class BodyLimitMiddleware:
 
 async def build_leaf(settings: Settings) -> Leaf:
     llm = TokenFactory(settings)
-    searcher = (
-        TavilySearcher(settings.tavily_api_key) if settings.tavily_api_key else NullSearcher()
-    )
+    if settings.tavily_api_key:
+        key = settings.tavily_api_key
+        budget = CreditBudget(lambda: tavily_balance(key), max_daily=settings.tavily_daily_cap)
+        searcher: Searcher = TavilySearcher(key, budget)
+    else:
+        searcher = NullSearcher()
     vision, _ = await asyncio.gather(discover_vision_model(llm, settings), llm.load_prices())
     return Leaf(llm, searcher, settings, vision)
 
@@ -284,6 +294,7 @@ async def health(request: Request) -> dict:
             "fast": s.fast_model,
         },
         "search": type(leaf.searcher).__name__,
+        "search_paused": search_paused(leaf.searcher),
         "deep": {"left_today": request.app.state.deep_cap.left},
     }
 

@@ -26,7 +26,7 @@ from backend.schemas import (
     ModelCall,
     Observation,
 )
-from backend.search import Searcher, search_all
+from backend.search import PAUSED_NOTICE, Searcher, search_all, search_paused
 from backend.verdict import QUICK, Decision, decide
 from backend.vision import describe
 
@@ -157,6 +157,7 @@ class Leaf:
             low_confidence=decision.verdict != "confident",
             verdict=decision.verdict,
             verdict_reason=decision.reason,
+            notice=PAUSED_NOTICE if not sources and search_paused(self.searcher) else "",
         )
 
     async def chat(self, req: ChatRequest) -> ChatResponse:

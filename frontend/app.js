@@ -366,11 +366,11 @@ function renderVerdict(d, top) {
   $("verdict").className = `verdict ${v}`;
   $("verdict-word").textContent = waiting ? "A few questions first"
     : v === "lab" ? VERDICT.lab : `${VERDICT[v]}${top ? `: ${top.name}` : ""}`;
-  const banner = $("banner");
-  banner.className = d.notice ? "banner warn" : "banner";
-  banner.textContent = d.notice || (waiting
+  $("banner").textContent = waiting
     ? "Leaf needs a little more from you to tell the likely causes apart."
-    : d.verdict_reason || d.plan.escalate_reason || "");
+    : d.verdict_reason || d.plan.escalate_reason || "";
+  $("notice").hidden = !d.notice;
+  $("notice").textContent = d.notice || "";
   $("lab-link").hidden = v !== "lab" || !!d.handoff;
   const a = d.auto;
   $("auto-why").hidden = !a;

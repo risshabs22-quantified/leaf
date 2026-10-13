@@ -184,8 +184,14 @@ async def test_tavily_results_are_cached():
             calls.append(query)
             return {"results": [{"url": "https://a.edu", "title": "A", "content": "", "score": 1}]}
 
+    from datetime import date
+
+    from backend.search import CreditBudget
+
+    budget = CreditBudget(None, max_daily=5, today=lambda: date(2026, 10, 13))
     s = TavilySearcher.__new__(TavilySearcher)
-    s._client, s._cache = FakeClient(), {}
+    s._client, s._cache, s.budget = FakeClient(), {}, budget
     first = await s.search("Tomato blight")
     second = await s.search("tomato blight ")
     assert first == second and len(calls) == 1
+    assert budget.used == 1  # a cache hit spends no credit

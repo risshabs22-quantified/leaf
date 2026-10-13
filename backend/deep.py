@@ -49,7 +49,7 @@ from backend.schemas import (
     Observation,
     Source,
 )
-from backend.search import _trust
+from backend.search import PAUSED_NOTICE, _trust, search_paused
 from backend.store import CaseStore
 from backend.verdict import DEEP, Decision, decide
 from backend.vision import describe
@@ -144,6 +144,10 @@ class DeepResponse(DiagnoseResponse):
     claim_flags: list[ClaimFlag] = Field(default_factory=list)
     handoff: LabHandoff | None = None
     auto: AutoDecision | None = None
+
+
+def _join(*notices: str) -> str:
+    return " ".join(n for n in notices if n)
 
 
 def _source_int(source_id: str) -> int:
@@ -312,9 +316,9 @@ class DeepLeaf:
         self, quick: DiagnoseResponse, auto: AutoDecision, notice: str = ""
     ) -> DeepResponse:
         return DeepResponse(
-            **quick.model_dump(),
+            **quick.model_dump(exclude={"notice"}),
             mode="quick",
-            notice=notice,
+            notice=_join(notice, quick.notice),
             cost_usd=round(sum(t.cost_usd or 0 for t in quick.trace), 5),
             auto=auto,
         )
@@ -434,11 +438,13 @@ class DeepLeaf:
             await emit({"type": "fallback", "reason": "The investigation could not finish."})
             if quick is not None:  # Auto mode already has a Quick diagnosis: never redo it
                 return DeepResponse(
-                    **{**quick.model_dump(), "case_id": case.id},
+                    **{**quick.model_dump(exclude={"notice"}), "case_id": case.id},
                     mode="quick",
                     status="fallback",
-                    notice="Leaf could not finish its investigation, so this is the Quick "
-                    "diagnosis.",
+                    notice=_join(
+                        "Leaf could not finish its investigation, so this is the Quick diagnosis.",
+                        quick.notice,
+                    ),
                     steps=case.steps,
                     cost_usd=round(case.cost_usd, 5),
                     tavily_credits=case.tavily_credits,
@@ -531,6 +537,8 @@ class DeepLeaf:
         )
         case.status = "done"
         await self.store.put(case)
+        if not case.sources and search_paused(self.leaf.searcher):
+            plan.sample_if = plan.sample_if or PAUSED_NOTICE
         response = self._response(
             case,
             plan=plan,
@@ -593,6 +601,9 @@ class DeepLeaf:
             plan=plan or CarePlan(summary="Answer the questions so Leaf can finish this case."),
             sources=self._sources(case),
             trace=case.trace,
+            notice=PAUSED_NOTICE
+            if status == "done" and not case.sources and search_paused(self.leaf.searcher)
+            else "",
             low_confidence=decision is None or decision.verdict != "confident",
             verdict=decision.verdict if decision else "likely",
             verdict_reason=decision.reason if decision else "",
@@ -655,10 +666,13 @@ class DeepLeaf:
                 tavily_credits=case.tavily_credits,
             )
         return DeepResponse(
-            **{**quick.model_dump(), "case_id": case.id},
+            **{**quick.model_dump(exclude={"notice"}), "case_id": case.id},
             mode="quick",
             status="fallback",
-            notice=notice or "Deep mode could not finish this case, so this is a Quick diagnosis.",
+            notice=_join(
+                notice or "Deep mode could not finish this case, so this is a Quick diagnosis.",
+                quick.notice,
+            ),
             steps=case.steps,
             cost_usd=round(case.cost_usd + sum(t.cost_usd or 0 for t in quick.trace), 5),
             tavily_credits=case.tavily_credits,

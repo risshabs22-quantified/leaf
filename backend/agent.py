@@ -26,7 +26,7 @@ from backend.config import Settings
 from backend.models import LLM, CallResult, ModelError, ToolCall
 from backend.prompts import AGENT_SYSTEM, sanitize
 from backend.schemas import ModelCall
-from backend.search import Searcher
+from backend.search import Searcher, SearchPaused
 from backend.tools import TOOLS, Emit, ToolContext, ToolError, ToolOutcome, tool_schemas
 
 log = logging.getLogger("leaf.agent")
@@ -483,6 +483,9 @@ class Investigator:
             )
         except ToolError as exc:
             p.record.ok, p.record.skipped = False, sanitize(str(exc), 300)
+        except SearchPaused:
+            p.record.ok = False
+            p.record.skipped = "web search is paused for today: finish with the evidence you have"
         except TimeoutError:
             p.record.ok, p.record.skipped = False, "the tool took too long"
         except Exception as exc:  # noqa: BLE001 - any tool failure degrades, never crashes

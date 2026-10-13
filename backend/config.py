@@ -86,7 +86,9 @@ class Settings:
     model_base_urls: str = field(default_factory=lambda: _env("LEAF_MODEL_BASE_URLS"))
     # Credit protection for the public demo.
     per_ip_per_hour: int = field(default_factory=lambda: _env_int("LEAF_PER_IP_PER_HOUR", 20))
-    daily_cap: int = field(default_factory=lambda: _env_int("LEAF_DAILY_CAP", 200))
+    daily_cap: int = field(default_factory=lambda: _env_int("LEAF_DAILY_CAP", 60))
+    # Tavily credits per day: sized daily from the real monthly balance; this is a ceiling.
+    tavily_daily_cap: int = field(default_factory=lambda: _env_int("LEAF_TAVILY_DAILY_CAP", 0))
     request_timeout_s: int = field(default_factory=lambda: _env_int("LEAF_TIMEOUT_S", 120))
     # Whole-request budget for one diagnosis or chat, across every model fallback.
     deadline_s: int = field(default_factory=lambda: _env_int("LEAF_DEADLINE_S", 100))
