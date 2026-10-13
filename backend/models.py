@@ -27,7 +27,7 @@ from openai import (
 )
 from pydantic import BaseModel, ValidationError
 
-from backend.config import Settings
+from backend.config import Settings, thinking_key
 from backend.schemas import ModelCall
 
 log = logging.getLogger("leaf.models")
@@ -124,8 +124,8 @@ class TokenFactory:
             extra_body: dict[str, Any] = {}
             use_template = thinking is not None and model not in self._no_template_kwargs
             if use_template:
-                # Nemotron chat templates read enable_thinking (see NVIDIA model cards).
-                extra_body["chat_template_kwargs"] = {"enable_thinking": thinking}
+                # Nemotron templates read enable_thinking, Kimi reads thinking (config.py).
+                extra_body["chat_template_kwargs"] = {thinking_key(model): thinking}
             use_json = json_mode and model not in self._no_json_mode
             if use_json:
                 kwargs["response_format"] = {"type": "json_object"}

@@ -21,8 +21,9 @@ from backend.schemas import ModelCall, Observation
 log = logging.getLogger("leaf.vision")
 
 MAX_SIDE = 1024  # downscale before sending: cheaper, faster, enough detail for leaves
-# Kimi (the current vision model) reasons before it answers: measured at 1.4k-2.4k tokens of
-# thinking for a ~300-token JSON reply. Reasoning counts toward max_tokens, so leave headroom.
+# Describing a photo needs no long reasoning: with thinking on, Kimi spent 1.4k-2.4k tokens
+# thinking for a ~300-token reply. It runs with thinking off; the budget keeps headroom in
+# case a model ignores the switch (reasoning counts toward max_tokens).
 VISION_MAX_TOKENS = 4000
 MAX_PIXELS = 40_000_000  # decoded size cap; a tiny file can declare a huge canvas
 
@@ -112,6 +113,7 @@ async def describe(
             messages=messages,
             schema=Observation,
             trace=trace,
+            thinking=False,
             max_tokens=VISION_MAX_TOKENS,
             temperature=0.4,
             repair_model=repair_model,

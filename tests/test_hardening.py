@@ -529,6 +529,28 @@ async def test_vision_step_leaves_room_for_a_reasoning_model_to_think(settings):
     assert budget >= 4000  # Kimi measured at 1.4k-2.4k reasoning tokens before its answer
 
 
+async def test_thinking_switch_uses_each_model_familys_template_key():
+    sent = []
+
+    async def create(**kw):
+        sent.append((kw["model"], kw["extra_body"]["chat_template_kwargs"]))
+        return reply("ok")
+
+    tf = token_factory(create)
+    await tf.complete(model="moonshotai/Kimi-K2.6", messages=[], thinking=False)
+    await tf.complete(model="nvidia/Nemotron-3-Ultra-550b-a55b", messages=[], thinking=True)
+    assert sent == [
+        ("moonshotai/Kimi-K2.6", {"thinking": False}),
+        ("nvidia/Nemotron-3-Ultra-550b-a55b", {"enable_thinking": True}),
+    ]
+
+
+async def test_vision_runs_with_thinking_off(settings):
+    leaf, llm, _ = make_leaf(settings, STD)
+    await leaf.diagnose(image_b64="abc")
+    assert next(kw["thinking"] for step, kw in llm.kwargs if step == "vision") is False
+
+
 async def test_a_reply_that_arrives_after_an_empty_one_is_returned():
     answers = iter([reply(""), reply("recovered")])
 

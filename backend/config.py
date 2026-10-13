@@ -30,6 +30,20 @@ VISION_PREFERENCE = [
 ]
 
 
+# Chat-template switch for reasoning, per model family. Nemotron reads enable_thinking;
+# Kimi reads thinking (measured Oct 2026: with thinking off, Kimi-K2.6 vision answers in
+# 3.9 s instead of 11.2 s for a quarter of the tokens, with equally specific observations).
+THINKING_TEMPLATE_KEY = {"moonshotai/": "thinking"}
+DEFAULT_THINKING_KEY = "enable_thinking"
+
+
+def thinking_key(model: str) -> str:
+    for prefix, key in THINKING_TEMPLATE_KEY.items():
+        if model.startswith(prefix):
+            return key
+    return DEFAULT_THINKING_KEY
+
+
 def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
 

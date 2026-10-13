@@ -172,7 +172,7 @@ Estimate per Deep case from catalog prices and probe token counts (to be replace
 That is under the 10-cent target but with little margin, and Kimi's reasoning tokens are the largest variable. Mitigations: cap `look_closer` at 3, track real usage per call from the response, and stop the loop when the running cost reaches the budget.
 
 - Per-step log line: model, tokens in/out, cost in dollars (prices live in `backend/config.py`), Tavily credits.
-- Separate daily cap for Deep (`LEAF_DEEP_DAILY_CAP`); past it, Quick runs and the UI says so.
+- Separate daily cap for Deep (`LEAF_DEEP_DAILY_CAP`, default 20); past it, Quick runs and the UI says so.
 - Any tool failure degrades gracefully; the trace shows what was skipped.
 
 ## Proof (Technological Implementation)
@@ -191,7 +191,7 @@ Suggested calendar (18 days): M1 Oct 13-14, M2 Oct 15-16, M3 Oct 17-19, M4 Oct 2
 - [x] Docs verified for Token Factory, Tavily, Open-Meteo and the disease rules
 - [x] Live tool-calling probe on Ultra and Super (under 1 cent in total)
 - [x] This document, linked from CLAUDE.md
-- [ ] Your OK to start M1
+- [x] Your OK to start M1 (2026-10-12)
 
 ### M1: tool layer, investigator loop, fallback to Quick, offline tests
 Acceptance:
@@ -248,9 +248,11 @@ Acceptance:
 | Eval images do not resemble phone photos | Numbers flatter both modes | Say so in the README; include some real phone photos with permission |
 | Six milestones in 18 days, and the evals decide the default mode | Schedule | Start collecting eval images during M1; M5 is cut first; M4 can ship a reduced chart |
 
-## Decisions I need from you
+## Decisions (approved 2026-10-12)
 
-1. **`get_conditions` takes an optional `crop`** so the right published rules apply. This is a small change to your tool list.
-2. **Persistence for M5:** does the Nebius endpoint have a persistent disk? If not, the choices are Nebius Object Storage (cost to be quoted before use) or an in-memory journal that resets on restart, which makes share links unreliable in the demo.
-3. **Open-Meteo terms:** are you comfortable with the free non-commercial tier for the hackathon, or should I ask the organisers first?
-4. **Eval images:** do you have, or can you take, real phone photos of diseased leaves? A small real set makes the numbers credible.
+1. **Crop argument: yes.** The crop comes from the user's notes or the vision step. If it is unknown, or no published rule exists for it, `get_conditions` returns the general rain and humidity summary only and says that no crop-specific index applies.
+2. **Persistence: do not block on it.** M1 uses the in-memory registry. Before M5, find out from the Nebius docs whether Serverless Endpoints keep a disk across restarts and quote the Object Storage cost at our scale. The journal sits behind a small storage interface (SQLite locally) so either backend plugs in; the user chooses at M5.
+3. **Open-Meteo: free tier.** Leaf is free, open source and ad-free. The UI and README show "Weather data by Open-Meteo.com" with a link, and responses are cached.
+4. **Eval photos:** the user adds labelled phone photos to `evals/images/` and they become the **test** split. The **tune** split may be topped up with Wikimedia Commons images licensed CC0 or CC BY (CC BY-SA acceptable with attribution), each with source and licence recorded in `evals/README.md`.
+5. **Deep daily cap: 20 cases a day by default** (`LEAF_DEEP_DAILY_CAP`), so demo traffic cannot drain the Nebius credits before Dec 15. Past the cap, Quick runs and the UI says so.
+6. **Run all milestones in sequence** (user instruction, 2026-10-12), after a whole-repo check for speed, token efficiency and accuracy. Each milestone still ends with `make check`, a live case, a reviewer pass, these checkboxes, and a push.

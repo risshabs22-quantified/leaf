@@ -6,3 +6,25 @@
 // {"image": "evals/images/basil_downy_mildew_1.jpg", "expected": ["downy mildew"], "notes": "fuzzy grey underneath", "region": "Florida", "split": "tune", "tag": "clear"}
 // {"image": "evals/images/pepper_sunscald_1.jpg", "expected": ["sunscald", "sun scald"], "notes": "", "region": "Texas", "split": "test", "tag": "abiotic"}
 // {"image": "evals/images/blurry_leaf_1.jpg", "expected": ["early blight"], "notes": "", "region": "", "split": "test", "tag": "poor_photo"}
+{"image": "evals/images/tune/tomato_early_blight_1.jpg", "expected": ["early blight", "alternaria"], "crop": "tomato", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/tomato_early_blight_2.jpg", "expected": ["early blight", "alternaria"], "crop": "tomato", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/tomato_early_blight_3.jpg", "expected": ["early blight", "alternaria"], "crop": "tomato", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/tomato_septoria_leaf_spot_1.jpg", "expected": ["septoria"], "crop": "tomato", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/tomato_septoria_leaf_spot_2.jpg", "expected": ["septoria"], "crop": "tomato", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/late_blight_1.jpg", "expected": ["late blight", "phytophthora"], "crop": "tomato", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/late_blight_2.jpg", "expected": ["late blight", "phytophthora"], "crop": "tomato", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/late_blight_3.jpg", "expected": ["late blight", "phytophthora"], "crop": "potato", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/powdery_mildew_1.jpg", "expected": ["powdery mildew"], "crop": "squash", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/powdery_mildew_2.jpg", "expected": ["powdery mildew"], "crop": "zucchini", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/downy_mildew_1.jpg", "expected": ["downy mildew", "plasmopara", "pseudoperonospora"], "crop": "cucumber", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/downy_mildew_2.jpg", "expected": ["downy mildew", "plasmopara", "pseudoperonospora"], "crop": "grape", "notes": "", "region": "", "split": "tune", "tag": "subtle"}
+{"image": "evals/images/tune/rust_1.jpg", "expected": ["rust", "uromyces", "phragmidium"], "crop": "rose", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/rust_2.jpg", "expected": ["rust", "uromyces", "phragmidium"], "crop": "common bean", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/rose_black_spot_1.jpg", "expected": ["black spot", "diplocarpon"], "crop": "rose", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/rose_black_spot_2.jpg", "expected": ["black spot", "diplocarpon"], "crop": "rose", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/bacterial_spot_1.jpg", "expected": ["bacterial spot", "bacterial leaf spot", "xanthomonas"], "crop": "pepper", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/bacterial_spot_2.jpg", "expected": ["bacterial spot", "bacterial leaf spot", "xanthomonas"], "crop": "pepper", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/apple_scab_1.jpg", "expected": ["scab", "venturia"], "crop": "apple", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/apple_scab_2.jpg", "expected": ["scab", "venturia"], "crop": "apple", "notes": "", "region": "", "split": "tune", "tag": "subtle"}
+{"image": "evals/images/tune/magnesium_deficiency_1.jpg", "expected": ["magnesium"], "crop": "maize", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/magnesium_deficiency_2.jpg", "expected": ["magnesium"], "crop": "maize", "notes": "", "region": "", "split": "tune", "tag": "clear"}
