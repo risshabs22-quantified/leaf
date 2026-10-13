@@ -84,14 +84,14 @@ The investigator's tools, all read-only:
 | Deep | 56% | 73% | right 7 of 8 | 14 of 24 (top-3: 18) | 20 (38%) | 0.210 | $0.054 | 40 s |
 | **Auto** | **58%** | 73% | **right 14 of 16** | 10 of 23 | 13 (25%) | **0.204** | $0.037 | 31 s |
 
-Auto's row is live; Quick's and Deep's verdict columns replay their logged runs through the final thresholds, which were fitted on those same runs, so they flatter Quick and Deep slightly. Auto investigated 69% of cases.
+Auto's row is live; Quick's and Deep's verdict columns replay their logged runs through the final thresholds, which were fitted on those same runs, so they flatter Quick and Deep slightly (the raw `evals/summary_tune_sprint-*.json` files show the verdicts under the first, unfitted thresholds). Auto investigated 69% of cases.
 
 What this shows, read plainly:
 
 - **Auto is the default because it beat Quick on this split**: 3 more cases right at top-1 (58% vs 52%), better calibrated (Brier 0.204 vs 0.264), about 4 times the cost. On 52 cases one case is about 2 points and repeat runs of the same mode vary by several points, so this is a modest lead, not a proven one.
 - **"Confident" means something.** When Leaf said Confident it was right 14 of 16 times in Auto (and 11 of 12 in Quick's replay). It says Confident on about a third of cases.
 - **"Likely" is where the misses are.** More than half of Quick's and Auto's Likely answers were wrong at top-1 (Deep: 10 of 24), though the right answer is usually in the top three; that is why Likely comes with what to watch for and when to send a sample.
-- **Lab referrals:** 9 of Auto's 13 were warranted (the top answer was wrong, or the condition was late blight). Three of the four late blight photos went to a lab; late blight is also the condition Leaf misses most, because the vision model reports a powdery coating on its lesions.
+- **Lab referrals:** 9 of Auto's 13 were warranted (the top answer was wrong, or the condition was late blight). Three of the four late blight photos went to a lab. The fourth is Leaf's worst answer on this split: Auto said **Confident: powdery mildew** (85%) on a late blight leaf, because the vision model reported a white powdery coating that is not there. Late blight is the condition Leaf misses most, for that reason.
 - **Where Leaf is wrong**, from looking at all 25 Quick misses (`docs/ACCURACY_AUDIT.md`): 12 reasoning errors (10 with the right answer in the top three, the kind Deep fixes), 6 where the vision model missed or invented a feature, 7 photos that are genuinely ambiguous, 0 naming mismatches.
 - **A structured symptom checklist in the vision step did not help** (top-1 48% with it, 52% without; it fixed 5 cases and broke 7), so it is off by default.
 

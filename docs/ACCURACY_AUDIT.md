@@ -60,3 +60,12 @@ whose plan still has no supported step is capped at Likely with "ask your extens
 instead of being sent to a lab. The second-opinion rule was kept: when the critic disagreed
 strongly the top answer was wrong 59% of the time, against 29% when it agreed, a weak but real
 signal, and refitting it on one run of 52 would be fitting noise.
+
+## Review fixes after the runs
+
+A review of the sprint found ways a case could end Confident or skip a lab referral, now fixed
+and tested: a high-stakes condition named second in one candidate ("Tobamovirus (ToBRFV or
+ToMV)", "early blight, possibly late blight") was not recognised; the second opinion's own
+high-stakes alternative was never checked; photos no model could read counted as no photo rather
+than a poor one; and a Deep plan that failed outright was capped at Likely instead of going to a
+lab. Replaying the logged runs through the fixed rules gives the same numbers as the README.

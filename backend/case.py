@@ -99,6 +99,7 @@ class Case(BaseModel):
     summary: str = ""
     seed_note: str = ""  # Auto mode: why Quick was unsure, and the evidence it weighed
     auto_reason: str = ""  # Auto mode: why Leaf went on to investigate
+    quick_result: dict[str, Any] | None = None  # Auto mode: the Quick answer, the fallback
 
     # ---- lookups and registration (synchronous, so concurrent tool calls stay consistent)
     def photo(self, photo_id: str) -> Photo | None:

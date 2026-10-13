@@ -381,6 +381,16 @@ async def test_a_plan_with_no_surviving_steps_is_never_confident(settings):
     assert "extension office" in res.plan.sample_if
 
 
+async def test_a_plan_that_cannot_be_written_goes_to_a_lab(settings):
+    deep, _, _ = deep_for(
+        settings,
+        [turn(search(), finish(("Early blight", 0.85, ["E1"])))],
+        responses={k: v for k, v in RESP.items() if k != "plan"},  # the plan step fails
+    )
+    res, _ = await collect(deep)
+    assert res.verdict == "lab" and res.plan.escalate and res.handoff is not None
+
+
 async def test_leaf_searches_itself_when_the_investigator_never_searched(settings):
     deep, _, searcher = deep_for(settings, [turn(finish(("Early blight", 0.85, [])))])
     res, _ = await collect(deep, notes="tomato")

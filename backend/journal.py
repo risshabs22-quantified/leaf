@@ -144,12 +144,13 @@ class S3Journal:
     """One JSON object per entry in an S3-compatible bucket (Nebius Object Storage).
 
     Credentials, endpoint and region come from the standard AWS_* environment variables, so
-    none of them live in code. Expired entries are deleted when someone asks for them; nothing
-    lists the bucket, so purge() is a no-op. At a few kilobytes per thumbnail, leftovers cost
-    a fraction of a cent. Pinned entries (scripts/pin_case.py) simply carry a later expiry.
+    none of them live in code. Each object carries its expiry as metadata: expired entries are
+    deleted when someone asks for them, and purge() (run at startup) deletes the rest. Pinned
+    entries (scripts/pin_case.py) simply carry a later expiry.
     """
 
     PREFIX = "journal/"
+    MISSING = {"NoSuchKey", "404", "NotFound", "AccessDenied", "403"}
 
     def __init__(self, bucket: str, client: Any = None):
         if client is None:
@@ -161,11 +162,20 @@ class S3Journal:
     def _key(self, entry_id: str) -> str:
         return f"{self.PREFIX}{entry_id}.json"
 
+    def _missing(self, exc: Exception) -> bool:
+        # Without ListBucket permission, S3 answers a missing key with AccessDenied.
+        code = str(getattr(exc, "response", {}).get("Error", {}).get("Code", ""))
+        return code in self.MISSING
+
     def _get(self, entry_id: str) -> JournalEntry | None:
         try:
             obj = self.client.get_object(Bucket=self.bucket, Key=self._key(entry_id))
         except self.client.exceptions.NoSuchKey:
             return None
+        except Exception as exc:
+            if self._missing(exc):
+                return None
+            raise
         entry = JournalEntry.model_validate_json(obj["Body"].read())
         if entry.expires <= time.time():
             self.client.delete_object(Bucket=self.bucket, Key=self._key(entry_id))
@@ -178,7 +188,25 @@ class S3Journal:
             Key=self._key(entry.id),
             Body=entry.model_dump_json().encode(),
             ContentType="application/json",
+            Metadata={"expires": str(int(entry.expires))},
         )
+
+    def _purge(self) -> int:
+        now, removed, token = time.time(), 0, None
+        while True:
+            kw = {"Bucket": self.bucket, "Prefix": self.PREFIX}
+            if token:
+                kw["ContinuationToken"] = token
+            page = self.client.list_objects_v2(**kw)
+            for obj in page.get("Contents", []):
+                head = self.client.head_object(Bucket=self.bucket, Key=obj["Key"])
+                expires = float((head.get("Metadata") or {}).get("expires", "0") or 0)
+                if expires <= now:
+                    self.client.delete_object(Bucket=self.bucket, Key=obj["Key"])
+                    removed += 1
+            if not page.get("IsTruncated"):
+                return removed
+            token = page.get("NextContinuationToken")
 
     async def get(self, entry_id: str) -> JournalEntry | None:
         if not entry_id or not all(c.isalnum() or c in "-_" for c in entry_id):
@@ -189,7 +217,7 @@ class S3Journal:
         await asyncio.to_thread(self._put, entry)
 
     async def purge(self) -> int:
-        return 0
+        return await asyncio.to_thread(self._purge)
 
 
 def open_journal(path: str, bucket: str = "") -> JournalStore:

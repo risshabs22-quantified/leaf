@@ -288,14 +288,34 @@ class FakeS3:
         class NoSuchKey(Exception):
             pass
 
-    def __init__(self):
+    def __init__(self, deny_missing=False):
         self.objects: dict[tuple[str, str], bytes] = {}
+        self.meta: dict[tuple[str, str], dict] = {}
+        self.deny_missing = deny_missing  # a bucket policy without ListBucket
 
-    def put_object(self, *, Bucket, Key, Body, ContentType):  # noqa: N803
+    def put_object(self, *, Bucket, Key, Body, ContentType, Metadata):  # noqa: N803
         self.objects[(Bucket, Key)] = Body
+        self.meta[(Bucket, Key)] = Metadata
+
+    def head_object(self, *, Bucket, Key):  # noqa: N803
+        return {"Metadata": self.meta[(Bucket, Key)]}
+
+    def list_objects_v2(self, *, Bucket, Prefix, ContinuationToken=None):  # noqa: N803
+        keys = sorted(k for b, k in self.objects if b == Bucket and k.startswith(Prefix))
+        keys = [k for k in keys if k > (ContinuationToken or "")]  # S3 tokens resume by key
+        page, more = keys[:2], len(keys) > 2  # tiny pages, to exercise pagination
+        return {
+            "Contents": [{"Key": k} for k in page],
+            "IsTruncated": more,
+            "NextContinuationToken": page[-1] if more else None,
+        }
 
     def get_object(self, *, Bucket, Key):  # noqa: N803
         if (Bucket, Key) not in self.objects:
+            if self.deny_missing:
+                err = Exception("AccessDenied")
+                err.response = {"Error": {"Code": "AccessDenied"}}
+                raise err
             raise self.exceptions.NoSuchKey()
         return {"Body": io.BytesIO(self.objects[(Bucket, Key)])}
 
@@ -340,3 +360,19 @@ async def test_pinning_keeps_a_share_link_alive(tmp_path, monkeypatch):
     assert await pin_case.pin(entry.id, until) == 0
     assert (await store.get(entry.id)).expires == until.timestamp()
     assert await pin_case.pin("missing", until) == 1
+
+
+async def test_the_bucket_purge_removes_expired_entries_and_keeps_pinned_ones():
+    s3 = FakeS3()
+    store = S3Journal("leaf-journal", client=s3)
+    pinned = JournalEntry(expires=time.time() + 400 * 86400)
+    expired = [JournalEntry(expires=time.time() - 1) for _ in range(4)]
+    for e in [pinned, *expired]:
+        await store.put(e)
+    assert await store.purge() == 4
+    assert [k for _, k in s3.objects] == [f"journal/{pinned.id}.json"]
+
+
+async def test_a_missing_report_is_not_found_even_when_the_bucket_denies_listing():
+    store = S3Journal("leaf-journal", client=FakeS3(deny_missing=True))
+    assert await store.get("does-not-exist") is None

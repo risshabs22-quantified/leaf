@@ -29,7 +29,7 @@ class Condition:
 CONDITIONS: tuple[Condition, ...] = (
     # ---------------------------------------------------------------- fungal and oomycete
     Condition("late_blight", "Late blight", "disease",
-              (r"late blight", r"phytophthora infestans"),
+              (r"late[- ]blight", r"phytophthora infestans", r"p\. ?infestans"),
               high_stakes="A community disease: one spot releases thousands of airborne spores "
               "within days, so neighbouring tomato and potato plantings are at risk. Extension "
               "services ask growers to report it.",
@@ -163,6 +163,13 @@ def identify(name: str) -> str | None:
 
 
 def high_stakes(name: str) -> Condition | None:
-    cid = identify(name)
-    cond = BY_ID.get(cid) if cid else None
-    return cond if cond and cond.high_stakes else None
+    """A high-stakes condition named anywhere in `name`, not only the first one named:
+    "Tobamovirus (ToBRFV or ToMV)" and "early blight, possibly late blight" both count."""
+    for cond, aliases, nots in _ALIASES:
+        if not cond.high_stakes:
+            continue
+        blocked = [m.span() for p in nots for m in p.finditer(name)]
+        for p in aliases:
+            if any(not any(s <= m.start() < e for s, e in blocked) for m in p.finditer(name)):
+                return cond
+    return None

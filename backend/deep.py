@@ -86,10 +86,18 @@ def deep_decision(case: Case, confidence: Confidence, critic: CriticOpinion | No
         disagreement = (
             f"Leaf and its second opinion disagree{alt}. A diagnostic lab can tell them apart."
         )
+    # Photos no model could read are as unusable as a poor photo.
+    quality = "poor" if case.photos and confidence.quality == "none" else confidence.quality
+    also = (
+        [(critic.alternative, critic.alternative_probability)]
+        if critic and critic.alternative
+        else []
+    )
     return decide(
         [(h.name, h.probability) for h in hyps],
-        confidence.quality,
+        quality,
         DEEP,
+        also_named=also,
         top_score=confidence.value,
         disagreement=disagreement,
         contested_by=(critic.alternative if critic else "") if confidence.disagreement else None,
@@ -191,8 +199,12 @@ class DeepLeaf:
         if case.status != "needs_answers":
             raise CaseStateError("This case is not waiting for answers.")
         deadline = self.investigator.clock() + self.leaf.settings.deep_wall_s
+        quick = DiagnoseResponse.model_validate(case.quick_result) if case.quick_result else None
         return await self._investigate(
-            case, emit, lambda: self.investigator.resume(case, answers, emit, deadline)
+            case,
+            emit,
+            lambda: self.investigator.resume(case, answers, emit, deadline),
+            quick=quick,
         )
 
     async def auto(
@@ -211,8 +223,12 @@ class DeepLeaf:
         repeating them. `may_investigate` returns "" to allow that, or why it can't (the
         daily Deep cap), and is called only when an investigation is wanted."""
         await emit({"type": "quick_start"})
-        quick = await self.leaf.diagnose(
-            image_b64=photos[0][2] if photos else None, notes=notes, region=region
+        # Bounded, so the investigation that may follow still fits in the request deadline.
+        quick = await asyncio.wait_for(
+            self.leaf.diagnose(
+                image_b64=photos[0][2] if photos else None, notes=notes, region=region
+            ),
+            self.leaf.settings.deadline_s,
         )
         if quick.verdict == "confident":
             why = f"Quick was confident: {quick.verdict_reason}"
@@ -287,6 +303,7 @@ class DeepLeaf:
             }
         )
         case.auto_reason = why
+        case.quick_result = quick.model_dump(mode="json")
         return await self._investigate(
             case, emit, lambda: self.investigator.run(case, emit, deadline), quick=quick
         )
@@ -440,7 +457,7 @@ class DeepLeaf:
         case.investigator_differential = [h.model_copy() for h in case.differential]
         case.differential = blend(case.first_differential, case.differential, s.deep_blend_first)
 
-        async def plan_and_check() -> tuple[CarePlan, list[ClaimFlag]]:
+        async def plan_and_check() -> tuple[CarePlan, list[ClaimFlag], bool]:
             # Reading sources, writing the plan and checking it do not need the second
             # opinion (escalation is applied in code afterwards), so they run alongside it.
             try:
@@ -452,13 +469,10 @@ class DeepLeaf:
                     write_plan(self.leaf.llm, s, case, case.region, trace), PLAN_TIMEOUT_S
                 )
             except (ModelError, TimeoutError):
-                plan = CarePlan(
-                    summary="Leaf could not write a care plan right now. Your diagnosis is above.",
-                    escalate=True,
-                    escalate_reason=(
-                        "Plan generation failed; check with your local extension office."
-                    ),
+                failed = CarePlan(
+                    summary="Leaf could not write a care plan right now. Your diagnosis is above."
                 )
+                return failed, [], True
             flags = code_checks(plan, case)
             try:
                 flags += await asyncio.wait_for(
@@ -466,7 +480,7 @@ class DeepLeaf:
                 )
             except TimeoutError:
                 log.warning("claim judge timed out for %s; code checks stand", case.id)
-            return plan, flags
+            return plan, flags, False
 
         critic_result, planned = await asyncio.gather(
             asyncio.wait_for(second_opinion(self.leaf.llm, s, case, trace), CRITIC_TIMEOUT_S),
@@ -475,15 +489,8 @@ class DeepLeaf:
         )
         if isinstance(planned, BaseException):  # never expected; degrade rather than fail
             log.exception("plan step crashed for %s", case.id, exc_info=planned)
-            planned = (
-                CarePlan(
-                    summary="Leaf could not write a care plan right now.",
-                    escalate=True,
-                    escalate_reason="Check with your local extension office.",
-                ),
-                [],
-            )
-        plan, flags = planned
+            planned = (CarePlan(summary="Leaf could not write a care plan right now."), [], True)
+        plan, flags, plan_failed = planned
         critic = None if isinstance(critic_result, BaseException) else critic_result
         if isinstance(critic_result, BaseException):
             log.warning("second opinion failed for %s: %r", case.id, critic_result)
@@ -501,7 +508,13 @@ class DeepLeaf:
         sources_text = " ".join(" ".join(s.passages) for s in case.sources)
         flags += check_summary(plan, sources_text)
         decision = deep_decision(case, confidence, critic)
-        if not plan.steps:
+        if plan_failed:  # as in Quick: no plan at all, so a lab or extension office decides
+            decision = Decision(
+                "lab",
+                "Leaf could not write a care plan right now; your local extension office "
+                "or plant diagnostic lab can advise.",
+            )
+        elif not plan.steps:
             # No step survived the claim check: the diagnosis stands, but Leaf has no cited
             # plan to offer, so it is never Confident and says where to get one.
             if decision.verdict == "confident":

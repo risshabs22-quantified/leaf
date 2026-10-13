@@ -204,7 +204,11 @@ async def lifespan(app: FastAPI):
     s = app.state.leaf.settings
     if getattr(app.state, "journal", None) is None:
         app.state.journal = open_journal(s.journal_path, s.journal_bucket)
-    removed = await app.state.journal.purge()
+    try:
+        removed = await app.state.journal.purge()
+    except Exception:  # noqa: BLE001 - a storage hiccup must not stop the app starting
+        log.exception("journal purge failed; expired entries are still hidden on read")
+        removed = 0
     if removed:
         log.info("journal: removed %d expired entries", removed)
     yield
@@ -345,7 +349,7 @@ def _deep_deadline(request: Request) -> float:
     s = request.app.state.leaf.settings
     # The case's own clock covers first looks, the first differential and the investigation.
     # After it, the second opinion (up to 35 s) runs alongside reads, plan and claim check
-    # (up to 44 s), or a Quick fallback runs (up to 40 s).
+    # (up to 50 s), or a Quick fallback runs (up to 40 s).
     return s.deep_wall_s + 60
 
 

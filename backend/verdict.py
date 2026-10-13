@@ -60,18 +60,24 @@ def decide(
     top_score: float | None = None,
     disagreement: str = "",
     contested_by: str | None = None,
+    also_named: list[tuple[str, float]] = (),
 ) -> Decision:
     """`ranking` is (name, probability), best first. `top_score` overrides the leader's
     probability when the mode has a better estimate (Deep's combined confidence).
     `disagreement` is a non-empty reason when a second opinion strongly disagrees; a milder
-    disagreement (`contested_by`, the alternative it named, or "") still rules out Confident."""
+    disagreement (`contested_by`, the alternative it named, or "") still rules out Confident.
+    `also_named` are causes outside the ranking (the second opinion's alternative), checked
+    only for high-stakes conditions, at the anywhere threshold."""
     if not ranking:
         return Decision("lab", "Leaf could not reach a diagnosis.")
     name, p = ranking[0]
     top = p if top_score is None else top_score
-    for rank, (cand, prob) in enumerate(ranking):
+    named = [
+        (c, p, HIGH_STAKES_FLOOR if r < 2 else HIGH_STAKES_ANYWHERE)
+        for r, (c, p) in enumerate(ranking)
+    ] + [(c, p, HIGH_STAKES_ANYWHERE) for c, p in also_named]
+    for cand, prob, floor in named:
         cond = high_stakes(cand)
-        floor = HIGH_STAKES_FLOOR if rank < 2 else HIGH_STAKES_ANYWHERE
         if cond and prob >= floor:
             lead = "Leaf thinks this is" if cand == name else "Leaf can't rule out"
             return Decision(

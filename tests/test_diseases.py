@@ -89,3 +89,22 @@ def test_table_is_well_formed():
         assert c.kind in {"disease", "abiotic", "pest"}
         assert c.aliases
         assert identify(c.name) == c.id, c.name  # every display name maps to itself
+
+
+@pytest.mark.parametrize(
+    ("name", "cid"),
+    [
+        ("Tobamovirus (ToBRFV or ToMV)", "tobrfv"),
+        ("Tomato mosaic virus or ToBRFV", "tobrfv"),
+        ("Early blight, possibly late blight", "late_blight"),
+        ("Septoria vs late blight", "late_blight"),
+        ("Late-blight", "late_blight"),
+        ("Phytophthora blight (P. infestans)", "late_blight"),
+    ],
+)
+def test_a_high_stakes_condition_counts_wherever_it_is_named(name, cid):
+    assert high_stakes(name).id == cid
+
+
+def test_other_phytophthora_blights_are_not_late_blight():
+    assert high_stakes("Phytophthora blight (P. capsici)") is None

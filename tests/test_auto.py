@@ -64,6 +64,35 @@ def test_deep_scores_on_its_combined_confidence():
     assert strong.verdict == "lab" and strong.reason == "They disagree."
 
 
+def test_a_high_stakes_alternative_from_the_second_opinion_goes_to_a_lab():
+    from backend.critic import CriticOpinion, combine
+    from backend.deep import deep_decision
+    from tests.test_critic import case_with
+
+    critic = CriticOpinion(
+        alternative="Late blight",
+        alternative_probability=0.25,
+        leading_probability=0.8,
+        agrees=True,
+    )
+    case = case_with(("Early blight", 0.85))
+    d = deep_decision(case, combine(case, critic), critic)
+    assert d.verdict == "lab" and d.high_stakes == "Late blight"
+
+
+def test_photos_no_model_could_read_are_never_confident():
+    from backend.case import Case, Hypothesis, Photo
+    from backend.critic import CriticOpinion, combine
+    from backend.deep import deep_decision
+
+    case = Case(photos=[Photo(id="P1", full_b64="", view_b64="")])  # no observation
+    case.differential = [Hypothesis(name="Early blight", probability=0.85, evidence_for=["E1"])]
+    case.add_evidence("search_sources", "x")
+    critic = CriticOpinion(alternative="", leading_probability=0.85, agrees=True)
+    d = deep_decision(case, combine(case, critic), critic)
+    assert d.verdict == "lab" and "unclear" in d.reason
+
+
 async def test_quick_reports_its_verdict_and_only_a_lab_verdict_escalates(settings):
     leaf, _, _ = make_leaf(settings, {**RESP, "diagnose": DIAG_HIGH})
     res = await leaf.diagnose(image_b64="abc")
@@ -153,9 +182,11 @@ async def test_the_auto_decision_survives_answering_questions(settings):
 
 async def test_auto_reads_quick_sources_instead_of_searching_again(settings):
     deep, llm = auto_for(settings, DIAG_LOW, [turn(finish(("Early blight", 0.8, [])))])
+    searcher = deep.leaf.searcher
     res, _ = await run_auto(deep)
     brief = next(m for s, m in llm.sent if s == "investigate")[1]["content"]
     assert "<sources_found>" in brief and res.sources
+    assert not getattr(searcher, "web_calls", [])  # Quick's sources were enough: no new search
 
 
 async def test_auto_only_looks_at_the_photos_quick_did_not_see(settings):
@@ -171,6 +202,36 @@ async def test_auto_stays_quick_when_the_deep_cap_is_used(settings):
     assert res.mode == "quick" and res.auto.investigated is False
     assert "today's limit" in res.notice and "today's limit" in res.auto.reason
     assert not any(step == "investigate" for step, _ in llm.calls)
+
+
+async def test_a_resumed_auto_case_that_fails_returns_quicks_answer(settings):
+    ask = ("ask_user", {"reason": "Rings would separate them.", "questions": ["Rings?"]})
+    deep, llm = auto_for(settings, DIAG_LOW, [turn(ask)])
+    first, _ = await run_auto(deep)
+
+    async def boom(case, answers, emit, deadline=None):
+        raise KeyError("a bug")
+
+    deep.investigator.resume = boom
+    res = await deep.resume(await deep.store.get(first.case_id), ["yes"])
+    assert res.status == "fallback" and res.auto.investigated
+    assert [step for step, _ in llm.calls].count("diagnose") == 1  # Quick is not run again
+
+
+async def test_a_slow_quick_in_auto_times_out_before_the_cap_is_spent(settings):
+    import asyncio
+    import dataclasses
+
+    deep, _ = auto_for(dataclasses.replace(settings, deadline_s=0.05), DIAG_LOW)
+
+    async def slow(**kw):
+        await asyncio.sleep(1)
+
+    deep.leaf.diagnose = slow
+    asked = []
+    with pytest.raises(TimeoutError):
+        await run_auto(deep, may_investigate=lambda: asked.append(1) or "")
+    assert not asked
 
 
 async def test_a_failed_investigation_returns_quicks_answer_without_redoing_it(settings):
