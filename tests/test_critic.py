@@ -1,0 +1,263 @@
+"""M3: second opinion, confidence in code, plan from passages, claim check, lab handoff."""
+
+from __future__ import annotations
+
+import pytest
+
+from backend.case import Case, Hypothesis, Photo
+from backend.claims import code_checks, ensure_passages, judge
+from backend.critic import CriticOpinion, add_alternative, combine
+from backend.deep import escalation_reason
+from backend.handoff import NPDN_DIRECTORY, state_code
+from backend.schemas import CarePlan, Observation, PlanStep
+from tests.conftest import FakeSearcher, make_leaf
+from tests.test_agent import RESP, collect, deep_for, finish, search, turn
+
+
+def case_with(*hyps, quality="good", evidence=2):
+    case = Case(notes="tomato")
+    for i in range(evidence):
+        case.add_evidence("look_closer", f"finding {i}")
+    case.differential = [
+        Hypothesis(name=n, probability=p, evidence_for=[f"E{i + 1}" for i in range(evidence)])
+        for n, p in hyps
+    ]
+    if quality:
+        case.photos = [
+            Photo(
+                id="P1", full_b64="x", view_b64="x", observation=Observation(image_quality=quality)
+            )
+        ]
+    return case
+
+
+def opinion(agrees=True, lead=0.8, alt="Septoria", alt_p=0.1):
+    return CriticOpinion(
+        alternative=alt,
+        alternative_probability=alt_p,
+        leading_probability=lead,
+        agrees=agrees,
+        argument="...",
+    )
+
+
+# ---------------------------------------------------------------- confidence
+
+
+def test_agreement_averages_the_two_opinions():
+    c = combine(case_with(("Early blight", 0.8)), opinion(lead=0.7))
+    assert c.value == 0.75 and not c.disagreement
+
+
+def test_disagreement_takes_the_lower_estimate():
+    c = combine(
+        case_with(("Early blight", 0.85)),
+        opinion(agrees=False, lead=0.3, alt="Late blight", alt_p=0.6),
+    )
+    assert c.disagreement and c.value == 0.3
+
+
+def test_a_close_alternative_counts_as_disagreement_even_if_the_critic_says_it_agrees():
+    c = combine(case_with(("Early blight", 0.8)), opinion(agrees=True, lead=0.5, alt_p=0.45))
+    assert c.disagreement
+
+
+@pytest.mark.parametrize(
+    ("quality", "factor"), [("good", 1.0), ("fair", 0.95), ("poor", 0.7), (None, 0.9)]
+)
+def test_photo_quality_scales_confidence(quality, factor):
+    c = combine(case_with(("Early blight", 0.8), quality=quality), opinion(lead=0.8))
+    assert c.quality_factor == factor and c.value == pytest.approx(0.8 * factor, abs=1e-3)
+
+
+@pytest.mark.parametrize(("n", "factor"), [(0, 0.8), (1, 0.9), (2, 1.0), (4, 1.0)])
+def test_evidence_coverage_scales_confidence(n, factor):
+    c = combine(case_with(("Early blight", 0.8), evidence=n), opinion(lead=0.8))
+    assert c.coverage_factor == factor
+
+
+def test_without_a_second_opinion_leaf_is_less_sure_and_never_near_certain():
+    c = combine(case_with(("Early blight", 0.9)), None)
+    assert c.critic is None and c.value == pytest.approx(0.81)
+    assert combine(case_with(("Early blight", 0.9)), opinion(lead=1.0)).value <= 0.9
+
+
+def test_the_critics_alternative_is_shown_when_the_investigator_left_it_out():
+    case = case_with(("Early blight", 0.8))
+    add_alternative(case, opinion(agrees=False, alt="Late blight", alt_p=0.6))
+    assert case.differential[-1].name == "Late blight (second opinion)"
+    case2 = case_with(("Early blight (Alternaria solani)", 0.8), ("Late blight", 0.1))
+    add_alternative(case2, opinion(alt="late blight", alt_p=0.6))
+    assert len(case2.differential) == 2  # already there: not duplicated
+
+
+async def test_the_critic_sees_evidence_but_not_the_investigators_reasoning(settings):
+    deep, llm, _ = deep_for(
+        settings,
+        [turn(search(), finish(("Early blight", 0.83, ["E1"]), summary="SECRET-REASONING"))],
+    )
+    await collect(deep)
+    critic_prompt = next(m for s, m in llm.sent if s == "critic")[-1]["content"]
+    assert "Early blight" in critic_prompt and "E1" in critic_prompt
+    assert "SECRET-REASONING" not in critic_prompt and "0.83" not in critic_prompt
+
+
+# ---------------------------------------------------------------- escalation
+
+
+def test_escalation_reasons_come_most_specific_first():
+    agree = opinion(lead=0.8)
+    tie = case_with(("Early blight", 0.5), ("Septoria", 0.42))
+    assert "too close to call" in escalation_reason(tie, combine(tie, agree), agree)
+    dis = opinion(agrees=False, lead=0.3, alt="Late blight", alt_p=0.6)
+    case = case_with(("Early blight", 0.85))
+    assert "Late blight" in escalation_reason(case, combine(case, dis), dis)
+    poor = case_with(("Early blight", 0.85), quality="poor")
+    assert "unclear" in escalation_reason(poor, combine(poor, agree), agree)
+    clear = case_with(("Early blight", 0.85))
+    assert escalation_reason(clear, combine(clear, agree), agree) == ""
+
+
+async def test_a_disagreeing_critic_escalates_and_produces_a_lab_handoff(settings):
+    disagrees = {
+        "alternative": "Late blight",
+        "alternative_probability": 0.6,
+        "leading_probability": 0.3,
+        "agrees": False,
+        "key_evidence": ["E1"],
+        "argument": "White growth on the lesion is a sign of late blight.",
+    }
+    deep, _, _ = deep_for(
+        settings,
+        [turn(search(), finish(("Early blight", 0.85, ["E1"])))],
+        responses={**RESP, "critic": disagrees},
+    )
+    res, events = await collect(deep, region="Columbus, OH", notes="potato leaves")
+    assert res.plan.escalate and res.low_confidence and res.confidence.disagreement
+    assert "Late blight" in res.plan.escalate_reason
+    assert any(h.name == "Late blight (second opinion)" for h in res.differential)
+    h = res.handoff
+    assert h.lab_url == f"{NPDN_DIRECTORY}?state=OH&region=" and h.lab_state == "OH"
+    assert "paused or reduced" in h.lab_notice and len(h.sampling_sources) == 3
+    assert h.differential and h.history["notes"] == "potato leaves"
+    assert any(e["type"] == "critic" for e in events)
+
+
+async def test_a_confident_agreed_case_has_no_handoff(settings):
+    deep, _, _ = deep_for(
+        settings,
+        [turn(search(), search("septoria spots"), finish(("Early blight", 0.85, ["E1", "E2"])))],
+    )
+    res, _ = await collect(deep)
+    assert not res.plan.escalate and res.handoff is None and res.confidence.value >= 0.6
+
+
+async def test_an_unavailable_second_opinion_does_not_break_the_case(settings):
+    resp = {k: v for k, v in RESP.items() if k != "critic"}
+    deep, _, _ = deep_for(
+        settings, [turn(search(), finish(("Early blight", 0.8, ["E1"])))], responses=resp
+    )
+    res, _ = await collect(deep)
+    assert res.status == "done" and res.critic is None and res.confidence.critic is None
+
+
+@pytest.mark.parametrize(
+    ("region", "code"),
+    [("Columbus, OH", "OH"), ("Ohio", "OH"), ("georgia", "GA"), ("Paris", None), ("", None)],
+)
+def test_state_codes_for_the_lab_link(region, code):
+    assert state_code(region) == code
+
+
+# ---------------------------------------------------------------- claim check
+
+
+def read_case(
+    passage="Remove infected lower leaves. Apply copper fungicide at 2 tablespoons per gallon.",
+):
+    case = Case()
+    src = case.add_source("https://extension.umn.edu/x", "UMN", "", True)
+    src.passages = [passage]
+    case.add_source("https://blog.example.com/x", "Blog", "", False)  # found, never read
+    return case
+
+
+def plan_of(*steps):
+    return CarePlan(summary="s", steps=[PlanStep(action=a, source_ids=ids) for a, ids in steps])
+
+
+def test_steps_must_cite_a_source_leaf_actually_read():
+    plan = plan_of(
+        ("Remove infected lower leaves.", [1]), ("Spray neem weekly.", [2]), ("Pray for sun.", [])
+    )
+    flags = code_checks(plan, read_case())
+    assert [s.action for s in plan.steps] == ["Remove infected lower leaves."]
+    assert [f.verdict for f in flags] == ["dropped", "dropped"]
+
+
+def test_a_rate_not_in_the_cited_passage_is_dropped_and_one_that_is_stays():
+    plan = plan_of(
+        ("Mix 5 tablespoons per gallon of copper.", [1]),
+        ("Apply copper fungicide at 2 tablespoons per gallon.", [1]),
+    )
+    flags = code_checks(plan, read_case())
+    assert len(plan.steps) == 1 and "2 tablespoons" in plan.steps[0].action
+    assert flags[0].verdict == "dropped" and "5 tablespoons" in flags[0].reason
+
+
+def test_chemical_steps_always_say_follow_the_label():
+    plan = plan_of(("Apply copper fungicide at 2 tablespoons per gallon", [1]))
+    flags = code_checks(plan, read_case())
+    assert plan.steps[0].action.endswith("Follow the product label.")
+    assert flags[-1].verdict == "label_added"
+
+
+async def test_the_judge_drops_unsupported_steps_and_flags_partial_ones(settings):
+    verdicts = {
+        "verdicts": [
+            {"step": 1, "verdict": "supported"},
+            {"step": 2, "verdict": "partial", "note": "The source says lower leaves only."},
+            {"step": 3, "verdict": "unsupported", "note": "Not in the source."},
+        ]
+    }
+    leaf, _, _ = make_leaf(settings, {"claim_check": verdicts})
+    plan = plan_of(
+        ("Remove infected lower leaves.", [1]),
+        ("Remove all leaves.", [1]),
+        ("Burn the garden.", [1]),
+    )
+    flags = await judge(leaf.llm, settings, plan, read_case(), [])
+    assert [s.action for s in plan.steps] == ["Remove infected lower leaves.", "Remove all leaves."]
+    assert plan.steps[1].flag == "The source says lower leaves only."
+    assert [f.verdict for f in flags] == ["partial", "dropped"]
+
+
+async def test_an_unavailable_judge_leaves_the_code_checks_standing(settings):
+    leaf, _, _ = make_leaf(settings, {})
+    plan = plan_of(("Remove infected lower leaves.", [1]))
+    assert await judge(leaf.llm, settings, plan, read_case(), []) == []
+    assert len(plan.steps) == 1
+
+
+async def test_leaf_reads_trusted_sources_itself_when_the_investigator_read_none():
+    case = Case()
+    case.differential = [Hypothesis(name="Early blight", probability=0.8)]
+    case.add_source("https://blog.example.com/x", "Blog", "", False)
+    case.add_source("https://extension.umn.edu/x", "UMN", "", True)
+    searcher = FakeSearcher()
+    await ensure_passages(case, searcher)
+    assert searcher.extracted[0] == "https://extension.umn.edu/x"  # trusted first
+    assert case.sources[1].passages and case.tavily_credits == 2
+    before = list(searcher.extracted)
+    await ensure_passages(case, searcher)  # already has passages: no more reads
+    assert searcher.extracted == before
+
+
+def test_the_alternative_is_not_added_twice_under_another_spelling():
+    case = case_with(
+        ("Septoria leaf spot", 0.7), ("Bacterial spot (Xanthomonas/Pseudomonas)", 0.05)
+    )
+    add_alternative(
+        case, opinion(agrees=False, alt="Bacterial spot (Xanthomonas spp.)", alt_p=0.38)
+    )
+    assert len(case.differential) == 2

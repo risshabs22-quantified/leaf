@@ -72,12 +72,21 @@ def case_brief(case: Case, settings: Settings) -> str:
         for p in case.photos
     ]
     place = case.region or ("browser location" if case.lat is not None else "unknown")
+    seed = ""
+    if case.differential:  # the first differential, to test rather than to trust
+        first = [{"name": h.name, "probability": h.probability} for h in case.differential]
+        seed = (
+            f"<first_differential>{sanitize(json.dumps(first))}</first_differential>\n"
+            "This first differential came from the first look alone. Test it: confirm, revise "
+            "or overturn it with evidence.\n"
+        )
     return (
         f"<gardener_notes>{sanitize(case.notes) or 'none'}</gardener_notes>\n"
         f"<region>{sanitize(place, 100)}</region>\n"
         f"<crop>{sanitize(case.crop or 'unknown', 60)}</crop>\n"
         # The first looks are model-written (and a photo can contain text): sanitise them.
         f"<photos>{sanitize(json.dumps(photos))}</photos>\n"
+        f"{seed}"
         f"Budget: {settings.deep_max_calls} tool calls (update_differential, ask_user and "
         f"finish are free), about {settings.deep_wall_s} seconds."
     )
@@ -169,7 +178,13 @@ class Investigator:
                             "differential and the evidence ids you have.",
                         }
                     )
-            res = await self._turn(case, forced=bool(limit), deadline=deadline, emit=emit)
+            try:
+                res = await self._turn(case, forced=bool(limit), deadline=deadline, emit=emit)
+            except AgentError:
+                if limit and case.differential:  # the forced finish failed: keep what we have
+                    log.warning("forced finish failed; using the last recorded differential")
+                    break
+                raise
             if res is None:  # no time left for a normal turn: go straight to the forced finish
                 limit = "time budget"
                 await emit({"type": "limit", "limit": limit})
@@ -263,7 +278,9 @@ class Investigator:
         for i, model in enumerate([s.reason_model, s.fallback_model]):
             for choice in choices:
                 left = deadline - self.clock()
-                budget = left - 1 if forced else left - FINISH_RESERVE_S
+                # Forced: give each attempt part of what is left, so a hang on Ultra still
+                # leaves Super a chance.
+                budget = min(left - 1, max(3.0, left / 2)) if forced else left - FINISH_RESERVE_S
                 if budget < 2:
                     if not forced:
                         return None
@@ -317,8 +334,9 @@ class Investigator:
         others = [c for c in calls if c.name not in TERMINAL]
         seen: set[tuple[str, str]] = set()
         prepared: list[_Prepared] = []
+        turn_spend = [0.0]
         for call in others:
-            p = self._prepare(call, ctx, forced)
+            p = self._prepare(call, ctx, forced, turn_spend)
             key = (call.name, call.arguments.strip())
             if p.args is not None and key in seen:  # identical call twice in one turn
                 if TOOLS[call.name].counts:
@@ -382,9 +400,13 @@ class Investigator:
         )
         return AgentResult("finish")
 
-    def _prepare(self, call: ToolCall, ctx: ToolContext, forced: bool) -> _Prepared:
-        """Parse, validate and budget-check one call before anything runs."""
+    def _prepare(
+        self, call: ToolCall, ctx: ToolContext, forced: bool, turn_spend: list[float] | None = None
+    ) -> _Prepared:
+        """Parse, validate and budget-check one call before anything runs. `turn_spend` holds
+        the estimated cost of calls already prepared this turn (they have not run yet)."""
         case = ctx.case
+        turn_spend = turn_spend if turn_spend is not None else [0.0]
         case.step_seq += 1  # unique even when several calls are prepared in one turn
         record = StepRecord(n=case.step_seq, tool=call.name)
         prepared = _Prepared(call=call, record=record)
@@ -418,7 +440,8 @@ class Investigator:
                 return prepared
             # Checked per call, not just per turn, so one turn of many calls cannot overshoot.
             estimate = LOOK_CLOSER_COST_ESTIMATE if call.name == "look_closer" else 0.0
-            if case.cost_usd + estimate >= self.settings.deep_budget_usd * BUDGET_SHARE_FOR_LOOP:
+            planned = case.cost_usd + turn_spend[0] + estimate
+            if planned >= self.settings.deep_budget_usd * BUDGET_SHARE_FOR_LOOP:
                 record.ok, record.skipped = False, "cost budget spent"
                 return prepared
             cap = PER_CASE_CAPS.get(call.name)
@@ -430,15 +453,18 @@ class Investigator:
                 return prepared
             case.calls_used += 1
             case.tool_counts[call.name] = case.tool_counts.get(call.name, 0) + 1
+            turn_spend[0] += estimate
         prepared.args = args
         return prepared
 
     async def _execute(self, p: _Prepared, ctx: ToolContext, deadline: float) -> None:
         spec = TOOLS[p.call.name]
-        remaining = deadline - self.clock()
+        remaining = deadline - self.clock() - FINISH_RESERVE_S  # tools leave the finish reserve
         t0 = time.perf_counter()
         if remaining <= 1 and spec.counts:
             p.record.ok, p.record.skipped = False, "time budget spent"
+            ctx.case.calls_used -= 1  # refund: it never ran
+            ctx.case.tool_counts[p.call.name] = max(0, ctx.case.tool_counts.get(p.call.name, 1) - 1)
             return
         try:
             out: ToolOutcome = await asyncio.wait_for(

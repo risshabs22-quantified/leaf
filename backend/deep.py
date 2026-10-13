@@ -17,12 +17,15 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from backend.agent import AgentError, AgentResult, Investigator
-from backend.case import Case, Evidence, Hypothesis, Photo, StepRecord
+from backend.case import Case, Evidence, Hypothesis, Photo, StepRecord, normalise_differential
+from backend.claims import ClaimFlag, code_checks, ensure_passages, judge, write_plan
 from backend.conditions import WeatherClient
+from backend.critic import Confidence, CriticOpinion, add_alternative, combine, second_opinion
 from backend.crops import infer_crop
+from backend.handoff import LabHandoff, build_handoff
 from backend.models import ModelError, complete_json
-from backend.pipeline import ESCALATE_REASON, Leaf, _source_for_prompt, is_low_confidence
-from backend.prompts import PLAN_SYSTEM, sanitize
+from backend.pipeline import AMBIGUITY_MARGIN, LOW_CONFIDENCE, Leaf, is_low_confidence
+from backend.prompts import DIAGNOSE_SYSTEM, sanitize
 from backend.schemas import (
     Candidate,
     CarePlan,
@@ -40,12 +43,36 @@ log = logging.getLogger("leaf.deep")
 Emit = Callable[[dict[str, Any]], Awaitable[None]]
 
 FIRST_LOOK_TIMEOUT_S = 25
-PLAN_TIMEOUT_S = 25
+SEED_TIMEOUT_S = 20
+CRITIC_TIMEOUT_S = 35  # Super with reasoning: ~18 s measured; runs alongside the plan
+READ_TIMEOUT_S = 12
+PLAN_TIMEOUT_S = 20
+CLAIM_TIMEOUT_S = 12
 QUICK_FALLBACK_TIMEOUT_S = 40  # the request deadline (wall clock + 45 s) leaves room for it
 
 
 async def _ignore(_: dict[str, Any]) -> None:
     return None
+
+
+def escalation_reason(case: Case, confidence: Confidence, critic: CriticOpinion | None) -> str:
+    """Why Leaf hands this case to a lab, most specific reason first; "" when it does not."""
+    hyps = case.differential
+    if not hyps:
+        return "Leaf could not reach a diagnosis."
+    top = hyps[0]
+    if confidence.disagreement and critic is not None and critic.alternative:
+        return (
+            f"Leaf and its second opinion disagree ({top.name} vs {critic.alternative}). "
+            "A diagnostic lab can tell them apart."
+        )
+    if len(hyps) > 1 and top.probability - hyps[1].probability < AMBIGUITY_MARGIN:
+        return f"{top.name} and {hyps[1].name} are too close to call from photos."
+    if confidence.quality == "poor":
+        return "The photos are too unclear for a confident diagnosis."
+    if confidence.value < LOW_CONFIDENCE:
+        return f"Leaf is only {round(confidence.value * 100)}% confident."
+    return ""
 
 
 class CaseStateError(Exception):
@@ -74,6 +101,10 @@ class DeepResponse(DiagnoseResponse):
     limit: str = ""
     cost_usd: float = 0.0
     tavily_credits: int = 0
+    confidence: Confidence | None = None
+    critic: CriticOpinion | None = None
+    claim_flags: list[ClaimFlag] = Field(default_factory=list)
+    handoff: LabHandoff | None = None
 
 
 def _source_int(source_id: str) -> int:
@@ -117,6 +148,8 @@ class DeepLeaf:
         case.crop = infer_crop(
             notes, *(p.observation.plant_guess for p in case.photos if p.observation)
         )
+        if self.leaf.settings.deep_seed:
+            await self._seed_differential(case, emit, deadline)
         return await self._investigate(
             case, emit, lambda: self.investigator.run(case, emit, deadline)
         )
@@ -132,6 +165,55 @@ class DeepLeaf:
         )
 
     # ------------------------------------------------------------------ steps
+
+    async def _seed_differential(self, case: Case, emit: Emit, deadline: float) -> None:
+        """The first differential, from the structured diagnosis step Quick uses. The
+        investigator then tests it; a failure here only means it starts from nothing."""
+        s = self.leaf.settings
+        looks = [p.observation.model_dump() for p in case.photos if p.observation]
+        context = (
+            f"<observations>{sanitize(json.dumps(looks))}</observations>\n"
+            f"<gardener_notes>{sanitize(case.notes) or 'none'}</gardener_notes>\n"
+            f"<region>{sanitize(case.region) or 'unknown'}</region>\n"
+            "<follow_up_answers>none</follow_up_answers>"
+        )
+        trace: list[ModelCall] = []
+        budget = max(5.0, min(SEED_TIMEOUT_S, deadline - self.investigator.clock() - 40))
+        try:
+            diagnosis = await asyncio.wait_for(
+                complete_json(
+                    self.leaf.llm,
+                    step="first_differential",
+                    models=[s.reason_model, s.fallback_model],
+                    messages=[
+                        {"role": "system", "content": DIAGNOSE_SYSTEM},
+                        {"role": "user", "content": context},
+                    ],
+                    schema=Diagnosis,
+                    trace=trace,
+                    thinking=True,
+                    max_tokens=6000,
+                    repair_model=s.fast_model,
+                ),
+                budget,
+            )
+        except (ModelError, TimeoutError) as exc:
+            log.warning("first differential unavailable for %s: %s", case.id, exc)
+            return
+        finally:
+            for call in trace:
+                case.add_trace(call)
+        case.differential = normalise_differential(
+            [{"name": c.name, "probability": c.confidence} for c in diagnosis.candidates], set()
+        )
+        if case.differential:
+            await emit(
+                {
+                    "type": "differential",
+                    "first": True,
+                    "hypotheses": [h.model_dump() for h in case.differential],
+                }
+            )
 
     async def _first_looks(self, case: Case, emit: Emit, deadline: float) -> None:
         vision = self.leaf.vision_model
@@ -192,63 +274,95 @@ class DeepLeaf:
         await self.store.put(case)
         if result.kind == "ask":
             return self._response(case, status="needs_answers", limit=result.limit)
-        try:
-            plan = await asyncio.wait_for(self._plan(case), PLAN_TIMEOUT_S)
-        except TimeoutError:
-            plan = CarePlan(
-                summary="Leaf could not write a care plan in time. Your diagnosis is above.",
-                escalate=True,
-                escalate_reason=(
-                    "Plan generation timed out; check with your local extension office."
+        return await self._finish_case(case, emit, result.limit)
+
+    async def _finish_case(self, case: Case, emit: Emit, limit: str) -> DeepResponse:
+        """Second opinion, confidence, plan from passages, claim check, escalation, handoff."""
+        s = self.leaf.settings
+        trace: list[ModelCall] = []
+
+        async def plan_and_check() -> tuple[CarePlan, list[ClaimFlag]]:
+            # Reading sources, writing the plan and checking it do not need the second
+            # opinion (escalation is applied in code afterwards), so they run alongside it.
+            try:
+                await asyncio.wait_for(ensure_passages(case, self.leaf.searcher), READ_TIMEOUT_S)
+            except TimeoutError:
+                log.warning("reading sources timed out for %s", case.id)
+            try:
+                plan = await asyncio.wait_for(
+                    write_plan(self.leaf.llm, s, case, case.region, trace), PLAN_TIMEOUT_S
+                )
+            except (ModelError, TimeoutError):
+                plan = CarePlan(
+                    summary="Leaf could not write a care plan right now. Your diagnosis is above.",
+                    escalate=True,
+                    escalate_reason=(
+                        "Plan generation failed; check with your local extension office."
+                    ),
+                )
+            flags = code_checks(plan, case)
+            try:
+                flags += await asyncio.wait_for(
+                    judge(self.leaf.llm, s, plan, case, trace), CLAIM_TIMEOUT_S
+                )
+            except TimeoutError:
+                log.warning("claim judge timed out for %s; code checks stand", case.id)
+            return plan, flags
+
+        critic_result, planned = await asyncio.gather(
+            asyncio.wait_for(second_opinion(self.leaf.llm, s, case, trace), CRITIC_TIMEOUT_S),
+            plan_and_check(),
+            return_exceptions=True,
+        )
+        if isinstance(planned, BaseException):  # never expected; degrade rather than fail
+            log.exception("plan step crashed for %s", case.id, exc_info=planned)
+            planned = (
+                CarePlan(
+                    summary="Leaf could not write a care plan right now.",
+                    escalate=True,
+                    escalate_reason="Check with your local extension office.",
                 ),
+                [],
             )
+        plan, flags = planned
+        critic = None if isinstance(critic_result, BaseException) else critic_result
+        if isinstance(critic_result, BaseException):
+            log.warning("second opinion failed for %s: %r", case.id, critic_result)
+        add_alternative(case, critic)
+        case.differential.sort(key=lambda h: h.probability, reverse=True)
+        confidence = combine(case, critic)
+        await emit(
+            {
+                "type": "critic",
+                "opinion": critic.model_dump() if critic else None,
+                "confidence": confidence.model_dump(),
+            }
+        )
+        for call in trace:
+            case.add_trace(call)
+        reason = escalation_reason(case, confidence, critic)
+        if reason:
+            plan.escalate = True
+            plan.escalate_reason = f"{reason} {plan.escalate_reason}".strip()
+        handoff = (
+            build_handoff(case, plan.escalate_reason, critic.model_dump() if critic else None)
+            if plan.escalate
+            else None
+        )
         case.status = "done"
         await self.store.put(case)
-        response = self._response(case, plan=plan, limit=result.limit)
+        response = self._response(
+            case,
+            plan=plan,
+            limit=limit,
+            confidence=confidence,
+            critic=critic,
+            claim_flags=flags,
+            handoff=handoff,
+            low=bool(reason),
+        )
         await emit({"type": "done", "case_id": case.id})
         return response
-
-    async def _plan(self, case: Case) -> CarePlan:
-        s = self.leaf.settings
-        sources = self._sources(case)
-        diagnosis = self._diagnosis(case)
-        plan_input = (
-            f"<diagnosis>{sanitize(diagnosis.model_dump_json())}</diagnosis>\n"
-            f"<sources>{json.dumps([_source_for_prompt(src) for src in sources])}</sources>\n"
-            f"<region>{sanitize(case.region) or 'unknown'}</region>"
-        )
-        trace: list[ModelCall] = []
-        try:
-            plan = await complete_json(
-                self.leaf.llm,
-                step="plan",
-                models=[s.fast_model, s.fallback_model],
-                messages=[
-                    {"role": "system", "content": PLAN_SYSTEM},
-                    {"role": "user", "content": plan_input},
-                ],
-                schema=CarePlan,
-                trace=trace,
-                thinking=False,
-                max_tokens=2500,
-                temperature=0.6,
-                repair_model=s.fast_model,
-            )
-        except ModelError:
-            plan = CarePlan(
-                summary="Leaf could not write a care plan right now. Your diagnosis is above.",
-                escalate=True,
-                escalate_reason="Plan generation failed; check with your local extension office.",
-            )
-        finally:
-            for call in trace:
-                case.add_trace(call)
-        valid = {src.id for src in sources}
-        for step in plan.steps:
-            step.source_ids = [i for i in step.source_ids if i in valid]
-        if self._low(case) and not plan.escalate:
-            plan.escalate, plan.escalate_reason = True, ESCALATE_REASON
-        return plan
 
     # ------------------------------------------------------------------ conversions
 
@@ -291,6 +405,11 @@ class DeepLeaf:
         status: Literal["done", "needs_answers"] = "done",
         plan: CarePlan | None = None,
         limit: str = "",
+        confidence: Confidence | None = None,
+        critic: CriticOpinion | None = None,
+        claim_flags: list[ClaimFlag] | None = None,
+        handoff: LabHandoff | None = None,
+        low: bool | None = None,
     ) -> DeepResponse:
         first = next((p.observation for p in case.photos if p.observation), None)
         return DeepResponse(
@@ -299,7 +418,7 @@ class DeepLeaf:
             plan=plan or CarePlan(summary="Answer the questions so Leaf can finish this case."),
             sources=self._sources(case),
             trace=case.trace,
-            low_confidence=self._low(case),
+            low_confidence=self._low(case) if low is None else low,
             mode="deep",
             case_id=case.id,
             status=status,
@@ -314,17 +433,43 @@ class DeepLeaf:
             limit=limit,
             cost_usd=round(case.cost_usd, 5),
             tavily_credits=case.tavily_credits,
+            confidence=confidence,
+            critic=critic,
+            claim_flags=claim_flags or [],
+            handoff=handoff,
         )
 
     async def _quick_fallback(self, case: Case, notice: str = "") -> DeepResponse:
-        quick = await asyncio.wait_for(
-            self.leaf.diagnose(
-                image_b64=case.photos[0].view_b64 if case.photos else None,
-                notes=case.notes,
-                region=case.region,
-            ),
-            QUICK_FALLBACK_TIMEOUT_S,
-        )
+        try:
+            quick = await asyncio.wait_for(
+                self.leaf.diagnose(
+                    image_b64=case.photos[0].view_b64 if case.photos else None,
+                    notes=case.notes,
+                    region=case.region,
+                ),
+                QUICK_FALLBACK_TIMEOUT_S,
+            )
+        except (TimeoutError, ModelError) as exc:  # even the fallback failed: say so, no 504
+            log.warning("quick fallback failed for %s: %s", case.id, exc)
+            return DeepResponse(
+                observation=Observation(quality_notes="Leaf could not analyse this case."),
+                diagnosis=Diagnosis(),
+                plan=CarePlan(
+                    summary="Leaf could not finish this case. Please try again in a minute.",
+                    escalate=True,
+                    escalate_reason="Leaf's models are busy; your local extension office can help.",
+                ),
+                sources=[],
+                trace=case.trace,
+                low_confidence=True,
+                mode="quick",
+                case_id=case.id,
+                status="fallback",
+                notice="Leaf's models are busy right now, so this case could not be finished.",
+                steps=case.steps,
+                cost_usd=round(case.cost_usd, 5),
+                tavily_credits=case.tavily_credits,
+            )
         return DeepResponse(
             **quick.model_dump(),
             mode="quick",

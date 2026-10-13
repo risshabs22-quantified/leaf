@@ -15,8 +15,11 @@ from backend.pipeline import Leaf
 from backend.prompts import (
     AGENT_SYSTEM,
     CHAT_SYSTEM,
+    CLAIM_CHECK_SYSTEM,
+    CRITIC_SYSTEM,
     DIAGNOSE_SYSTEM,
     LOOK_CLOSER_SYSTEM,
+    PLAN_DEEP_SYSTEM,
     PLAN_SYSTEM,
     VISION_SYSTEM,
 )
@@ -77,6 +80,9 @@ def step_of(messages: list[dict[str, Any]]) -> str:
         CHAT_SYSTEM: "chat",
         AGENT_SYSTEM: "investigate",
         LOOK_CLOSER_SYSTEM: "look_closer",
+        PLAN_DEEP_SYSTEM: "plan",
+        CRITIC_SYSTEM: "critic",
+        CLAIM_CHECK_SYSTEM: "claim_check",
     }.get(system, "repair")
 
 
@@ -130,6 +136,8 @@ class FakeLLM:
         self.kwargs.append((step, kwargs))
         if model in self.failing:
             raise ModelError(f"{model}: HTTP 503")
+        if step not in self.responses:  # unscripted step: behave like an unavailable model
+            raise ModelError(f"{model}: no scripted response for {step}")
         out = self.responses[step]
         text = out if isinstance(out, str) else json.dumps(out)
         return CallResult(

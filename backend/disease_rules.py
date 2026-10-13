@@ -12,7 +12,7 @@ A "day" is the local calendar day; the published sources do not fix a boundary.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 WET_RH = 90.0
 
@@ -123,13 +123,16 @@ def wallin_periods(hours: list[Hour]) -> list[tuple[datetime, int, int]]:
     """Continuous runs of RH >= 90%: (end time, length in hours, severity value)."""
     runs, current = [], []
     for h in hours + [Hour(datetime.max, 0.0, 0.0)]:  # sentinel closes the last run
-        if h.rh >= WET_RH:
+        contiguous = not current or h.time - current[-1].time == timedelta(hours=1)
+        if h.rh >= WET_RH and contiguous:
             current.append(h)
             continue
         if current:
             mean_f = sum(x.temp_c for x in current) / len(current) * 9 / 5 + 32
             runs.append((current[-1].time, len(current), wallin_value(len(current), mean_f)))
             current = []
+        if h.rh >= WET_RH and h.time != datetime.max:  # a wet hour after a gap starts a new run
+            current.append(h)
     return runs
 
 
@@ -138,13 +141,14 @@ def wallin_periods(hours: list[Hour]) -> list[tuple[datetime, int, int]]:
 # Daily disease severity values (DSV) from wet hours and the mean temperature during the wet
 # hours (Madden et al. 1978 as adapted for TOMCAST, Pitblado 1992), reproduced by UC IPM:
 # https://ipm.ucanr.edu/DISEASE/DATABASE/dsvtable.html
-# Bands in C; the source's F labels imply the cut points used here. Lowest wet hours giving
+# Bands use the source's own Fahrenheit labels (55.4-63.4, 63.5-68.8, 68.9-77.8, 77.9-85 F),
+# compared at one decimal so no temperature falls between bands. Lowest wet hours giving
 # DSV 1, 2, 3, 4 (None: not reachable in that band).
-TOMCAST_BANDS_C = [
-    (13.0, 17.5, (7, 16, 21, None)),
-    (17.5, 20.5, (4, 9, 16, 23)),
-    (20.5, 25.5, (3, 6, 13, 21)),
-    (25.5, 29.4, (4, 9, 16, 23)),
+TOMCAST_BANDS_F = [
+    (55.4, 63.4, (7, 16, 21, None)),
+    (63.5, 68.8, (4, 9, 16, 23)),
+    (68.9, 77.8, (3, 6, 13, 21)),
+    (77.9, 85.0, (4, 9, 16, 23)),
 ]
 # Spray-timing advisories, not diagnoses: UConn uses 15 accumulated DSV as standard
 # (https://ipm.cahnr.uconn.edu/?p=1983); Rutgers uses 15-25 by programme
@@ -155,10 +159,11 @@ TOMCAST_ADVISORY = 15
 def tomcast_dsv(wet_hours: int, wet_mean_temp_c: float | None) -> int:
     if not wet_hours or wet_mean_temp_c is None:
         return 0
-    for lo, hi, mins in TOMCAST_BANDS_C:
-        if lo <= wet_mean_temp_c < hi or (hi == 29.4 and wet_mean_temp_c == hi):
+    temp_f = round(wet_mean_temp_c * 9 / 5 + 32, 1)
+    for lo, hi, mins in TOMCAST_BANDS_F:
+        if lo <= temp_f <= hi:
             return sum(1 for m in mins if m is not None and wet_hours >= m)
-    return 0  # outside 13-29.4 C the table has no row
+    return 0  # outside 55.4-85 F the table has no row
 
 
 def tomcast_day(day: Day) -> int:

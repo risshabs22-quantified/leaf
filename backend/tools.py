@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import ipaddress
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -249,9 +250,9 @@ async def _get_conditions(args: ConditionsArgs, ctx: ToolContext) -> ToolOutcome
         summary = summarise(hours, crop, place)
     except ConditionsError as exc:  # geocoding or weather outage: a clean message
         raise ToolError(str(exc)) from exc
-    await ctx.emit({"type": "weather", **summary})
+    await ctx.emit({"type": "weather", **copy.deepcopy(summary)})  # the UI keeps full data
     daily = summary["daily"]
-    data = {k: v for k, v in summary.items() if k not in ("daily", "attribution")}
+    data = copy.deepcopy({k: v for k, v in summary.items() if k not in ("daily", "attribution")})
     # Compact arrays instead of 14 verbose rows: the model reads this on every later turn.
     data.update(
         daily_rain_mm=[d["rain_mm"] for d in daily],
@@ -277,17 +278,31 @@ async def _get_conditions(args: ConditionsArgs, ctx: ToolContext) -> ToolOutcome
 
 
 def _safe_url(url: str) -> bool:
-    """Only web pages: http(s), a real host name, never a private or loopback address."""
+    """Defence in depth for read_source. The URL already comes from this case's own search
+    results, and Tavily fetches pages on its servers, not ours. This refuses non-web schemes,
+    credentials in the URL, localhost and internal names, and literal or numeric private
+    addresses. It cannot see where a public DNS name resolves."""
     from urllib.parse import urlparse
 
     parts = urlparse(url)
-    host = (parts.hostname or "").lower()
-    if parts.scheme not in ("http", "https") or not host or host == "localhost":
+    host = (parts.hostname or "").lower().rstrip(".")
+    if parts.scheme not in ("http", "https") or not host or parts.username or parts.password:
         return False
+    if host == "localhost" or host.endswith((".localhost", ".internal", ".local", ".lan")):
+        return False
+    if re.fullmatch(r"(0x)?[0-9a-f.x]+", host) and not re.search(r"[g-wyz]", host):
+        # numeric forms such as 2130706433, 0x7f000001 or 127.1 are IPv4 in disguise
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            return False
+        return ip.is_global
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:
         return True  # a domain name
+    if ip.version == 6 and ip.ipv4_mapped:
+        return ip.ipv4_mapped.is_global
     return ip.is_global
 
 
@@ -314,8 +329,17 @@ async def _read_source(args: ReadSourceArgs, ctx: ToolContext) -> ToolOutcome:
 
 
 async def _check_alerts(args: AlertsArgs, ctx: ToolContext) -> ToolOutcome:
-    crop = ctx.case.crop or "plant"
-    query = f"{crop} disease outbreak {sanitize(args.region, 100)}"
+    case = ctx.case
+    crop = case.crop or "plant"
+    region = args.region.strip()
+    if region.lower() in ("", "unknown", "browser location", "your location"):
+        # Only the browser location is known: use the place get_conditions found, if any.
+        region = next(
+            (e.data.get("place", "") for e in case.evidence if e.tool == "get_conditions"), ""
+        )
+        if not region or region.startswith("your location"):
+            raise ToolError("No named region is known, so regional news cannot be searched.")
+    query = f"{crop} disease outbreak {sanitize(region, 100)}"
     results, credits = await ctx.searcher.search_web(
         query, topic="news", time_range="month", max_results=5
     )

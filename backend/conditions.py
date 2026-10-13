@@ -101,6 +101,31 @@ class Place:
     approximate: bool = False  # True when a whole state is located at its capital
 
 
+MAJOR_CITY = 100_000  # population above which a bare name means the city, not the state
+
+
+def _qualifier(text: str) -> set[str]:
+    """Names a qualifier may match: itself, plus the full state name for a state code."""
+    t = text.lower().rstrip(".")
+    names = {t}
+    if t in _STATE_LOOKUP:
+        names.add(_STATE_LOOKUP[t][0].lower())
+    if t in ("usa", "us", "united states", "united states of america"):
+        names |= {"us", "united states"}
+    return names
+
+
+def _place(r: dict[str, Any]) -> Place:
+    label = ", ".join(x for x in (r.get("name"), r.get("admin1"), r.get("country_code")) if x)
+    return Place(
+        label,
+        round(r["latitude"], 2),
+        round(r["longitude"], 2),
+        r.get("admin1", ""),
+        r.get("country_code", ""),
+    )
+
+
 class WeatherClient:
     def __init__(self, http: httpx.AsyncClient | None = None, now=None):
         self._http = http
@@ -133,6 +158,13 @@ class WeatherClient:
 
     async def _geocode(self, region: str) -> Place | None:
         state = _STATE_LOOKUP.get(region.lower().rstrip("."))
+        if state and len(region.strip()) > 2:
+            # A bare name like "New York" or "Washington" is also a big city: prefer the city
+            # when the geocoder knows one, and use the state's capital only otherwise.
+            hits = await self._search(region.strip())
+            big = next((r for r in hits if (r.get("population") or 0) >= MAJOR_CITY), None)
+            if big:
+                return _place(big)
         if state:
             name, capital = state
             results = await self._search(capital)
@@ -150,30 +182,22 @@ class WeatherClient:
                     approximate=True,
                 )
             return None
-        city, _, qualifier = region.partition(",")
-        results = await self._search(city.strip())
-        if qualifier.strip():
-            q = qualifier.strip().lower()
-            q_state = _STATE_LOOKUP.get(q, (q,))[0].lower()
-            results = [
-                r
-                for r in results
-                if q_state in (str(r.get("admin1", "")).lower(), str(r.get("country", "")).lower())
-                or q == str(r.get("country_code", "")).lower()
-            ] or results
-        if not results:
+        parts = [p.strip() for p in region.split(",") if p.strip()]
+        if not parts:
             return None
-        best = results[0]
-        label = ", ".join(
-            x for x in (best.get("name"), best.get("admin1"), best.get("country_code")) if x
-        )
-        return Place(
-            label,
-            round(best["latitude"], 2),
-            round(best["longitude"], 2),
-            best.get("admin1", ""),
-            best.get("country_code", ""),
-        )
+        results = await self._search(parts[0])
+        quals = [_qualifier(q) for q in parts[1:]]
+        if quals:
+            # Keep results matching the most qualifiers ("Springfield, IL, USA"); if none
+            # match at all, the qualifiers were not useful and every result stays.
+            def matches(r: dict[str, Any]) -> int:
+                fields = {str(r.get(k, "")).lower() for k in ("admin1", "country", "country_code")}
+                return sum(1 for q in quals if q & fields)
+
+            best_score = max((matches(r) for r in results), default=0)
+            if best_score:
+                results = [r for r in results if matches(r) == best_score]
+        return _place(results[0]) if results else None
 
     async def _search(self, name: str) -> list[dict[str, Any]]:
         if not name:

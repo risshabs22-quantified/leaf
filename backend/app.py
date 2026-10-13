@@ -312,9 +312,10 @@ async def _read_photos(
 
 def _deep_deadline(request: Request) -> float:
     s = request.app.state.leaf.settings
-    # The case's own clock covers first looks and the investigation; the plan (25 s) or a Quick
-    # fallback (40 s) runs after it.
-    return s.deep_wall_s + 45
+    # The case's own clock covers first looks, the first differential and the investigation.
+    # After it, the second opinion (up to 35 s) runs alongside reads, plan and claim check
+    # (up to 44 s), or a Quick fallback runs (up to 40 s).
+    return s.deep_wall_s + 60
 
 
 class AnswersRequest(BaseModel):

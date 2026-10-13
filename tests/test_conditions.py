@@ -43,9 +43,10 @@ def day_hours(
 
 
 def test_wet_hours_count_rh_at_or_above_90():
-    hours = day_hours(0, 7) + [rules.Hour(DAY0, 20, 90.0)] * 0
-    day = rules.group_days(hours)[0]
-    assert day.wet_hours == 7
+    hours = [
+        rules.Hour(DAY0 + timedelta(hours=h), 20.0, 90.0 if h < 5 else 89.9) for h in range(24)
+    ]
+    assert rules.group_days(hours)[0].wet_hours == 5  # exactly 90 counts; 89.9 does not
 
 
 def test_incomplete_days_are_not_scored():
@@ -56,9 +57,12 @@ def test_incomplete_days_are_not_scored():
     ("wet", "tmin", "hutton", "smith"),
     [
         (12, 11.0, True, True),
-        (7, 11.0, True, False),
+        (11, 11.0, True, True),
+        (10, 11.0, True, False),
+        (6, 11.0, True, False),
         (5, 11.0, False, False),
-        (12, 9.5, False, False),
+        (12, 9.9, False, False),
+        (12, 10.0, True, True),
     ],
 )
 def test_hutton_and_smith_need_two_warm_humid_days(wet, tmin, hutton, smith):
@@ -68,6 +72,11 @@ def test_hutton_and_smith_need_two_warm_humid_days(wet, tmin, hutton, smith):
     )
     assert bool(rules.hutton_periods(days)) is hutton
     assert bool(rules.smith_periods(days)) is smith
+
+
+def test_two_qualifying_days_must_be_consecutive():
+    days = rules.group_days(day_hours(0, 12, 12) + day_hours(2, 12, 12))  # a day missing between
+    assert rules.hutton_periods(days) == [] and rules.smith_periods(days) == []
 
 
 def test_one_qualifying_day_is_not_a_period():
@@ -88,18 +97,46 @@ def test_one_qualifying_day_is_not_a_period():
         (22, 65, 5),
         (20, 40, 0),
         (20, 85, 0),
+        # band edges: 54 F is in the cool band, 55 F in the middle one, 60 F in the warm one
+        (13, 54.0, 0),
+        (13, 55.0, 1),
+        (10, 59.0, 0),
+        (10, 60.0, 1),
+        (19, 81.0, 4),
+        (19, 82.0, 0),
+        # longer than the table: (h-1)//3 - 4 above 27 h, - 3 above 24 h, - 2 above 21 h
+        (28, 50, 5),
+        (31, 50, 6),
+        (25, 57, 5),
+        (22, 70, 5),
+        (30, 70, 7),
     ],
 )
 def test_wallin_values_match_the_maine_table(hours, temp_f, value):
     assert rules.wallin_value(hours, temp_f) == value
 
 
+def hourly(pattern: list[tuple[int, float]], temp_c: float = 18.3) -> list[rules.Hour]:
+    """Consecutive hours: (count, rh) blocks, one hour apart, starting at DAY0."""
+    out = []
+    for count, rh in pattern:
+        for _ in range(count):
+            out.append(rules.Hour(DAY0 + timedelta(hours=len(out)), temp_c, rh))
+    return out
+
+
 def test_three_separate_six_hour_periods_score_zero():
-    hours = []
-    for _ in range(3):
-        hours += [rules.Hour(DAY0 + timedelta(hours=len(hours)), 18.3, 95.0) for _ in range(6)]
-        hours += [rules.Hour(DAY0 + timedelta(hours=len(hours)), 18.3, 60.0) for _ in range(4)]
+    hours = hourly([(6, 95), (4, 60), (6, 95), (4, 60), (6, 95), (4, 60)])
     assert [v for _, _, v in rules.wallin_periods(hours)] == [0, 0, 0]
+
+
+def test_a_wallin_run_spans_midnight_but_breaks_at_a_data_gap():
+    across_midnight = hourly([(20, 60), (18, 95), (4, 60)])  # 20:00 to 13:00 next day
+    assert [(n, v) for _, n, v in rules.wallin_periods(across_midnight)] == [(18, 3)]
+    gap = hourly([(10, 95)]) + [
+        rules.Hour(DAY0 + timedelta(hours=14 + i), 18.3, 95) for i in range(10)
+    ]  # 4 missing hours in between
+    assert [n for _, n, _ in rules.wallin_periods(gap)] == [10, 10]
 
 
 @pytest.mark.parametrize(
@@ -112,7 +149,11 @@ def test_three_separate_six_hour_periods_score_zero():
         (21, 15, 3),
         (2, 22, 0),
         (3, 22, 1),
-        (16, 29.4, 3),
+        # Fahrenheit band edges as published: 55.4, 63.4/63.5, 68.8/68.9, 77.8/77.9, 85.0
+        (7, 13.0, 1),
+        (6, 20.44, 1),
+        (6, 20.5, 2),
+        (16, 29.44, 3),
         (16, 29.5, 0),
     ],
 )
@@ -259,7 +300,34 @@ async def test_a_bare_state_name_is_located_at_its_capital_not_a_namesake_villag
     calls = []
     place = await client_with([VILLAGE, COLUMBUS], calls).geocode("Ohio")
     assert place.label == "Ohio (weather at Columbus)" and place.approximate
-    assert "name=Columbus" in str(calls[0])
+    assert any("name=Columbus" in str(u) for u in calls)
+
+
+async def test_a_state_name_that_is_also_a_big_city_means_the_city():
+    nyc = {
+        "name": "New York",
+        "admin1": "New York",
+        "country_code": "US",
+        "latitude": 40.71,
+        "longitude": -74.01,
+        "population": 8_800_000,
+    }
+    place = await client_with([nyc], []).geocode("New York")
+    assert place.lat == 40.71 and not place.approximate
+
+
+async def test_every_comma_part_narrows_the_place():
+    mo = {
+        "name": "Springfield",
+        "admin1": "Missouri",
+        "country_code": "US",
+        "latitude": 37.2,
+        "longitude": -93.3,
+        "country": "United States",
+    }
+    il = {**mo, "admin1": "Illinois", "latitude": 39.8, "longitude": -89.6}
+    place = await client_with([mo, il], []).geocode("Springfield, IL, USA")
+    assert place.admin1 == "Illinois"
 
 
 async def test_city_with_state_prefers_the_matching_state():
@@ -350,6 +418,15 @@ async def test_read_source_only_opens_urls_from_this_cases_search(settings):
         "http://169.254.169.254/latest/meta-data",
         "http://10.0.0.5/x",
         "ftp://a.edu/x",
+        "http://2130706433/",
+        "http://0x7f000001/",
+        "http://127.1/",
+        "http://localhost./",
+        "http://foo.localhost/",
+        "http://metadata.google.internal/",
+        "http://[::ffff:127.0.0.1]/",
+        "http://[::1]/",
+        "http://user:pw@example.edu/",
     ],
 )
 def test_unsafe_urls_are_never_opened(url):
@@ -407,3 +484,31 @@ async def test_a_deep_case_reads_a_source_and_the_plan_uses_its_passages(setting
     assert searcher.extracted == ["https://extension.umn.edu/early-blight"]  # trusted first = S1
     plan_prompt = next(m for s, m in llm.sent if s == "plan")[-1]["content"]
     assert "Passage about rings and halos" in plan_prompt
+
+
+async def test_alerts_with_only_a_browser_location_use_the_weather_place(settings):
+    searcher = FakeSearcher()
+    case = Case(crop="tomato", lat=40.0, lon=-83.0)
+    ctx = tool_ctx(settings, case, searcher=searcher)
+    args = T["check_alerts"].args(reason="News?", region="browser location")
+    with pytest.raises(ToolError, match="No named region"):
+        await T["check_alerts"].handler(args, ctx)
+    case.add_evidence("get_conditions", "x", data={"place": "Columbus, Ohio, US"})
+    await T["check_alerts"].handler(args, ctx)
+    assert searcher.web_calls[0][0] == "tomato disease outbreak Columbus, Ohio, US"
+
+
+async def test_the_weather_event_keeps_daily_values_the_model_copy_drops(settings):
+    events = []
+
+    async def emit(e):
+        events.append(e)
+
+    case = Case(region="Columbus, OH", crop="tomato")
+    leaf, _, _ = make_leaf(settings, RESP)
+    ctx = ToolContext(
+        leaf.llm, FakeSearcher(), settings, case, None, emit, client_with([COLUMBUS], [])
+    )
+    out = await T["get_conditions"].handler(T["get_conditions"].args(reason="Rain?"), ctx)
+    assert "daily" not in out.data["indices"][0]
+    assert len(events[0]["indices"][0]["daily"]) == 14

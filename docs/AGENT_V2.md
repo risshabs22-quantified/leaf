@@ -212,11 +212,12 @@ Acceptance:
 - Live finding: on a late-blight photo Deep let dry local weather overrule a visible sign (white sporulation) and said early blight, while Quick was right. Fixes: "signs outweigh symptoms" and "weather never rules out what is visible" in the prompt, no hypothesis above 0.9, per-case tool caps (3 searches, 3 reads, 1 weather, 1 alerts). Deep then got it right in 1 of 2 runs; M3's critic and M6's evals address the rest.
 
 ### M3: second opinion, calibration, claim check, lab handoff
-- [ ] Critic on Super sees evidence only; disagreement lowers confidence and escalates
-- [ ] Combination weights chosen from eval data and written here
-- [ ] Claim check drops or flags unsupported steps; no chemical rates without a cited passage
-- [ ] Lab handoff page; NPDN link and sampling guidance verified by the researcher subagent
-- [ ] Optional Nano screen/rerank only if an eval shows a gain
+- [x] Critic on Super (reasoning on; ~18 s, so it runs alongside the plan) sees evidence and the leading name only, never the investigator's reasoning or probabilities; it argues for the strongest alternative, which is added to the differential when missing; disagreement lowers confidence and escalates with a specific reason
+- [ ] Combination weights chosen from eval data and written here. Provisional (`backend/critic.py`): mean of the two opinions, the critic's estimate when they disagree, x photo quality (1.0 / 0.95 / 0.7, 0.9 notes only), x evidence coverage (0.8 / 0.9 / 1.0), capped at 0.9
+- [x] Plan from read passages only (Leaf reads the top trusted sources itself if the investigator read none); claim check in code (cited source must have been read, any rate or dose must appear in the cited passage, chemical steps get "Follow the product label.") then Lightning judges support (unsupported dropped, partial flagged)
+- [x] Lab handoff data on escalation: history, photos seen, weather, differential with evidence, second opinion, sampling checklist (Cornell, UNH, Oregon State; their bag-rule disagreement stated), NPDN directory link per state (`?state=OH`), and NPDN's Sept 2026 funding-pause notice. The printable page is part of M4
+- [ ] Optional Nano screen/rerank: not built (no eval evidence it would help yet)
+- Added in M3: the investigation starts from a first differential (the Quick diagnosis step), behind `LEAF_DEEP_SEED`, because live cases showed the investigator anchoring on its first crop; the eval compares seeded and unseeded Deep
 
 ### M4: live interface
 - [ ] SSE endpoint and client, incremental rendering, reconnect-safe

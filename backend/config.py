@@ -98,6 +98,9 @@ class Settings:
     deep_wall_s: int = field(default_factory=lambda: _env_int("LEAF_DEEP_WALL_S", 90))
     deep_budget_usd: float = field(default_factory=lambda: _env_float("LEAF_DEEP_BUDGET_USD", 0.10))
     deep_max_photos: int = 3
+    # Start the investigation from the structured first differential (the Quick diagnosis
+    # step) instead of from nothing; the eval compares both.
+    deep_seed: bool = field(default_factory=lambda: _env("LEAF_DEEP_SEED", "1") != "0")
     deep_max_look_closer: int = 3
     # Proxies in front of Leaf that append to X-Forwarded-For (0 = none, trust the socket).
     trusted_proxy_hops: int = field(default_factory=lambda: _env_int("LEAF_TRUSTED_PROXY_HOPS", 1))

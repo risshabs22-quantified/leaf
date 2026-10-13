@@ -26,7 +26,23 @@ LOOK = {
     "confidence": 0.8,
     "image_quality": "good",
 }
-RESP = {"vision": OBS, "look_closer": LOOK, "diagnose": DIAG_HIGH, "plan": PLAN}
+CRITIC_AGREES = {
+    "alternative": "Septoria leaf spot",
+    "alternative_probability": 0.1,
+    "leading_probability": 0.8,
+    "agrees": True,
+    "key_evidence": [],
+    "argument": "Ringed spots with halos fit the leading diagnosis.",
+}
+ALL_SUPPORTED = {"verdicts": []}  # no verdicts: every step stands
+RESP = {
+    "vision": OBS,
+    "look_closer": LOOK,
+    "diagnose": DIAG_HIGH,
+    "plan": PLAN,
+    "critic": CRITIC_AGREES,
+    "claim_check": ALL_SUPPORTED,
+}
 REGION = {"x": 0.2, "y": 0.2, "w": 0.4, "h": 0.4}
 
 
@@ -121,7 +137,10 @@ async def test_a_case_runs_look_search_finish_and_writes_a_cited_plan(settings):
     ]
     assert res.steps[0].reason.startswith("Check for a yellow halo")
     assert res.sources and res.plan.steps and res.plan.steps[0].source_ids == [1]
-    assert res.cost_usd > 0 and res.tavily_credits == 1
+    # The investigator read nothing, so Leaf read the top two sources itself before planning.
+    assert res.cost_usd > 0 and res.tavily_credits == 3
+    assert all(st.source_ids for st in res.plan.steps)  # every kept step cites a read source
+    assert [f.verdict for f in res.claim_flags] == ["dropped"]  # the uncited step
     types = [e["type"] for e in events]
     for t in ("case", "first_look", "step", "step_done", "differential", "done"):
         assert t in types
@@ -217,7 +236,8 @@ async def test_the_wall_clock_forces_finish(settings):
     assert llm.tool_kwargs[-1]["tools"] == ["finish"]
 
 
-async def test_a_hanging_model_cannot_outlast_the_wall_clock(settings):
+@pytest.mark.parametrize("seed", [True, False])
+async def test_a_hanging_model_cannot_outlast_the_wall_clock(settings, seed):
     import asyncio
     import time as _time
 
@@ -225,14 +245,19 @@ async def test_a_hanging_model_cannot_outlast_the_wall_clock(settings):
         async def complete_tools(self, **kw):
             await asyncio.sleep(60)
 
-    quick = Settings(nebius_api_key="t", vision_model="nvidia/fake-vl", deep_wall_s=4)
+    quick = Settings(
+        nebius_api_key="t", vision_model="nvidia/fake-vl", deep_wall_s=4, deep_seed=seed
+    )
     leaf, _, _ = make_leaf(quick, RESP)
     leaf.llm = HangingLLM(RESP)
     deep = DeepLeaf(leaf, MemoryCaseStore())
     t0 = _time.monotonic()
     res, _ = await collect(deep, notes="tomato spots")
-    assert _time.monotonic() - t0 < 8  # not 60 s, and not the 135 s request deadline
-    assert res.mode == "quick" and res.status == "fallback"
+    assert _time.monotonic() - t0 < 8  # not 60 s, and not the request deadline
+    if seed:  # the first differential survives a hung investigator
+        assert res.mode == "deep" and res.differential and res.limit
+    else:  # nothing recorded: Quick answers instead
+        assert res.mode == "quick" and res.status == "fallback"
 
 
 async def test_a_model_that_ignores_the_forced_finish_still_ends_with_its_last_differential(
@@ -366,13 +391,17 @@ async def test_a_prose_reply_gets_one_nudge_then_the_case_continues(settings):
     assert res.status == "done"
 
 
-async def test_an_agent_that_never_finishes_falls_back_to_quick(settings):
-    deep, _, _ = deep_for(settings, ["Hmm.", "Still thinking."])
+@pytest.mark.parametrize("seed", [True, False])
+async def test_an_agent_that_never_finishes_still_answers(settings, seed):
+    cfg = Settings(nebius_api_key="t", vision_model="nvidia/fake-vl", deep_seed=seed)
+    deep, _, _ = deep_for(cfg, ["Hmm.", "Still thinking.", "No.", "Nothing."])
     res, events = await collect(deep, notes="tomato spots")
-    assert res.mode == "quick" and res.status == "fallback"
-    assert "Quick diagnosis" in res.notice
-    assert res.diagnosis.candidates  # the gardener still gets an answer
-    assert {"type": "fallback", "reason": "The investigation could not finish."} in events
+    assert res.diagnosis.candidates  # the gardener always gets an answer
+    if seed:  # the investigator added nothing, so the first differential stands
+        assert res.mode == "deep" and res.differential[0].name == "Early blight" and res.limit
+    else:
+        assert res.mode == "quick" and res.status == "fallback" and "Quick diagnosis" in res.notice
+        assert {"type": "fallback", "reason": "The investigation could not finish."} in events
 
 
 async def test_an_invented_tool_name_is_corrected_with_the_real_list(settings):
@@ -678,7 +707,7 @@ async def test_a_cancelled_case_is_marked_failed_not_left_running(settings):
 
     deep.investigator.run = slow
     task = asyncio.create_task(deep.start(photos=[], notes="spots"))
-    await started.wait()
+    await asyncio.wait_for(started.wait(), 5)  # fail fast, never hang the suite
     assert seen[0].status == "running"
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -813,3 +842,36 @@ async def test_overlong_text_is_trimmed_not_refused(settings):
     deep, _, _ = deep_for(settings, [turn(call)])
     res, _ = await collect(deep)
     assert res.status == "done" and len(res.summary) == 800 and len(res.steps[0].reason) == 300
+
+
+async def test_estimates_add_up_across_calls_prepared_in_the_same_turn(settings):
+    budget = Settings(nebius_api_key="t", vision_model="nvidia/fake-vl", deep_budget_usd=0.10)
+    regions = [{"x": 0.1 * i, "y": 0.1, "w": 0.3, "h": 0.3} for i in range(3)]
+    many = turn(*[look(region=r) for r in regions])
+    # After turn 1 the spend is 0.0005 (first look) + 0.072 = 0.0725; at the $0.004 estimate
+    # a second look would plan 0.0805, past the 0.08 loop share, so only one runs.
+    deep, _, _ = deep_for(budget, [many, turn(finish(("Early blight", 0.7, [])))], turn_cost=0.072)
+    res, _ = await collect(deep)
+    looks = [s for s in res.steps if s.tool == "look_closer"]
+    assert [s.ok for s in looks] == [True, False, False]
+    assert all(s.skipped == "cost budget spent" for s in looks[1:])
+
+
+async def test_a_forced_finish_that_times_out_keeps_the_recorded_differential(settings):
+    limited = Settings(nebius_api_key="t", vision_model="nvidia/fake-vl", deep_max_calls=1)
+
+    def hang_on_finish(messages, tools, tool_choice):
+        if tools == ["finish"]:
+            return TimeoutError()
+        return turn(search(), diff(("Late blight", 0.6, [])))
+
+    deep, _, _ = deep_for(limited, [hang_on_finish] * 6)
+    res, _ = await collect(deep)
+    assert res.mode == "deep" and res.differential[0].name == "Late blight"
+
+
+async def test_even_a_failed_quick_fallback_answers_instead_of_erroring(settings):
+    resp = {k: v for k, v in RESP.items() if k != "diagnose"}
+    deep, _, _ = deep_for(settings, ["no tools", "still none"], responses=resp)
+    res, _ = await collect(deep, notes="spots")
+    assert res.status == "fallback" and res.plan.escalate and "busy" in res.notice

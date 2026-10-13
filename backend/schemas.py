@@ -108,6 +108,7 @@ class PlanStep(BaseModel):
     action: str
     why: str = ""
     source_ids: list[int] = Field(default_factory=list)
+    flag: str = ""  # set by the claim check when a source only partly supports the step
 
 
 class CarePlan(BaseModel):
