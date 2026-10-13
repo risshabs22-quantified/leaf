@@ -63,7 +63,28 @@ The investigator's tools, all read-only:
 
 `scripts/eval.py` runs Quick and Deep on the same labelled photos and reports top-1 and top-3 accuracy, the Brier score of the reported confidence (lower is better), escalation precision and recall (an escalation is "right" when the top answer was wrong), cost and time per case. `scripts/calibrate.py` refits Deep's blend and disagreement rule offline from the logged runs.
 
-<!-- eval-results -->
+**Tune split, 22 licensed field photos across ten conditions** (`evals/README.md`). This split was used to tune Leaf, so its numbers are optimistic; the held-out test split of our own phone photos is still being collected. Every run is listed, not just the best one:
+
+| Run | Mode | Top-1 | Top-3 | Brier | Escalated | Escalation precision / recall | Cost / case | Time / case |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| first Deep version | Quick | 50% | 82% | 0.287 | 18% | 1.0 / 0.364 | $0.008 | 15 s |
+| first Deep version | Deep | 50% | 73% | 0.269 | 73% | 0.5 / 0.727 | $0.051 | 67 s |
+| calmer critic, blend 0.4 | Deep | 46% | 59% | 0.202 | 68% | 0.733 / 0.917 | $0.054 | 56 s |
+| blend 0.7, before review fixes | Quick | 50% | 68% | 0.270 | 32% | 0.714 / 0.455 | $0.008 | 12 s |
+| blend 0.7, before review fixes | Deep | 36% | 64% | 0.205 | 82% | 0.722 / 0.929 | $0.058 | 57 s |
+| after review fixes | Deep | 55% | 73% | 0.227 | 91% | 0.45 / 0.9 | $0.056 | 43 s |
+| shipped rules | Deep | 41% | 64% | 0.268 | 82% | 0.667 / 0.923 | $0.056 | 51 s |
+
+What this shows, read plainly:
+
+- **Accuracy: no clear winner.** Deep's top-1 ranged from 36% to 55% across 5 runs (mean 45%); Quick scored 50%. On 22 cases one case is 4.5 points, and run-to-run variance (temperature 1.0 models) is about ±10 points.
+- **Calibration: Deep is better.** Its mean Brier score is 0.234 against Quick's 0.278. Quick tends to say 70-80% while being right about half the time.
+- **Knowing when it is wrong: Deep is much better, at a price.** Deep escalated 88% of its wrong answers on average (Quick: 41%), but it also escalates many correct ones (68%-91% of all cases). Fitting the escalation rules on logged runs (`scripts/calibrate.py`) predicted fewer escalations than the next live run produced: 22 cases are too few to tune on reliably.
+- **Cost and time:** Quick about $0.008 and 12-15 s per case; Deep about $0.056 and 45-65 s, well under its 10-cent budget.
+
+So **Quick is the default**, and Deep is offered as the careful mode: slower and more expensive, honest about uncertainty, and grounded in sources it read. The rule we set ourselves is that Deep becomes the default only if it beats Quick on the held-out test split; it has not had that chance yet.
+
+What the investigation does reliably add, whatever the accuracy: a ranked differential tied to evidence the gardener can inspect, local weather and published disease-risk indices, plans that cite only passages Leaf read (with unsupported steps removed), a second opinion, and a lab handoff when the case needs one.
 
 ## Plant journal
 

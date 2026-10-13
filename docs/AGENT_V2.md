@@ -218,6 +218,7 @@ Acceptance:
   - **Disagreement = the critic's own vote** (`agrees: false`). It had the best Brier score at every weight; the earlier margin rule escalated more correct cases for no gain.
   - Unchanged: mean of the two opinions (the critic's estimate when they disagree), x photo quality (1.0 / 0.95 / 0.7, 0.9 notes only), x evidence coverage (0.8 / 0.9 / 1.0), capped at 0.9.
   - Honest reading: on this set the investigation's value is calibration, escalation and grounded plans, not a better top-1 than the first look.
+  - **Escalation, refitted after the M3-M5 review fixes on 44 logged cases** (two runs): Deep escalates below **0.5** confidence (Quick keeps 0.6; Deep's combined confidence runs lower, and its 0.5-0.6 bin was 100% right), the near-tie margin stays 0.15, and a disagreeing second opinion escalates on its own only when **it gives the leader under 0.5**. Replayed: escalations 80% -> 61%, precision 0.57 -> 0.70, recall 0.91 -> 0.86.
 - [x] Plan from read passages only (Leaf reads the top trusted sources itself if the investigator read none); claim check in code (cited source must have been read, any rate or dose must appear in the cited passage, chemical steps get "Follow the product label.") then Lightning judges support (unsupported dropped, partial flagged)
 - [x] Lab handoff data on escalation: history, photos seen, weather, differential with evidence, second opinion, sampling checklist (Cornell, UNH, Oregon State; their bag-rule disagreement stated), NPDN directory link per state (`?state=OH`), and NPDN's Sept 2026 funding-pause notice. The printable page is part of M4
 - [ ] Optional Nano screen/rerank: not built (no eval evidence it would help yet)
@@ -235,10 +236,10 @@ Acceptance:
 - [ ] Persistence decision (yours): Nebius Serverless Endpoints lose their local disk when stopped (docs.nebius.com/serverless/overview). Options: (a) mount an Object Storage bucket and add an object-per-entry `JournalStore` (about $0.07 a month at 600 cases with 3 thumbnails, 30-day retention; SQLite on a mounted bucket is not safe), or (b) keep SQLite and accept that share links reset when the endpoint restarts. Not built until you choose
 
 ### M6: Quick vs Deep evals and README
-- [ ] Licensed eval set (15-20 cases at least) with licences in `evals/README.md`
-- [ ] `scripts/eval.py` compares Quick and Deep: top-1, top-3, Brier score, reliability table, escalation precision and recall, cost, latency
-- [ ] Deep is the default only if it wins on the test split
-- [ ] README with the real numbers and the architecture diagram
+- [x] Licensed tune set: 22 Wikimedia Commons photos across ten conditions, licences in `evals/README.md`. **Test split: waiting for the user's own phone photos**
+- [x] `scripts/eval.py` compares Quick and Deep: top-1, top-3, Brier score, reliability table, escalation precision and recall, cost, latency; `scripts/calibrate.py` refits the combination offline from logged runs
+- [ ] Deep is the default only if it wins on the test split. Not yet decided: the test split needs the user's photos, so **Quick stays the default**. On the tune split (used for tuning, so optimistic) Deep leads on top-1, top-3 and Brier score but run-to-run variance on 22 cases is about +/-10 points
+- [x] README with the real tune-split numbers, run-to-run variance, the architecture diagram, and feedback on Nebius and NVIDIA
 
 ## Risks
 
