@@ -354,8 +354,8 @@ def test_a_mild_disagreement_lowers_confidence_but_does_not_force_a_lab():
 def test_deep_sends_widely_spread_causes_to_a_lab():
     from backend.verdict import DEEP
 
-    agree = opinion(lead=0.3)
-    case = case_with(("Early blight", 0.35))
+    agree = opinion(lead=0.25)
+    case = case_with(("Early blight", 0.28))
     conf = combine(case, agree)
     d = deep_decision(case, conf, agree)
     assert conf.value < DEEP.lab_below and d.verdict == "lab" and "spread out" in d.reason
