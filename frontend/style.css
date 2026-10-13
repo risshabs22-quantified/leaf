@@ -105,6 +105,17 @@ textarea:focus, input:focus { outline: none; border-bottom-color: var(--green); 
 .results > * + * { margin-top: 2.2em; }
 .banner { font-weight: 500; }
 .banner.warn { color: var(--amber); border-left: 2px solid var(--amber-line); padding-left: 16px; }
+/* the verdict is the one loud thing on the results page */
+.verdict > * + * { margin-top: .5em; }
+.verdict-word { font-family: var(--serif); font-size: clamp(1.6em, 4vw, 2.1em); line-height: 1.15; font-weight: 500; }
+.verdict.confident .verdict-word { color: var(--green); }
+.verdict.lab { border-left: 2px solid var(--amber-line); padding-left: 16px; }
+.verdict.lab .verdict-word { color: var(--amber); }
+.verdict .banner { font-weight: 400; }
+.watch { border-top: 1px solid var(--line); padding-top: .8em; }
+.watch ul { padding-left: 1.2em; }
+.watch li + li { margin-top: .3em; }
+.watch #sample-if { margin-top: .7em; }
 .block h2 { font-size: 1em; font-weight: 600; margin-bottom: .5em; }
 .block > * + * { margin-top: .8em; }
 .muted { color: var(--muted); }

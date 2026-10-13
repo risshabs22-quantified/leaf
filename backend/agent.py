@@ -75,11 +75,22 @@ def case_brief(case: Case, settings: Settings) -> str:
     seed = ""
     if case.differential:  # the first differential, to test rather than to trust
         first = [{"name": h.name, "probability": h.probability} for h in case.differential]
+        origin = (
+            "Leaf's Quick diagnosis, which was unsure" if case.seed_note else "the first look alone"
+        )
         seed = (
             f"<first_differential>{sanitize(json.dumps(first))}</first_differential>\n"
-            "This first differential came from the first look alone. Test it: confirm, revise "
+            f"This first differential came from {origin}. Test it: confirm, revise "
             "or overturn it with evidence.\n"
         )
+    if case.seed_note:
+        seed += f"<quick_diagnosis>{sanitize(case.seed_note, 3000)}</quick_diagnosis>\n"
+    if case.sources:  # already found by Quick: read them instead of searching again
+        found = [
+            {"source_id": src.id, "title": src.title, "trusted": src.trusted}
+            for src in case.sources
+        ]
+        seed += f"<sources_found>{sanitize(json.dumps(found))}</sources_found>\n"
     return (
         f"<gardener_notes>{sanitize(case.notes) or 'none'}</gardener_notes>\n"
         f"<region>{sanitize(place, 100)}</region>\n"

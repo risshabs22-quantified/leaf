@@ -155,6 +155,9 @@ SHARED_FIELDS = (
     "low_confidence",
     "claim_flags",
     "handoff",
+    "verdict",
+    "verdict_reason",
+    "auto",
 )
 
 

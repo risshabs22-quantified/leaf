@@ -37,6 +37,7 @@
     <fieldset class="mode">
       <legend class="field-label">How should Leaf work?</legend>
       <label class="mode-opt"><input type="radio" name="mode" value="quick" checked> <span><span class="mode-name">Quick</span> <span class="mode-note">One careful look, about 15 seconds.</span></span></label>
+      <label class="mode-opt"><input type="radio" name="mode" value="auto"> <span><span class="mode-name">Auto</span> <span class="mode-note">Quick first. If Leaf isn't sure, it goes on to investigate like Deep and tells you why.</span></span></label>
       <label class="mode-opt"><input type="radio" name="mode" value="deep"> <span><span class="mode-name">Deep</span> <span class="mode-note">Works the case like a plant clinic: looks closer, checks your weather, reads sources and gets a second opinion. About a minute.</span></span></label>
       <p id="deep-left" class="small muted" hidden></p>
     </fieldset>
@@ -99,7 +100,12 @@
   </section>
 
   <section id="results" class="results" hidden aria-live="polite">
-    <p id="banner" class="banner"></p>
+    <div id="verdict" class="verdict">
+      <p id="verdict-word" class="verdict-word"></p>
+      <p id="banner" class="banner"></p>
+      <p id="lab-link" hidden><a href="https://www.npdn.org/lab_directory" target="_blank" rel="noopener">Find your state's plant diagnostic lab</a> <span class="muted small">(National Plant Diagnostic Network)</span></p>
+      <p id="auto-why" class="small muted" hidden></p>
+    </div>
     <p id="share" class="small muted" hidden>Saved for 30 days. <a id="share-link" href="#">Open your report</a>; keep that link, it lets you add check-ins with new photos. <button type="button" id="copy" class="textbtn">Copy a read-only link to share</button></p>
     <p id="confidence" class="confidence" hidden></p>
     <details id="confidence-why" class="why-box" hidden>
@@ -154,6 +160,11 @@
       <p id="plan-summary"></p>
       <ol id="steps" class="steps"></ol>
       <p id="claims" class="small muted" hidden></p>
+      <div id="watch" class="watch" hidden>
+        <p class="field-label">What to watch for</p>
+        <ul id="watch-list" class="small"></ul>
+        <p id="sample-if" class="small"></p>
+      </div>
       <p id="checkin" class="checkin"></p>
     </section>
 

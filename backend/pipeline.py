@@ -4,7 +4,8 @@
           --Nemotron Ultra (reasoning on)--> Diagnosis (+ follow-ups, search queries)
           --Tavily x N in parallel--> Sources
           --Nemotron Lightning (reasoning off)--> CarePlan
-Safety rules that matter are enforced in code, not left to the model.
+Safety rules that matter are enforced in code, not left to the model: the verdict
+(confident, likely, or send to a lab) comes from backend/verdict.py.
 """
 
 from __future__ import annotations
@@ -26,30 +27,18 @@ from backend.schemas import (
     Observation,
 )
 from backend.search import Searcher, search_all
+from backend.verdict import QUICK, Decision, decide
 from backend.vision import describe
 
 log = logging.getLogger("leaf.pipeline")
 
-LOW_CONFIDENCE = 0.6
 AMBIGUITY_MARGIN = 0.15  # top two causes closer than this: Leaf cannot tell them apart
 
 
-def is_low_confidence(scores: list[float], image_quality: str) -> bool:
-    """Never confident when: no cause found, the best is weak, the top two are nearly tied, or
-    the photo is poor, whatever the model scored. Shared by Quick and Deep."""
-    scores = sorted(scores, reverse=True)
-    top = scores[0] if scores else 0.0
-    return (
-        top < LOW_CONFIDENCE
-        or (len(scores) > 1 and top - scores[1] < AMBIGUITY_MARGIN)
-        or image_quality == "poor"
-    )
-
-
-ESCALATE_REASON = (
-    "Leaf isn't confident from this photo. Answer the follow-up questions or "
-    "take a sample to your local extension office."
-)
+def apply_verdict(plan: CarePlan, decision: Decision) -> None:
+    """The verdict, not the model, decides whether this goes to a lab."""
+    plan.escalate = decision.verdict == "lab"
+    plan.escalate_reason = decision.reason if plan.escalate else ""
 
 
 class Leaf:
@@ -74,7 +63,14 @@ class Leaf:
         # 1. Perception
         if image_b64 and self.vision_model:
             obs = await describe(
-                self.llm, self.vision_model, image_b64, mime, notes, trace, s.fast_model
+                self.llm,
+                self.vision_model,
+                image_b64,
+                mime,
+                notes,
+                trace,
+                s.fast_model,
+                checklist=s.checklist,
             )
         elif image_b64:
             obs = Observation(
@@ -106,7 +102,9 @@ class Leaf:
             repair_model=s.fast_model,
         )
         diagnosis.candidates.sort(key=lambda c: c.confidence, reverse=True)
-        low = is_low_confidence([c.confidence for c in diagnosis.candidates], obs.image_quality)
+        decision = decide(
+            [(c.name, c.confidence) for c in diagnosis.candidates], obs.image_quality, QUICK
+        )
 
         # 3. Grounding (parallel web search)
         queries = diagnosis.search_queries or [
@@ -141,17 +139,14 @@ class Leaf:
         except ModelError:
             plan = CarePlan(
                 summary="Leaf could not write a care plan right now. Your diagnosis is above.",
-                escalate=True,
-                escalate_reason="Plan generation failed; check with your local extension office.",
             )
+            if decision.verdict != "lab":
+                decision = Decision("lab", "Leaf could not write a care plan right now.")
 
-        # Poka-yoke: uncertainty always escalates, whatever the model said.
         valid_ids = {src.id for src in sources}
         for step in plan.steps:
             step.source_ids = [i for i in step.source_ids if i in valid_ids]
-        if low and not plan.escalate:
-            plan.escalate = True
-            plan.escalate_reason = ESCALATE_REASON
+        apply_verdict(plan, decision)
 
         return DiagnoseResponse(
             observation=obs,
@@ -159,7 +154,9 @@ class Leaf:
             plan=plan,
             sources=sources,
             trace=trace,
-            low_confidence=low,
+            low_confidence=decision.verdict != "confident",
+            verdict=decision.verdict,
+            verdict_reason=decision.reason,
         )
 
     async def chat(self, req: ChatRequest) -> ChatResponse:
@@ -224,6 +221,12 @@ def _chat_context(ctx: DiagnoseResponse) -> dict:
             ],
             "escalate": ctx.plan.escalate,
             "escalate_reason": sanitize(ctx.plan.escalate_reason, 300),
+            "watch_for": [sanitize(w, 300) for w in ctx.plan.watch_for[:3]],
+            "sample_if": sanitize(ctx.plan.sample_if, 300),
+        },
+        "verdict": {
+            "verdict": ctx.verdict,
+            "reason": sanitize(ctx.verdict_reason, 400),
         },
         "sources": [
             {"id": s.id, "title": sanitize(s.title, 200), "url": sanitize(s.url, 300)}

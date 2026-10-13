@@ -16,7 +16,12 @@ from pydantic import BaseModel, Field, field_validator
 
 from backend.config import VISION_PREFERENCE, Settings
 from backend.models import LLM, ModelError, complete_json
-from backend.prompts import LOOK_CLOSER_SYSTEM, VISION_SYSTEM, sanitize
+from backend.prompts import (
+    LOOK_CLOSER_SYSTEM,
+    VISION_CHECKLIST_SYSTEM,
+    VISION_SYSTEM,
+    sanitize,
+)
 from backend.schemas import ModelCall, Observation, _unit
 
 log = logging.getLogger("leaf.vision")
@@ -129,12 +134,13 @@ async def describe(
     notes: str,
     trace: list[ModelCall],
     repair_model: str | None = None,
+    checklist: bool = False,
 ) -> Observation:
     user_text = "Describe this plant photo."
     if notes:
         user_text += f"\n<gardener_notes>{sanitize(notes)}</gardener_notes>"
     messages = [
-        {"role": "system", "content": VISION_SYSTEM},
+        {"role": "system", "content": VISION_CHECKLIST_SYSTEM if checklist else VISION_SYSTEM},
         {
             "role": "user",
             "content": [

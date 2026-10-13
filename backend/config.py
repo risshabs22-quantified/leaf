@@ -98,6 +98,8 @@ class Settings:
     deep_wall_s: int = field(default_factory=lambda: _env_int("LEAF_DEEP_WALL_S", 90))
     deep_budget_usd: float = field(default_factory=lambda: _env_float("LEAF_DEEP_BUDGET_USD", 0.10))
     deep_max_photos: int = 3
+    # Structured symptom checklist in the vision step (kept only if the eval shows it helps).
+    checklist: bool = field(default_factory=lambda: _env("LEAF_CHECKLIST", "1") != "0")
     # Start the investigation from the structured first differential (the Quick diagnosis
     # step) instead of from nothing; the eval compares both.
     deep_seed: bool = field(default_factory=lambda: _env("LEAF_DEEP_SEED", "1") != "0")

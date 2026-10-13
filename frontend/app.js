@@ -121,12 +121,12 @@ async function diagnose() {
   busy(true);
   $("results").hidden = true;
   try {
-    if (mode() === "deep") {
+    if (mode() === "deep" || mode() === "auto") {
       chosen.forEach(([f, label]) => { fd.append("images", f); fd.append("labels", label); });
       fd.append("notes", notes);
       fd.append("region", $("region").value.trim());
       if (coords) { fd.append("lat", coords.lat); fd.append("lon", coords.lon); }
-      await runDeep("/api/deep/stream", { method: "POST", body: fd });
+      await runDeep(`/api/${mode()}/stream`, { method: "POST", body: fd });
     } else {
       if (chosen.length) fd.append("image", chosen[0][0]);
       fd.append("notes", notes);
@@ -178,6 +178,7 @@ async function runDeep(url, init) {
   $("run").hidden = true;
   $("live").hidden = false;
   $("log").innerHTML = "";
+  delete pending.quick;
   $("differential").innerHTML = "";
   $("status").textContent = "Leaf is taking a first look…";
   const r = await fetch(url, init);
@@ -219,7 +220,17 @@ function logItem(cls, what, why = "", got = "") {
 const pending = {};
 function onEvent(ev) {
   switch (ev.type) {
+    case "quick_start":
+      pending.quick = logItem("running", "Quick diagnosis", "One careful look at the first photo.");
+      $("status").textContent = "Leaf is taking a quick look…";
+      break;
+    case "auto":
+      if (pending.quick) { pending.quick.className = "done"; pending.quick.querySelector(".l-got").textContent = "Done."; }
+      logItem(ev.investigate ? "note" : "done", ev.investigate ? "Leaf decided to investigate" : "No investigation needed", "", ev.reason);
+      $("status").textContent = ev.investigate ? "Leaf is working the case…" : "";
+      break;
     case "first_look":
+      if (ev.photo_id === "P1" && pending.quick) break; // Quick already looked at this photo
       logItem("done", "Took a first look at the photo", "", (ev.observation.symptoms || []).slice(0, 2).join("; "));
       $("status").textContent = "Leaf is working the case…";
       break;
@@ -286,20 +297,7 @@ function render(d) {
 
   const top = deep && d.differential && d.differential.length
     ? { name: d.differential[0].name } : d.diagnosis.candidates[0];
-  const banner = $("banner");
-  if (d.notice) {
-    banner.className = "banner warn";
-    banner.textContent = d.notice;
-  } else if (d.status === "needs_answers") {
-    banner.className = "banner";
-    banner.textContent = "Leaf needs a little more from you to tell the likely causes apart.";
-  } else if (d.plan.escalate) {
-    banner.className = "banner warn";
-    banner.textContent = d.plan.escalate_reason || "Leaf isn't sure. Please check with your local extension office.";
-  } else {
-    banner.className = "banner ok";
-    banner.textContent = top ? `Most likely: ${top.name}` : "Diagnosis ready.";
-  }
+  renderVerdict(d, top);
 
   renderConfidence(d);
   const saved = d.case_id && d.status !== "needs_answers";
@@ -360,6 +358,25 @@ function render(d) {
   $("results").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
 }
 
+const VERDICT = { confident: "Confident", likely: "Likely", lab: "Send a sample to a lab" };
+
+function renderVerdict(d, top) {
+  const waiting = d.status === "needs_answers";
+  const v = waiting ? "" : d.verdict || (d.plan.escalate ? "lab" : "likely");
+  $("verdict").className = `verdict ${v}`;
+  $("verdict-word").textContent = waiting ? "A few questions first"
+    : v === "lab" ? VERDICT.lab : `${VERDICT[v]}${top ? `: ${top.name}` : ""}`;
+  const banner = $("banner");
+  banner.className = d.notice ? "banner warn" : "banner";
+  banner.textContent = d.notice || (waiting
+    ? "Leaf needs a little more from you to tell the likely causes apart."
+    : d.verdict_reason || d.plan.escalate_reason || "");
+  $("lab-link").hidden = v !== "lab" || !!d.handoff;
+  const a = d.auto;
+  $("auto-why").hidden = !a;
+  if (a) $("auto-why").textContent = `${a.investigated ? "Leaf investigated further." : "Leaf stopped after its quick look."} ${a.reason}`;
+}
+
 function renderConfidence(d) {
   const c = d.confidence;
   $("confidence").hidden = !c;
@@ -383,6 +400,10 @@ function renderPlan(d) {
   const dropped = (d.claim_flags || []).filter((f) => f.verdict === "dropped");
   $("claims").hidden = !dropped.length;
   $("claims").textContent = dropped.length ? `Leaf removed ${dropped.length} step${dropped.length === 1 ? "" : "s"} its sources did not support.` : "";
+  const watch = d.plan.watch_for || [];
+  $("watch").hidden = d.verdict === "confident" || d.status === "needs_answers" || (!watch.length && !d.plan.sample_if);
+  $("watch-list").innerHTML = watch.map((w) => `<li>${esc(w)}</li>`).join("");
+  $("sample-if").textContent = d.plan.sample_if ? `When to send a sample: ${d.plan.sample_if}` : "";
   const due = new Date(Date.now() + d.plan.check_in_days * 864e5);
   $("checkin").textContent = d.status === "needs_answers" ? "" : `Check in: send a new photo around ${due.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}.`;
 }

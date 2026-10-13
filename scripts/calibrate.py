@@ -20,9 +20,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from backend.case import Case, Hypothesis, Photo  # noqa: E402
 from backend.critic import CriticOpinion, add_alternative, blend, combine  # noqa: E402
-from backend.deep import escalation_reason  # noqa: E402
+from backend.deep import deep_decision  # noqa: E402
 from backend.schemas import Observation  # noqa: E402
-from scripts.eval import hit  # noqa: E402
+from scripts.eval import hit, target  # noqa: E402
 
 
 def replay(row: dict, w_first: float, margin: float, critic_mode: str) -> dict:
@@ -51,12 +51,12 @@ def replay(row: dict, w_first: float, margin: float, critic_mode: str) -> dict:
     add_alternative(case, critic)
     conf = combine(case, critic)
     names = [h.name for h in case.differential]
-    expected = row["case"]["expected"]
+    expected = target(row["case"])
     return {
         "top1": hit(names, expected, 1),
         "top3": hit(names, expected, 3),
         "conf": conf.value,
-        "escalate": bool(escalation_reason(case, conf, critic)),
+        "escalate": deep_decision(case, conf, critic).verdict == "lab",
     }
 
 

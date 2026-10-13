@@ -217,6 +217,8 @@ app.add_middleware(
         "/api/diagnose": MAX_UPLOAD_BYTES + 256 * 1024,
         "/api/deep": MAX_DEEP_PHOTOS * MAX_UPLOAD_BYTES + 256 * 1024,
         "/api/deep/stream": MAX_DEEP_PHOTOS * MAX_UPLOAD_BYTES + 256 * 1024,
+        "/api/auto": MAX_DEEP_PHOTOS * MAX_UPLOAD_BYTES + 256 * 1024,
+        "/api/auto/stream": MAX_DEEP_PHOTOS * MAX_UPLOAD_BYTES + 256 * 1024,
         "/api/chat": 256 * 1024,
     },
     default=64 * 1024,
@@ -398,8 +400,67 @@ def _deep_work(
     )
 
 
+def _auto_work(
+    request: Request, photos, notes: str, region: str, lat, lon
+) -> tuple[Callable[[Any], Awaitable[DeepResponse]], float]:
+    """Auto: Quick first; today's Deep cap is spent only if Leaf decides to investigate."""
+    deep: DeepLeaf = request.app.state.deep
+    notes, region = notes[:2000], region[:100]
+    cap: DailyCap = request.app.state.deep_cap
+
+    def may_investigate() -> str:
+        if cap.take():
+            return ""
+        return f"Deep mode has reached today's limit of {cap.cap} cases, so Leaf stopped here."
+
+    return (
+        lambda emit: deep.auto(
+            photos=photos,
+            notes=notes,
+            region=region,
+            lat=lat,
+            lon=lon,
+            emit=emit,
+            may_investigate=may_investigate,
+        ),
+        request.app.state.leaf.settings.deadline_s + _deep_deadline(request),
+    )
+
+
 async def _ignore_event(_: dict[str, Any]) -> None:
     return None
+
+
+@app.post("/api/auto", response_model=DeepResponse)
+async def auto(
+    request: Request,
+    notes: Annotated[str, Form()] = "",
+    region: Annotated[str, Form()] = "",
+    lat: Annotated[float | None, Form()] = None,
+    lon: Annotated[float | None, Form()] = None,
+) -> DeepResponse:
+    check_limits(request)
+    photos, lat, lon = await _deep_inputs(request, notes, region, lat, lon)
+    work, timeout = _auto_work(request, photos, notes, region, lat, lon)
+    result = await run_limited(request, lambda: work(_ignore_event), timeout=timeout)
+    await save_report(
+        request, result, result.mode, [v for _, _, v in photos], [lb for lb, _, _ in photos]
+    )
+    return result
+
+
+@app.post("/api/auto/stream")
+async def auto_stream(
+    request: Request,
+    notes: Annotated[str, Form()] = "",
+    region: Annotated[str, Form()] = "",
+    lat: Annotated[float | None, Form()] = None,
+    lon: Annotated[float | None, Form()] = None,
+) -> StreamingResponse:
+    check_limits(request)
+    photos, lat, lon = await _deep_inputs(request, notes, region, lat, lon)
+    work, timeout = _auto_work(request, photos, notes, region, lat, lon)
+    return _event_stream(request, work, timeout, [(v, lb) for lb, _, v in photos])
 
 
 @app.post("/api/deep", response_model=DeepResponse)

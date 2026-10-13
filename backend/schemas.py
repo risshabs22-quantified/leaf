@@ -33,6 +33,85 @@ def _clip_list(v: Any, n: int) -> Any:
     return v[:n] if isinstance(v, list) else v
 
 
+Tri = Literal["present", "absent", "unsure"]
+
+
+def _choice(allowed: tuple[str, ...]):
+    def fix(v: Any) -> Any:
+        v = v.strip().lower().replace(" ", "_").replace("-", "_") if isinstance(v, str) else v
+        return v if v in allowed else "unsure"
+
+    return fix
+
+
+TRI = ("present", "absent", "unsure")
+
+
+class Features(BaseModel):
+    """The features extension diagnostic keys ask about, read from the photo. Anything the
+    model is not sure of is "unsure", which is not evidence either way."""
+
+    lesion_shape: Literal["circular", "angular", "irregular", "none", "unsure"] = "unsure"
+    lesion_margin: Literal["sharp", "diffuse", "water_soaked", "none", "unsure"] = "unsure"
+    yellow_halo: Tri = "unsure"
+    concentric_rings: Tri = "unsure"
+    dark_dots_in_lesions: Tri = "unsure"
+    powdery_growth: Tri = "unsure"
+    fuzzy_growth: Tri = "unsure"
+    rust_pustules: Tri = "unsure"
+    growth_side: Literal["upper", "lower", "both", "none", "unsure"] = "unsure"
+    yellowing_pattern: Literal[
+        "interveinal", "veins", "uniform", "margins", "mottled", "none", "unsure"
+    ] = "unsure"
+    affected_first: Literal["older_lower", "new_growth", "whole_plant", "unsure"] = "unsure"
+    insects: Tri = "unsure"
+    frass: Tri = "unsure"
+    webbing: Tri = "unsure"
+
+    @field_validator(
+        "yellow_halo",
+        "concentric_rings",
+        "dark_dots_in_lesions",
+        "powdery_growth",
+        "fuzzy_growth",
+        "rust_pustules",
+        "insects",
+        "frass",
+        "webbing",
+        mode="before",
+    )
+    @classmethod
+    def _tri(cls, v: Any) -> Any:
+        if isinstance(v, bool):
+            return "present" if v else "absent"
+        return _choice(TRI)(v)
+
+    @field_validator("lesion_shape", mode="before")
+    @classmethod
+    def _shape(cls, v: Any) -> Any:
+        return _choice(("circular", "angular", "irregular", "none"))(v)
+
+    @field_validator("lesion_margin", mode="before")
+    @classmethod
+    def _margin(cls, v: Any) -> Any:
+        return _choice(("sharp", "diffuse", "water_soaked", "none"))(v)
+
+    @field_validator("growth_side", mode="before")
+    @classmethod
+    def _side(cls, v: Any) -> Any:
+        return _choice(("upper", "lower", "both", "none"))(v)
+
+    @field_validator("yellowing_pattern", mode="before")
+    @classmethod
+    def _yellow(cls, v: Any) -> Any:
+        return _choice(("interveinal", "veins", "uniform", "margins", "mottled", "none"))(v)
+
+    @field_validator("affected_first", mode="before")
+    @classmethod
+    def _first(cls, v: Any) -> Any:
+        return _choice(("older_lower", "new_growth", "whole_plant"))(v)
+
+
 class Observation(BaseModel):
     """What the vision step sees in the photo. Facts only, no diagnosis."""
 
@@ -43,6 +122,7 @@ class Observation(BaseModel):
     pattern: str = ""
     image_quality: Literal["good", "fair", "poor"] = "fair"
     quality_notes: str = ""
+    features: Features | None = None  # the structured checklist, when enabled
 
     @field_validator("plant_confidence", mode="before")
     @classmethod
@@ -116,9 +196,23 @@ class CarePlan(BaseModel):
 
     summary: str
     steps: list[PlanStep] = Field(default_factory=list)
+    watch_for: list[str] = Field(default_factory=list, max_length=3)
+    sample_if: str = ""
     check_in_days: int = Field(5, ge=1, le=30)
-    escalate: bool = False
+    escalate: bool = False  # set in code from the verdict: True means "send to a lab"
     escalate_reason: str = ""
+
+    @field_validator("watch_for", mode="before")
+    @classmethod
+    def _watch(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            v = [v] if v.strip() else []
+        return [str(x) for x in v if str(x).strip()][:3] if isinstance(v, list) else []
+
+    @field_validator("sample_if", mode="before")
+    @classmethod
+    def _sample(cls, v: Any) -> Any:
+        return v if isinstance(v, str) else ""
 
     @field_validator("check_in_days", mode="before")
     @classmethod
@@ -149,7 +243,9 @@ class DiagnoseResponse(BaseModel):
     plan: CarePlan
     sources: list[Source]
     trace: list[ModelCall]
-    low_confidence: bool
+    low_confidence: bool  # True unless the verdict is "confident"
+    verdict: Literal["confident", "likely", "lab"] = "likely"
+    verdict_reason: str = ""
 
 
 class ChatTurn(BaseModel):

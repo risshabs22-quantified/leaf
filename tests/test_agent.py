@@ -538,12 +538,13 @@ async def test_finish_wins_over_ask_user_in_the_same_turn(settings):
 # ---------------------------------------------------------------- safety rules on the result
 
 
-async def test_a_near_tie_in_deep_mode_escalates(settings):
+async def test_a_near_tie_in_deep_mode_is_likely_not_confident(settings):
     deep, _, _ = deep_for(
         settings, [turn(finish(("Early blight", 0.5, []), ("Septoria", 0.45, [])))]
     )
     res, _ = await collect(deep)
-    assert res.low_confidence is True and res.plan.escalate is True
+    assert res.verdict in {"likely", "lab"} and res.low_confidence is True
+    assert res.plan.escalate is (res.verdict == "lab")
 
 
 async def test_invented_evidence_ids_are_dropped(settings):

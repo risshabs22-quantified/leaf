@@ -261,7 +261,7 @@ def test_security_headers_are_set_but_docs_still_work(settings):
 # ---------------------------------------------------------------- escalation rules
 
 
-async def test_two_nearly_tied_causes_escalate_even_when_the_top_one_is_over_the_bar(settings):
+async def test_two_nearly_tied_causes_are_likely_never_confident(settings):
     tied = {
         **DIAG_HIGH,
         "candidates": [
@@ -271,7 +271,8 @@ async def test_two_nearly_tied_causes_escalate_even_when_the_top_one_is_over_the
     }
     leaf, _, _ = make_leaf(settings, {**STD, "diagnose": tied})
     res = await leaf.diagnose(image_b64="abc")
-    assert res.low_confidence is True and res.plan.escalate is True
+    assert res.verdict == "likely" and "close behind" in res.verdict_reason
+    assert res.low_confidence is True and res.plan.escalate is False
 
 
 async def test_a_clear_winner_does_not_escalate(settings):

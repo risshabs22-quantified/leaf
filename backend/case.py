@@ -97,6 +97,8 @@ class Case(BaseModel):
     pending_call_id: str | None = None  # the ask_user call waiting for answers
     asked: int = 0
     summary: str = ""
+    seed_note: str = ""  # Auto mode: why Quick was unsure, and the evidence it weighed
+    auto_reason: str = ""  # Auto mode: why Leaf went on to investigate
 
     # ---- lookups and registration (synchronous, so concurrent tool calls stay consistent)
     def photo(self, photo_id: str) -> Photo | None:

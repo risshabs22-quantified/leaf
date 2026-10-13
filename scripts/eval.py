@@ -10,8 +10,10 @@ Each line of evals/cases.jsonl (lines starting with // are ignored):
     {"image": "evals/images/tune/tomato_early_blight_1.jpg", "expected": ["early blight"],
      "crop": "tomato", "notes": "", "region": "", "split": "tune", "tag": "clear"}
 
-Metrics per mode: top-1 and top-3 hit rate (case-insensitive substring match of an expected
-name in a candidate name), Brier score of the reported confidence against top-1 being right,
+Modes: quick, deep, auto (Quick first, Deep only when Quick is unsure), "both" (quick and
+deep) or "all". Metrics per mode: top-1 and top-3 hit rate (names resolved to a canonical
+condition by backend/diseases.py), accuracy per verdict (confident / likely / lab), lab rate,
+Brier score of the reported confidence against top-1 being right,
 a reliability table, escalation precision and recall (an escalation is "right" when top-1 is
 wrong), and mean cost and latency per case. If Deep asks questions, the eval answers "I'm not
 sure", as a gardener who cannot tell would. Results go to evals/results.jsonl and a summary to
@@ -34,6 +36,7 @@ sys.path.insert(0, str(ROOT))
 from backend.app import build_leaf  # noqa: E402
 from backend.config import get_settings  # noqa: E402
 from backend.deep import DeepLeaf  # noqa: E402
+from backend.diseases import BY_ID, identify  # noqa: E402
 from backend.models import ModelError  # noqa: E402
 from backend.store import MemoryCaseStore  # noqa: E402
 from backend.vision import prepare_image, prepare_photo  # noqa: E402
@@ -41,9 +44,18 @@ from backend.vision import prepare_image, prepare_photo  # noqa: E402
 BINS = [0.0, 0.5, 0.6, 0.7, 0.8, 0.9, 1.01]
 
 
-def hit(names: list[str], expected: list[str], k: int) -> bool:
+def hit(names: list[str], expected: list[str] | str, k: int) -> bool:
+    """Is the expected condition among the top k names? With a canonical condition id, each
+    name is resolved by backend.diseases (synonyms count, look-alikes do not); with a list of
+    names, a case-insensitive substring match is used (older cases)."""
+    if isinstance(expected, str):
+        return expected in {identify(n) for n in names[:k]}
     top = [n.lower() for n in names[:k]]
     return any(e.lower() in n for e in expected for n in top)
+
+
+def target(case: dict) -> list[str] | str:
+    return case.get("condition") or case["expected"]
 
 
 def load_cases(path: str, split: str, limit: int) -> list[dict]:
@@ -62,6 +74,9 @@ async def run_quick(leaf, case: dict, data: bytes) -> dict[str, Any]:
     names = [c.name for c in res.diagnosis.candidates]
     return {
         "names": names,
+        "candidates": [[c.name, c.confidence] for c in res.diagnosis.candidates],
+        "observation": res.observation.model_dump(),
+        "verdict": getattr(res, "verdict", None),
         "confidence": res.diagnosis.candidates[0].confidence if names else 0.0,
         "escalate": res.plan.escalate,
         "cost": sum(t.cost_usd or 0 for t in res.trace),
@@ -69,21 +84,13 @@ async def run_quick(leaf, case: dict, data: bytes) -> dict[str, Any]:
     }
 
 
-async def run_deep(deep: DeepLeaf, case: dict, data: bytes) -> dict[str, Any]:
-    full, view = prepare_photo(data)
-    res = await deep.start(
-        photos=[("photo", full, view)], notes=case.get("notes", ""), region=case.get("region", "")
-    )
-    asked = res.status == "needs_answers"
-    if asked:  # a gardener who cannot tell
-        stored = await deep.store.get(res.case_id)
-        res = await deep.resume(stored, ["I'm not sure."] * len(res.questions))
+def _deep_row(res) -> dict[str, Any]:
     names = [h.name for h in res.differential] or [c.name for c in res.diagnosis.candidates]
     if res.confidence:
         conf = res.confidence.value
     elif res.differential:
         conf = res.differential[0].probability
-    else:  # fell back to Quick: use Quick's own top confidence
+    else:  # fell back to Quick (or Auto stopped there): use Quick's own top confidence
         conf = res.diagnosis.candidates[0].confidence if res.diagnosis.candidates else 0.0
     return {
         "names": names,
@@ -91,9 +98,11 @@ async def run_deep(deep: DeepLeaf, case: dict, data: bytes) -> dict[str, Any]:
         "escalate": res.plan.escalate,
         "cost": res.cost_usd,
         "credits": res.tavily_credits,
-        "asked": asked,
         "mode_used": res.mode,
         "tools": [s.tool for s in res.steps if s.ok],
+        "observation": res.observation.model_dump(),
+        "verdict": res.verdict,
+        "verdict_reason": res.verdict_reason,
         # Inputs for scripts/calibrate.py, which refits the blend and confidence offline.
         "first": [[h.name, h.probability] for h in res.first_differential],
         "investigator": [
@@ -102,6 +111,62 @@ async def run_deep(deep: DeepLeaf, case: dict, data: bytes) -> dict[str, Any]:
         "critic": res.critic.model_dump() if res.critic else None,
         "confidence_parts": res.confidence.model_dump() if res.confidence else None,
     }
+
+
+async def _answer_if_asked(deep: DeepLeaf, res):
+    if res.status != "needs_answers":
+        return res, False
+    stored = await deep.store.get(res.case_id)  # a gardener who cannot tell
+    return await deep.resume(stored, ["I'm not sure."] * len(res.questions)), True
+
+
+async def run_deep(deep: DeepLeaf, case: dict, data: bytes) -> dict[str, Any]:
+    full, view = prepare_photo(data)
+    res = await deep.start(
+        photos=[("photo", full, view)], notes=case.get("notes", ""), region=case.get("region", "")
+    )
+    res, asked = await _answer_if_asked(deep, res)
+    return {**_deep_row(res), "asked": asked}
+
+
+async def run_auto(deep: DeepLeaf, case: dict, data: bytes) -> dict[str, Any]:
+    full, view = prepare_photo(data)
+    res = await deep.auto(
+        photos=[("photo", full, view)], notes=case.get("notes", ""), region=case.get("region", "")
+    )
+    res, asked = await _answer_if_asked(deep, res)
+    row = {**_deep_row(res), "asked": asked, "investigated": res.auto.investigated}
+    row["auto_reason"] = res.auto.reason
+    if not res.auto.investigated:  # Quick's scores, for refitting the verdict thresholds
+        row["candidates"] = [[c.name, c.confidence] for c in res.diagnosis.candidates]
+    return row
+
+
+VERDICTS = ("confident", "likely", "lab")
+
+
+def _high_stakes(case: dict) -> bool:
+    cond = BY_ID.get(case.get("condition") or "")
+    return bool(cond and cond.high_stakes)
+
+
+def by_verdict(ok: list[dict[str, Any]]) -> dict[str, Any]:
+    """The headline: when Leaf said Confident, how often was it right? A lab referral is
+    counted as warranted when Leaf's top answer was wrong or the true condition is high-stakes."""
+    out: dict[str, Any] = {}
+    for v in VERDICTS:
+        rows = [r for r in ok if r.get("verdict") == v]
+        if not rows:
+            out[v] = {"cases": 0}
+            continue
+        out[v] = {
+            "cases": len(rows),
+            "top1_right": sum(r["top1"] for r in rows),
+            "top3_right": sum(r["top3"] for r in rows),
+        }
+        if v == "lab":
+            out[v]["warranted"] = sum(1 for r in rows if not r["top1"] or _high_stakes(r["case"]))
+    return out
 
 
 def summarise(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -140,6 +205,11 @@ def summarise(rows: list[dict[str, Any]]) -> dict[str, Any]:
         if all(r.get("credits") is not None for r in ok)
         else None,
         "mean_seconds": round(sum(r["seconds"] for r in ok) / len(ok), 1),
+        "lab_rate": round(sum(r.get("verdict") == "lab" for r in ok) / len(ok), 3),
+        "verdicts": by_verdict(ok),
+        "investigated": round(sum(bool(r.get("investigated")) for r in ok) / len(ok), 3)
+        if any("investigated" in r for r in ok)
+        else None,
         "reliability": reliability,
     }
 
@@ -149,10 +219,16 @@ async def main() -> int:
     ap.add_argument("--cases", default=str(ROOT / "evals" / "cases.jsonl"))
     ap.add_argument("--split", choices=["tune", "test", "all"], default="all")
     ap.add_argument("--limit", type=int, default=0)
-    ap.add_argument("--mode", choices=["quick", "deep", "both"], default="both")
+    ap.add_argument("--mode", choices=["quick", "deep", "auto", "both", "all"], default="both")
     ap.add_argument("--no-seed", action="store_true", help="Deep without the first differential")
     ap.add_argument("--concurrency", type=int, default=3)
     ap.add_argument("--label", default="", help="tag for this run in the results file")
+    ap.add_argument(
+        "--no-search",
+        action="store_true",
+        help="Quick without Tavily: diagnosis and confidence come before the search, "
+        "so scores are unchanged and no search credits are spent",
+    )
     args = ap.parse_args()
 
     cases = load_cases(args.cases, args.split, args.limit)
@@ -163,8 +239,14 @@ async def main() -> int:
     if args.no_seed:
         settings = dataclasses.replace(settings, deep_seed=False)
     leaf = await build_leaf(settings)
+    if args.no_search:
+        from backend.search import NullSearcher
+
+        leaf.searcher = NullSearcher()
     deep = DeepLeaf(leaf, MemoryCaseStore())
-    modes = ["quick", "deep"] if args.mode == "both" else [args.mode]
+    modes = {"both": ["quick", "deep"], "all": ["quick", "deep", "auto"]}.get(
+        args.mode, [args.mode]
+    )
     label = args.label or ("deep-noseed" if args.no_seed else "")
     sem = asyncio.Semaphore(max(1, args.concurrency))
     results: dict[str, list[dict[str, Any]]] = {m: [] for m in modes}
@@ -178,9 +260,8 @@ async def main() -> int:
             start = time.time()
             try:
                 data = img.read_bytes()
-                out = await (
-                    run_quick(leaf, case, data) if mode == "quick" else run_deep(deep, case, data)
-                )
+                runner = {"quick": run_quick, "deep": run_deep, "auto": run_auto}[mode]
+                out = await runner(leaf if mode == "quick" else deep, case, data)
             except (ValueError, ModelError, TimeoutError) as exc:
                 row = {
                     "mode": mode,
@@ -193,7 +274,7 @@ async def main() -> int:
                 results[mode].append(row)
                 return
         secs = round(time.time() - start, 1)
-        h1, h3 = hit(out["names"], case["expected"], 1), hit(out["names"], case["expected"], 3)
+        h1, h3 = hit(out["names"], target(case), 1), hit(out["names"], target(case), 3)
         row = {
             "mode": mode,
             "label": label,
@@ -208,7 +289,8 @@ async def main() -> int:
         print(
             f"{mark} [{mode}] {case['image'].split('/')[-1]}: expected {case['expected'][0]!r} "
             f"got {[n[:30] for n in out['names'][:2]]} conf {out['confidence']:.2f} "
-            f"{'ESC ' if out['escalate'] else ''}{secs}s ${out['cost']:.3f}"
+            f"{(out.get('verdict') or '?').upper()} "
+            f"{'DEEP ' if out.get('investigated') else ''}{secs}s ${out['cost']:.3f}"
         )
 
     await asyncio.gather(*(one(m, c) for m in modes for c in cases))
@@ -232,6 +314,16 @@ async def main() -> int:
             f"Brier {s['brier']} | escalated {s['escalated']:.0%} "
             f"(precision {s['escalation_precision']}, recall {s['escalation_recall']}) | "
             f"${s['mean_cost_usd']}/case | {s['mean_seconds']}s | errors {s['errors']}"
+        )
+        v = s["verdicts"]
+        print(
+            "       verdicts: "
+            + " | ".join(
+                f"{k} {v[k].get('top1_right', 0)}/{v[k]['cases']} right"
+                + (f" ({v[k]['warranted']} warranted)" if k == "lab" and v[k]["cases"] else "")
+                for k in VERDICTS
+            )
+            + (f" | investigated {s['investigated']:.0%}" if s["investigated"] is not None else "")
         )
     return 0
 

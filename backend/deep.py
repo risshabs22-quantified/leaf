@@ -38,7 +38,7 @@ from backend.critic import (
 from backend.crops import infer_crop
 from backend.handoff import LabHandoff, build_handoff
 from backend.models import ModelError, complete_json
-from backend.pipeline import AMBIGUITY_MARGIN, Leaf, is_low_confidence
+from backend.pipeline import Leaf, apply_verdict
 from backend.prompts import DIAGNOSE_SYSTEM, sanitize
 from backend.schemas import (
     Candidate,
@@ -49,7 +49,9 @@ from backend.schemas import (
     Observation,
     Source,
 )
+from backend.search import _trust
 from backend.store import CaseStore
+from backend.verdict import DEEP, Decision, decide
 from backend.vision import describe
 
 log = logging.getLogger("leaf.deep")
@@ -69,30 +71,29 @@ async def _ignore(_: dict[str, Any]) -> None:
     return None
 
 
-# Fitted on the tune split (44 logged Deep cases, docs/AGENT_V2.md): Deep's combined confidence
-# runs lower than Quick's raw scores, so its threshold is lower, and a second opinion escalates
-# on its own only when it gives the leader under even odds.
-DEEP_LOW_CONFIDENCE = 0.5
+# Fitted on the tune split (44 logged Deep cases, docs/AGENT_V2.md): a second opinion sends a
+# case to a lab on its own only when it gives the leader under even odds.
 CRITIC_ESCALATES_BELOW = 0.5
 
 
-def escalation_reason(case: Case, confidence: Confidence, critic: CriticOpinion | None) -> str:
-    """Why Leaf hands this case to a lab, most specific reason first; "" when it does not."""
+def deep_decision(case: Case, confidence: Confidence, critic: CriticOpinion | None) -> Decision:
+    """Deep's verdict: the shared rules, scored on the combined confidence."""
+    disagreement = ""
     hyps = case.differential
-    if not hyps:
-        return "Leaf could not reach a diagnosis."
-    top = hyps[0]
     strong = critic is None or critic.leading_probability < CRITIC_ESCALATES_BELOW
-    if confidence.disagreement and strong:
-        alt = f" ({top.name} vs {critic.alternative})" if critic and critic.alternative else ""
-        return f"Leaf and its second opinion disagree{alt}. A diagnostic lab can tell them apart."
-    if len(hyps) > 1 and top.probability - hyps[1].probability < AMBIGUITY_MARGIN:
-        return f"{top.name} and {hyps[1].name} are too close to call from photos."
-    if confidence.quality == "poor":
-        return "The photos are too unclear for a confident diagnosis."
-    if confidence.value < DEEP_LOW_CONFIDENCE:
-        return f"Leaf is only {round(confidence.value * 100)}% confident."
-    return ""
+    if hyps and confidence.disagreement and strong:
+        alt = f" ({hyps[0].name} vs {critic.alternative})" if critic and critic.alternative else ""
+        disagreement = (
+            f"Leaf and its second opinion disagree{alt}. A diagnostic lab can tell them apart."
+        )
+    return decide(
+        [(h.name, h.probability) for h in hyps],
+        confidence.quality,
+        DEEP,
+        top_score=confidence.value,
+        disagreement=disagreement,
+        contested_by=(critic.alternative if critic else "") if confidence.disagreement else None,
+    )
 
 
 class CaseStateError(Exception):
@@ -103,6 +104,13 @@ class PhotoInfo(BaseModel):
     id: str
     label: str
     observation: Observation | None = None
+
+
+class AutoDecision(BaseModel):
+    """Auto mode: whether Leaf went on from Quick to a full investigation, and why."""
+
+    investigated: bool
+    reason: str
 
 
 class DeepResponse(DiagnoseResponse):
@@ -127,6 +135,7 @@ class DeepResponse(DiagnoseResponse):
     critic: CriticOpinion | None = None
     claim_flags: list[ClaimFlag] = Field(default_factory=list)
     handoff: LabHandoff | None = None
+    auto: AutoDecision | None = None
 
 
 def _source_int(source_id: str) -> int:
@@ -186,6 +195,113 @@ class DeepLeaf:
             case, emit, lambda: self.investigator.resume(case, answers, emit, deadline)
         )
 
+    async def auto(
+        self,
+        *,
+        photos: list[tuple[str, str, str]],
+        notes: str = "",
+        region: str = "",
+        lat: float | None = None,
+        lon: float | None = None,
+        emit: Emit = _ignore,
+        may_investigate: Callable[[], str] = lambda: "",
+    ) -> DeepResponse:
+        """Quick first. Only when Quick is unsure does Leaf open a Deep case, which starts from
+        Quick's look at the first photo, its differential, evidence and sources instead of
+        repeating them. `may_investigate` returns "" to allow that, or why it can't (the
+        daily Deep cap), and is called only when an investigation is wanted."""
+        await emit({"type": "quick_start"})
+        quick = await self.leaf.diagnose(
+            image_b64=photos[0][2] if photos else None, notes=notes, region=region
+        )
+        if quick.verdict == "confident":
+            why = f"Quick was confident: {quick.verdict_reason}"
+            await emit({"type": "auto", "investigate": False, "reason": why})
+            return self._from_quick(quick, AutoDecision(investigated=False, reason=why))
+        why = f"Quick was unsure: {quick.verdict_reason}"
+        refusal = may_investigate()
+        if refusal:
+            why = f"{why} {refusal}"
+            await emit({"type": "auto", "investigate": False, "reason": why})
+            return self._from_quick(
+                quick, AutoDecision(investigated=False, reason=why), notice=refusal
+            )
+        await emit({"type": "auto", "investigate": True, "reason": why})
+
+        case = Case(
+            notes=notes,
+            region=region,
+            lat=None if lat is None else round(lat, 1),  # never keep a precise location
+            lon=None if lon is None else round(lon, 1),
+            photos=[
+                Photo(id=f"P{i + 1}", label=label, full_b64=full, view_b64=view)
+                for i, (label, full, view) in enumerate(photos)
+            ],
+        )
+        await emit({"type": "case", "case_id": case.id})
+        deadline = self.investigator.clock() + self.leaf.settings.deep_wall_s
+        for call in quick.trace:
+            case.add_trace(call.model_copy(update={"note": f"quick {call.note}".strip()}))
+        if case.photos and self.leaf.vision_model:  # Quick already looked at the first photo
+            case.photos[0].observation = quick.observation
+            await emit(
+                {
+                    "type": "first_look",
+                    "photo_id": "P1",
+                    "observation": quick.observation.model_dump(),
+                }
+            )
+        await self._first_looks(case, emit, deadline)  # only the photos Quick did not see
+        case.crop = infer_crop(
+            notes, *(p.observation.plant_guess for p in case.photos if p.observation)
+        )
+        cands = quick.diagnosis.candidates
+        case.differential = normalise_differential(
+            [{"name": c.name, "probability": c.confidence} for c in cands], set()
+        )
+        case.first_differential = [h.model_copy() for h in case.differential]
+        if case.differential:
+            await emit(
+                {
+                    "type": "differential",
+                    "first": True,
+                    "hypotheses": [h.model_dump() for h in case.differential],
+                }
+            )
+        for src in quick.sources:
+            case.add_source(
+                src.url, sanitize(src.title, 200), sanitize(src.snippet, 400), bool(_trust(src.url))
+            )
+        case.seed_note = json.dumps(
+            {
+                "why_unsure": quick.verdict_reason,
+                "candidates": [
+                    {
+                        "name": c.name,
+                        "evidence_for": c.evidence_for[:4],
+                        "evidence_against": c.evidence_against[:4],
+                    }
+                    for c in cands[:4]
+                ],
+                "reasoning": quick.diagnosis.reasoning_summary[:800],
+            }
+        )
+        case.auto_reason = why
+        return await self._investigate(
+            case, emit, lambda: self.investigator.run(case, emit, deadline), quick=quick
+        )
+
+    def _from_quick(
+        self, quick: DiagnoseResponse, auto: AutoDecision, notice: str = ""
+    ) -> DeepResponse:
+        return DeepResponse(
+            **quick.model_dump(),
+            mode="quick",
+            notice=notice,
+            cost_usd=round(sum(t.cost_usd or 0 for t in quick.trace), 5),
+            auto=auto,
+        )
+
     # ------------------------------------------------------------------ steps
 
     async def _seed_differential(self, case: Case, emit: Emit, deadline: float) -> None:
@@ -240,9 +356,10 @@ class DeepLeaf:
 
     async def _first_looks(self, case: Case, emit: Emit, deadline: float) -> None:
         vision = self.leaf.vision_model
-        if not case.photos or not vision:
+        todo = [p for p in case.photos if p.observation is None]
+        if not todo or not vision:
             return
-        traces: list[list[ModelCall]] = [[] for _ in case.photos]
+        traces: list[list[ModelCall]] = [[] for _ in todo]
         looks = [
             describe(
                 self.leaf.llm,
@@ -252,8 +369,9 @@ class DeepLeaf:
                 case.notes,
                 t,
                 self.leaf.settings.fast_model,
+                checklist=self.leaf.settings.checklist,
             )
-            for p, t in zip(case.photos, traces, strict=True)
+            for p, t in zip(todo, traces, strict=True)
         ]
         # Never let the first look eat the investigation's time.
         budget = max(5.0, min(FIRST_LOOK_TIMEOUT_S, deadline - self.investigator.clock() - 30))
@@ -266,9 +384,9 @@ class DeepLeaf:
                     image_quality="poor",
                     quality_notes="The photo could not be analysed in time.",
                 )
-                for _ in case.photos
+                for _ in todo
             ]
-        for photo, obs, trace in zip(case.photos, observations, traces, strict=True):
+        for photo, obs, trace in zip(todo, observations, traces, strict=True):
             photo.observation = obs
             for call in trace:
                 case.add_trace(call)
@@ -277,7 +395,11 @@ class DeepLeaf:
             )
 
     async def _investigate(
-        self, case: Case, emit: Emit, work: Callable[[], Awaitable[AgentResult]]
+        self,
+        case: Case,
+        emit: Emit,
+        work: Callable[[], Awaitable[AgentResult]],
+        quick: DiagnoseResponse | None = None,
     ) -> DeepResponse:
         try:
             result = await work()
@@ -293,6 +415,18 @@ class DeepLeaf:
             case.status = "failed"
             await self.store.put(case)
             await emit({"type": "fallback", "reason": "The investigation could not finish."})
+            if quick is not None:  # Auto mode already has a Quick diagnosis: never redo it
+                return DeepResponse(
+                    **{**quick.model_dump(), "case_id": case.id},
+                    mode="quick",
+                    status="fallback",
+                    notice="Leaf could not finish its investigation, so this is the Quick "
+                    "diagnosis.",
+                    steps=case.steps,
+                    cost_usd=round(case.cost_usd, 5),
+                    tavily_credits=case.tavily_credits,
+                    auto=AutoDecision(investigated=True, reason=case.auto_reason),
+                )
             return await self._quick_fallback(case)
         await self.store.put(case)
         if result.kind == "ask":
@@ -366,12 +500,10 @@ class DeepLeaf:
             case.add_trace(call)
         sources_text = " ".join(" ".join(s.passages) for s in case.sources)
         flags += check_summary(plan, sources_text)
-        reason = escalation_reason(case, confidence, critic)
-        if not reason and not plan.steps:
-            reason = "Leaf could not ground a care plan in the sources it read."
-        if reason:
-            plan.escalate = True
-            plan.escalate_reason = f"{reason} {plan.escalate_reason}".strip()
+        decision = deep_decision(case, confidence, critic)
+        if decision.verdict != "lab" and not plan.steps:
+            decision = Decision("lab", "Leaf could not ground a care plan in the sources it read.")
+        apply_verdict(plan, decision)
         handoff = (
             build_handoff(case, plan.escalate_reason, critic.model_dump() if critic else None)
             if plan.escalate
@@ -387,17 +519,12 @@ class DeepLeaf:
             critic=critic,
             claim_flags=flags,
             handoff=handoff,
-            low=bool(reason),
+            decision=decision,
         )
         await emit({"type": "done", "case_id": case.id})
         return response
 
     # ------------------------------------------------------------------ conversions
-
-    def _low(self, case: Case) -> bool:
-        qualities = [p.observation.image_quality for p in case.photos if p.observation]
-        quality = "poor" if qualities and all(q == "poor" for q in qualities) else "fair"
-        return is_low_confidence([h.probability for h in case.differential], quality)
 
     def _sources(self, case: Case) -> list[Source]:
         return [
@@ -437,7 +564,7 @@ class DeepLeaf:
         critic: CriticOpinion | None = None,
         claim_flags: list[ClaimFlag] | None = None,
         handoff: LabHandoff | None = None,
-        low: bool | None = None,
+        decision: Decision | None = None,
     ) -> DeepResponse:
         first = next((p.observation for p in case.photos if p.observation), None)
         return DeepResponse(
@@ -446,7 +573,9 @@ class DeepLeaf:
             plan=plan or CarePlan(summary="Answer the questions so Leaf can finish this case."),
             sources=self._sources(case),
             trace=case.trace,
-            low_confidence=self._low(case) if low is None else low,
+            low_confidence=decision is None or decision.verdict != "confident",
+            verdict=decision.verdict if decision else "likely",
+            verdict_reason=decision.reason if decision else "",
             mode="deep",
             case_id=case.id,
             status=status,
@@ -467,6 +596,9 @@ class DeepLeaf:
             critic=critic,
             claim_flags=claim_flags or [],
             handoff=handoff,
+            auto=AutoDecision(investigated=True, reason=case.auto_reason)
+            if case.auto_reason
+            else None,
         )
 
     async def _quick_fallback(self, case: Case, notice: str = "") -> DeepResponse:
@@ -492,6 +624,8 @@ class DeepLeaf:
                 sources=[],
                 trace=case.trace,
                 low_confidence=True,
+                verdict="lab",
+                verdict_reason="Leaf's models are busy; your local extension office can help.",
                 mode="quick",
                 case_id=case.id,
                 status="fallback",

@@ -27,6 +27,7 @@ from backend.prompts import (
     LOOK_CLOSER_SYSTEM,
     PLAN_DEEP_SYSTEM,
     PLAN_SYSTEM,
+    VISION_CHECKLIST_SYSTEM,
     VISION_SYSTEM,
 )
 
@@ -81,6 +82,7 @@ def step_of(messages: list[dict[str, Any]]) -> str:
     system = messages[0]["content"] if messages and messages[0]["role"] == "system" else ""
     return {
         VISION_SYSTEM: "vision",
+        VISION_CHECKLIST_SYSTEM: "vision",
         DIAGNOSE_SYSTEM: "diagnose",
         PLAN_SYSTEM: "plan",
         CHAT_SYSTEM: "chat",

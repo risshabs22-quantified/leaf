@@ -7,7 +7,7 @@ import pytest
 from backend.case import Case, Hypothesis, Photo
 from backend.claims import code_checks, ensure_passages, judge
 from backend.critic import CriticOpinion, add_alternative, combine
-from backend.deep import escalation_reason
+from backend.deep import deep_decision
 from backend.handoff import NPDN_DIRECTORY, state_code
 from backend.schemas import CarePlan, Observation, PlanStep
 from tests.conftest import FakeSearcher, make_leaf
@@ -108,17 +108,31 @@ async def test_the_critic_sees_evidence_but_not_the_investigators_reasoning(sett
 # ---------------------------------------------------------------- escalation
 
 
-def test_escalation_reasons_come_most_specific_first():
+def verdict(case, critic):
+    d = deep_decision(case, combine(case, critic), critic)
+    return d.verdict, d.reason
+
+
+def test_deep_verdicts_come_most_specific_first():
     agree = opinion(lead=0.8)
     tie = case_with(("Early blight", 0.5), ("Septoria", 0.42))
-    assert "too close to call" in escalation_reason(tie, combine(tie, agree), agree)
-    dis = opinion(agrees=False, lead=0.3, alt="Late blight", alt_p=0.6)
+    v, why = verdict(tie, agree)
+    assert v == "likely" and "close behind" in why  # a near-tie is Likely, not a lab
+    dis = opinion(agrees=False, lead=0.3, alt="Septoria", alt_p=0.6)
     case = case_with(("Early blight", 0.85))
-    assert "Late blight" in escalation_reason(case, combine(case, dis), dis)
+    v, why = verdict(case, dis)
+    assert v == "lab" and "Septoria" in why
     poor = case_with(("Early blight", 0.85), quality="poor")
-    assert "unclear" in escalation_reason(poor, combine(poor, agree), agree)
+    assert verdict(poor, agree)[0] == "lab" and "unclear" in verdict(poor, agree)[1]
     clear = case_with(("Early blight", 0.85))
-    assert escalation_reason(clear, combine(clear, agree), agree) == ""
+    assert verdict(clear, agree)[0] == "confident"
+
+
+def test_a_high_stakes_condition_in_the_top_two_goes_to_a_lab():
+    agree = opinion(lead=0.8)
+    case = case_with(("Early blight", 0.8), ("Late blight", 0.2))
+    v, why = verdict(case, agree)
+    assert v == "lab" and "can't rule out late blight" in why and "report" in why
 
 
 async def test_a_disagreeing_critic_escalates_and_produces_a_lab_handoff(settings):
@@ -137,7 +151,7 @@ async def test_a_disagreeing_critic_escalates_and_produces_a_lab_handoff(setting
     )
     res, events = await collect(deep, region="Columbus, OH", notes="potato leaves")
     assert res.plan.escalate and res.low_confidence and res.confidence.disagreement
-    assert "Late blight" in res.plan.escalate_reason
+    assert "late blight" in res.plan.escalate_reason.lower() and res.verdict == "lab"
     assert any(h.name == "Late blight (second opinion)" for h in res.differential)
     h = res.handoff
     assert h.lab_url == f"{NPDN_DIRECTORY}?state=OH&region=" and h.lab_state == "OH"
@@ -320,7 +334,8 @@ def test_a_disagreeing_second_opinion_escalates_even_without_naming_an_alternati
     )
     case = case_with(("Early blight", 0.8))
     conf = combine(case, silent)
-    assert conf.disagreement and "disagree" in escalation_reason(case, conf, silent)
+    d = deep_decision(case, conf, silent)
+    assert conf.disagreement and d.verdict == "lab" and "disagree" in d.reason
     assert CriticOpinion().agrees is False  # a reply without a vote counts as disagreement
 
 
@@ -332,16 +347,18 @@ def test_a_mild_disagreement_lowers_confidence_but_does_not_force_a_lab():
     case = case_with(("Early blight", 0.8))
     conf = combine(case, mild)
     assert conf.disagreement and conf.value == 0.65
-    assert escalation_reason(case, conf, mild) == ""
+    d = deep_decision(case, conf, mild)
+    assert d.verdict == "likely" and "leans toward Septoria" in d.reason
 
 
-def test_deep_escalates_below_its_own_fitted_threshold():
-    from backend.deep import DEEP_LOW_CONFIDENCE
+def test_deep_sends_widely_spread_causes_to_a_lab():
+    from backend.verdict import DEEP
 
-    agree = opinion(lead=0.45)
-    case = case_with(("Early blight", 0.5))
+    agree = opinion(lead=0.3)
+    case = case_with(("Early blight", 0.35))
     conf = combine(case, agree)
-    assert conf.value < DEEP_LOW_CONFIDENCE and "confident" in escalation_reason(case, conf, agree)
+    d = deep_decision(case, conf, agree)
+    assert conf.value < DEEP.lab_below and d.verdict == "lab" and "spread out" in d.reason
 
 
 def test_the_second_opinions_alternative_never_outranks_the_leader():
