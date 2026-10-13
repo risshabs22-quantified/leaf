@@ -16,7 +16,7 @@ const timeEl = (n) => document.querySelector(`[data-time="${n}"]`);
 
 function setGraphState(kind, label) {
   const g = $("graph-state");
-  g.className = `pill ${kind}`.trim();
+  g.className = `run-state ${kind}`.trim();
   g.textContent = label;
 }
 
@@ -26,6 +26,7 @@ function runGraph(active, hasPhoto) {
 }
 
 function resetGraph() {
+  $("run").hidden = false;
   NODES.forEach((n) => { nodeEl(n).className = "node"; timeEl(n).textContent = ""; });
 }
 
@@ -57,8 +58,17 @@ function setPhoto(file) {
   const img = $("preview");
   img.src = URL.createObjectURL(file);
   img.hidden = false;
-  $("drop-text").hidden = true;
+  $("drop-text").innerHTML = '<span class="link">Choose a different photo</span>'; // static markup, no user text
 }
+
+// Example phrases in the intro fill the notes field so a first-time visitor can try Leaf without a photo.
+document.querySelectorAll(".try").forEach((a) => a.addEventListener("click", (e) => {
+  e.preventDefault();
+  const n = $("notes");
+  n.value = a.dataset.try;
+  n.focus();
+  n.scrollIntoView({ behavior: "smooth", block: "center" });
+}));
 
 $("file").addEventListener("change", (e) => setPhoto(e.target.files[0]));
 const drop = $("drop");
@@ -93,7 +103,7 @@ async function diagnose(answers = "") {
     $("status").textContent = "";
   } catch (err) {
     $("status").textContent = err.message;
-    resetGraph(); setGraphState("error", "Failed");
+    $("run").hidden = true;
   } finally {
     clearInterval(timer);
     $("go").disabled = false; $("rerun").disabled = false;
