@@ -3,7 +3,9 @@
 Nemotron Super reviews the case from the evidence alone (never the investigator's reasoning or
 probabilities) and argues for the strongest alternative. Code, not a model, then combines both
 opinions with photo quality and evidence coverage into the confidence the gardener sees.
-The weights are provisional; M6 calibrates them on the tune split (Brier score).
+The blend weight and the disagreement rule were fitted on the tune split with
+scripts/calibrate.py (see docs/AGENT_V2.md); the photo-quality and coverage factors are as
+first set and could be refitted the same way.
 """
 
 from __future__ import annotations
@@ -22,7 +24,6 @@ from backend.schemas import ModelCall, _unit
 
 log = logging.getLogger("leaf.critic")
 
-AGREEMENT_MARGIN = 0.15  # the critic "disagrees" when its alternative is this close or ahead
 QUALITY_FACTOR = {"good": 1.0, "fair": 0.95, "poor": 0.7, "none": 0.9}  # "none": notes only
 COVERAGE_FACTOR = {0: 0.8, 1: 0.9}  # evidence items behind the leading hypothesis; 2+ -> 1.0
 
@@ -148,9 +149,9 @@ def combine(case: Case, critic: CriticOpinion | None) -> Confidence:
         base, disagreement, p_crit = p_inv * 0.9, False, None  # no second opinion: less sure
     else:
         p_crit = critic.leading_probability
-        disagreement = (not critic.agrees) or (
-            critic.alternative_probability >= critic.leading_probability - AGREEMENT_MARGIN
-        )
+        # The critic's own vote. Fitted on the tune split (scripts/calibrate.py): a margin rule
+        # on its probabilities escalated more correct cases for no gain in recall.
+        disagreement = not critic.agrees
         base = (p_inv + p_crit) / 2
         if disagreement:
             base = min(base, p_crit)

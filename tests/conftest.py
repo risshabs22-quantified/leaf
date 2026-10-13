@@ -227,7 +227,13 @@ class FakeSearcher:
 
 @pytest.fixture
 def settings() -> Settings:
-    return Settings(nebius_api_key="test", tavily_api_key="test", vision_model="nvidia/fake-vl")
+    # Blend 0: agent tests check the investigator's own ranking; the blend has its own tests.
+    return Settings(
+        nebius_api_key="test",
+        tavily_api_key="test",
+        vision_model="nvidia/fake-vl",
+        deep_blend_first=0.0,
+    )
 
 
 def make_leaf(

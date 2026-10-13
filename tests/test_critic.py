@@ -57,8 +57,11 @@ def test_disagreement_takes_the_lower_estimate():
     assert c.disagreement and c.value == 0.3
 
 
-def test_a_close_alternative_counts_as_disagreement_even_if_the_critic_says_it_agrees():
+def test_disagreement_is_the_critics_own_vote():
+    # A close alternative alone is not a disagreement: the fitted rule follows the critic's vote.
     c = combine(case_with(("Early blight", 0.8)), opinion(agrees=True, lead=0.5, alt_p=0.45))
+    assert not c.disagreement
+    c = combine(case_with(("Early blight", 0.8)), opinion(agrees=False, lead=0.6, alt_p=0.2))
     assert c.disagreement
 
 
@@ -288,3 +291,18 @@ def test_blend_weight_zero_is_the_investigator_alone():
     final = [Hypothesis(name="Rust", probability=0.7)]
     assert blend([Hypothesis(name="Scab", probability=0.9)], final, 0.0)[0].name == "Rust"
     assert blend([], final, 0.4)[0].name == "Rust"
+
+
+async def test_the_final_ranking_blends_the_first_look_with_the_investigation():
+    from backend.config import Settings
+
+    blended = Settings(nebius_api_key="t", vision_model="nvidia/fake-vl", deep_blend_first=0.7)
+    # first differential (DIAG_HIGH): Early blight 0.82, Septoria 0.1
+    deep, _, _ = deep_for(
+        blended,
+        [turn(search(), finish(("Septoria leaf spot", 0.6, ["E1"]), ("Early blight", 0.3, [])))],
+    )
+    res, _ = await collect(deep)
+    assert res.investigator_differential[0].name == "Septoria leaf spot"
+    assert res.differential[0].name == "Early blight"  # 0.3*0.3 + 0.7*0.82 = 0.66 vs 0.25
+    assert res.differential[0].probability == pytest.approx(0.664, abs=0.01)

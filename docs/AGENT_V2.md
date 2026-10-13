@@ -213,7 +213,11 @@ Acceptance:
 
 ### M3: second opinion, calibration, claim check, lab handoff
 - [x] Critic on Super (reasoning on; ~18 s, so it runs alongside the plan) sees evidence and the leading name only, never the investigator's reasoning or probabilities; it argues for the strongest alternative, which is added to the differential when missing; disagreement lowers confidence and escalates with a specific reason
-- [ ] Combination weights chosen from eval data and written here. Provisional (`backend/critic.py`): mean of the two opinions, the critic's estimate when they disagree, x photo quality (1.0 / 0.95 / 0.7, 0.9 notes only), x evidence coverage (0.8 / 0.9 / 1.0), capped at 0.9
+- [x] Combination fitted on the tune split (22 cases, `scripts/calibrate.py` replays the logged opinions offline):
+  - **Blend weight 0.7** for the first differential against the investigator's final one. Investigator alone: top-1 36%; first differential alone: 46%; where they disagreed the first was right 3 times of 4. Weights 0.6-0.75 are a stable region (top-1 46%, Brier 0.182-0.188); 0.7 keeps room for strong evidence to overturn the first look without fitting the extreme.
+  - **Disagreement = the critic's own vote** (`agrees: false`). It had the best Brier score at every weight; the earlier margin rule escalated more correct cases for no gain.
+  - Unchanged: mean of the two opinions (the critic's estimate when they disagree), x photo quality (1.0 / 0.95 / 0.7, 0.9 notes only), x evidence coverage (0.8 / 0.9 / 1.0), capped at 0.9.
+  - Honest reading: on this set the investigation's value is calibration, escalation and grounded plans, not a better top-1 than the first look.
 - [x] Plan from read passages only (Leaf reads the top trusted sources itself if the investigator read none); claim check in code (cited source must have been read, any rate or dose must appear in the cited passage, chemical steps get "Follow the product label.") then Lightning judges support (unsupported dropped, partial flagged)
 - [x] Lab handoff data on escalation: history, photos seen, weather, differential with evidence, second opinion, sampling checklist (Cornell, UNH, Oregon State; their bag-rule disagreement stated), NPDN directory link per state (`?state=OH`), and NPDN's Sept 2026 funding-pause notice. The printable page is part of M4
 - [ ] Optional Nano screen/rerank: not built (no eval evidence it would help yet)

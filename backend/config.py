@@ -103,7 +103,7 @@ class Settings:
     deep_seed: bool = field(default_factory=lambda: _env("LEAF_DEEP_SEED", "1") != "0")
     # Weight of the first differential when blended with the investigator's final one (0 = the
     # investigator alone). Chosen on the tune split; see docs/AGENT_V2.md.
-    deep_blend_first: float = field(default_factory=lambda: _env_float("LEAF_DEEP_BLEND", 0.4))
+    deep_blend_first: float = field(default_factory=lambda: _env_float("LEAF_DEEP_BLEND", 0.7))
     deep_max_look_closer: int = 3
     # Plant journal: a SQLite file by default; "memory" keeps entries in this process only.
     journal_path: str = field(default_factory=lambda: _env("LEAF_JOURNAL_PATH", "data/leaf.db"))

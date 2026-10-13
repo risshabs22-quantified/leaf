@@ -858,7 +858,9 @@ async def test_estimates_add_up_across_calls_prepared_in_the_same_turn(settings)
 
 
 async def test_a_forced_finish_that_times_out_keeps_the_recorded_differential(settings):
-    limited = Settings(nebius_api_key="t", vision_model="nvidia/fake-vl", deep_max_calls=1)
+    limited = Settings(
+        nebius_api_key="t", vision_model="nvidia/fake-vl", deep_max_calls=1, deep_blend_first=0.0
+    )
 
     def hang_on_finish(messages, tools, tool_choice):
         if tools == ["finish"]:

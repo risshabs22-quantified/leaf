@@ -1,0 +1,45 @@
+{
+ "split": "tune",
+ "label": "calib",
+ "summary": {
+  "deep": {
+   "cases": 22,
+   "errors": 0,
+   "top1": 0.455,
+   "top3": 0.591,
+   "brier": 0.2018,
+   "escalated": 0.682,
+   "escalation_precision": 0.733,
+   "escalation_recall": 0.917,
+   "mean_cost_usd": 0.0536,
+   "mean_tavily_credits": 2.5,
+   "mean_seconds": 55.8,
+   "reliability": [
+    {
+     "bin": "0.0-0.5",
+     "cases": 11,
+     "mean_confidence": 0.319,
+     "accuracy": 0.273
+    },
+    {
+     "bin": "0.5-0.6",
+     "cases": 2,
+     "mean_confidence": 0.569,
+     "accuracy": 0.5
+    },
+    {
+     "bin": "0.6-0.7",
+     "cases": 6,
+     "mean_confidence": 0.674,
+     "accuracy": 0.667
+    },
+    {
+     "bin": "0.7-0.8",
+     "cases": 3,
+     "mean_confidence": 0.734,
+     "accuracy": 0.667
+    }
+   ]
+  }
+ }
+}
