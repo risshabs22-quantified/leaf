@@ -55,7 +55,7 @@ def test_a_high_stakes_condition_at_20_percent_anywhere_goes_to_a_lab():
 
 def test_deep_scores_on_its_combined_confidence():
     ranking = [("Early blight", 0.8), ("Septoria", 0.1)]
-    assert decide(ranking, "good", DEEP, top_score=0.3).verdict == "lab"
+    assert decide(ranking, "good", DEEP, top_score=0.25).verdict == "lab"
     assert decide(ranking, "good", DEEP, top_score=0.7).verdict == "confident"
     assert decide(ranking, "good", DEEP, top_score=0.7, contested_by="Septoria").verdict == (
         "likely"
