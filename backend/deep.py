@@ -61,7 +61,7 @@ Emit = Callable[[dict[str, Any]], Awaitable[None]]
 FIRST_LOOK_TIMEOUT_S = 25
 SEED_TIMEOUT_S = 20
 CRITIC_TIMEOUT_S = 35  # Super with reasoning: ~18 s measured; runs alongside the plan
-READ_TIMEOUT_S = 12
+READ_TIMEOUT_S = 18  # may search once, then read two pages
 PLAN_TIMEOUT_S = 20
 CLAIM_TIMEOUT_S = 12
 QUICK_FALLBACK_TIMEOUT_S = 40  # the request deadline (wall clock + 45 s) leaves room for it
@@ -501,8 +501,15 @@ class DeepLeaf:
         sources_text = " ".join(" ".join(s.passages) for s in case.sources)
         flags += check_summary(plan, sources_text)
         decision = deep_decision(case, confidence, critic)
-        if decision.verdict != "lab" and not plan.steps:
-            decision = Decision("lab", "Leaf could not ground a care plan in the sources it read.")
+        if not plan.steps:
+            # No step survived the claim check: the diagnosis stands, but Leaf has no cited
+            # plan to offer, so it is never Confident and says where to get one.
+            if decision.verdict == "confident":
+                decision = Decision("likely", decision.reason)
+            plan.sample_if = plan.sample_if or (
+                "Leaf found no source that supports specific steps, so ask your local "
+                "extension office what to do."
+            )
         apply_verdict(plan, decision)
         handoff = (
             build_handoff(case, plan.escalate_reason, critic.model_dump() if critic else None)

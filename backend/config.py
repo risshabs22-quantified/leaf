@@ -98,8 +98,9 @@ class Settings:
     deep_wall_s: int = field(default_factory=lambda: _env_int("LEAF_DEEP_WALL_S", 90))
     deep_budget_usd: float = field(default_factory=lambda: _env_float("LEAF_DEEP_BUDGET_USD", 0.10))
     deep_max_photos: int = 3
-    # Structured symptom checklist in the vision step (kept only if the eval shows it helps).
-    checklist: bool = field(default_factory=lambda: _env("LEAF_CHECKLIST", "1") != "0")
+    # Structured symptom checklist in the vision step. Off: on 52 tune photos it fixed 5 Quick
+    # cases and broke 7 (top-1 48% vs 52% without), so it did not earn its place (README).
+    checklist: bool = field(default_factory=lambda: _env("LEAF_CHECKLIST", "0") == "1")
     # Start the investigation from the structured first differential (the Quick diagnosis
     # step) instead of from nothing; the eval compares both.
     deep_seed: bool = field(default_factory=lambda: _env("LEAF_DEEP_SEED", "1") != "0")
@@ -110,6 +111,8 @@ class Settings:
     # Plant journal: a SQLite file by default; "memory" keeps entries in this process only.
     journal_path: str = field(default_factory=lambda: _env("LEAF_JOURNAL_PATH", "data/leaf.db"))
     journal_days: int = field(default_factory=lambda: _env_int("LEAF_JOURNAL_DAYS", 30))
+    # Set in production: entries go to this Object Storage bucket (AWS_* variables configure it).
+    journal_bucket: str = field(default_factory=lambda: _env("LEAF_JOURNAL_BUCKET", ""))
     # Proxies in front of Leaf that append to X-Forwarded-For (0 = none, trust the socket).
     trusted_proxy_hops: int = field(default_factory=lambda: _env_int("LEAF_TRUSTED_PROXY_HOPS", 1))
 

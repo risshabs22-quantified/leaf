@@ -1,8 +1,9 @@
 """Plant journal: finished reports, shareable by an unguessable link, with check-ins.
 
 A journal entry is what a gardener keeps: the report (Quick or Deep), small thumbnails of the
-photos (never the full uploads), and later check-ins. Entries expire after 30 days. Storage
-sits behind JournalStore, so SQLite (local, default) and any other backend plug in the same way.
+photos (never the full uploads), and later check-ins. Entries expire after 30 days unless
+pinned (scripts/pin_case.py keeps a demo link alive). Storage sits behind JournalStore:
+SQLite locally (default), memory for tests, or an Object Storage bucket in production.
 Nothing here is logged: no images, no notes.
 """
 
@@ -137,6 +138,65 @@ class SQLiteJournal:
 
     async def purge(self) -> int:
         return await asyncio.to_thread(self._purge)
+
+
+class S3Journal:
+    """One JSON object per entry in an S3-compatible bucket (Nebius Object Storage).
+
+    Credentials, endpoint and region come from the standard AWS_* environment variables, so
+    none of them live in code. Expired entries are deleted when someone asks for them; nothing
+    lists the bucket, so purge() is a no-op. At a few kilobytes per thumbnail, leftovers cost
+    a fraction of a cent. Pinned entries (scripts/pin_case.py) simply carry a later expiry.
+    """
+
+    PREFIX = "journal/"
+
+    def __init__(self, bucket: str, client: Any = None):
+        if client is None:
+            import boto3  # only needed when the bucket is configured
+
+            client = boto3.client("s3")
+        self.bucket, self.client = bucket, client
+
+    def _key(self, entry_id: str) -> str:
+        return f"{self.PREFIX}{entry_id}.json"
+
+    def _get(self, entry_id: str) -> JournalEntry | None:
+        try:
+            obj = self.client.get_object(Bucket=self.bucket, Key=self._key(entry_id))
+        except self.client.exceptions.NoSuchKey:
+            return None
+        entry = JournalEntry.model_validate_json(obj["Body"].read())
+        if entry.expires <= time.time():
+            self.client.delete_object(Bucket=self.bucket, Key=self._key(entry_id))
+            return None
+        return entry
+
+    def _put(self, entry: JournalEntry) -> None:
+        self.client.put_object(
+            Bucket=self.bucket,
+            Key=self._key(entry.id),
+            Body=entry.model_dump_json().encode(),
+            ContentType="application/json",
+        )
+
+    async def get(self, entry_id: str) -> JournalEntry | None:
+        if not entry_id or not all(c.isalnum() or c in "-_" for c in entry_id):
+            return None  # ids are url-safe tokens; anything else cannot be a key we wrote
+        return await asyncio.to_thread(self._get, entry_id)
+
+    async def put(self, entry: JournalEntry) -> None:
+        await asyncio.to_thread(self._put, entry)
+
+    async def purge(self) -> int:
+        return 0
+
+
+def open_journal(path: str, bucket: str = "") -> JournalStore:
+    """The configured store: a bucket when LEAF_JOURNAL_BUCKET is set, else SQLite or memory."""
+    if bucket:
+        return S3Journal(bucket)
+    return MemoryJournal() if path in ("", "memory") else SQLiteJournal(path)
 
 
 SHARED_FIELDS = (

@@ -26,7 +26,7 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 from backend.checkin import check_in
 from backend.config import Settings, get_settings
 from backend.deep import CaseStateError, DeepLeaf, DeepResponse
-from backend.journal import JournalEntry, MemoryJournal, SQLiteJournal, public_view, thumbnail
+from backend.journal import JournalEntry, open_journal, public_view, thumbnail
 from backend.models import ModelError, TokenFactory
 from backend.pipeline import Leaf
 from backend.schemas import ChatRequest, ChatResponse, DiagnoseResponse
@@ -201,9 +201,9 @@ async def lifespan(app: FastAPI):
     if deep is None or deep.leaf is not app.state.leaf:
         app.state.deep = DeepLeaf(app.state.leaf, MemoryCaseStore())
     app.state.deep_cap = DailyCap(app.state.leaf.settings.deep_daily_cap)
-    path = app.state.leaf.settings.journal_path
+    s = app.state.leaf.settings
     if getattr(app.state, "journal", None) is None:
-        app.state.journal = MemoryJournal() if path in ("", "memory") else SQLiteJournal(path)
+        app.state.journal = open_journal(s.journal_path, s.journal_bucket)
     removed = await app.state.journal.purge()
     if removed:
         log.info("journal: removed %d expired entries", removed)

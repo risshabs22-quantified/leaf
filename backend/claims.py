@@ -22,7 +22,7 @@ from backend.config import Settings
 from backend.models import LLM, ModelError, complete_json
 from backend.prompts import CLAIM_CHECK_SYSTEM, PLAN_DEEP_SYSTEM, sanitize
 from backend.schemas import CarePlan, ModelCall, PlanStep
-from backend.search import Searcher
+from backend.search import Searcher, _trust, rank_sources
 
 log = logging.getLogger("leaf.claims")
 
@@ -156,12 +156,27 @@ def _sid(source_id: str) -> int:
 
 async def ensure_passages(case: Case, searcher: Searcher) -> None:
     """If the investigator read nothing, read the best trusted sources before planning, so the
-    plan always rests on passages, never on search snippets alone."""
+    plan always rests on passages, never on search snippets alone. If it never searched at
+    all, search for the leading diagnosis first (Tavily), as Quick does."""
     if any(s.passages for s in case.sources) or not case.differential:
         return
     top = case.differential[0].name
-    candidates = sorted(case.sources, key=lambda s: not s.trusted)[:MAX_AUTO_READS]
     query = f"{top} management and treatment for home gardeners"
+    if not case.sources:  # the investigator never searched: find guides for the leader first
+        crop = f"{case.crop} " if case.crop else ""
+        try:
+            results, credits = await searcher.search_web(
+                f"{crop}{top} extension guide", max_results=6
+            )
+        except Exception as exc:  # noqa: BLE001 - no sources only means no cited plan
+            log.warning("auto search failed for %s: %s", case.id, exc)
+            return
+        case.tavily_credits += credits
+        for r in rank_sources(results, limit=MAX_AUTO_READS):
+            case.add_source(
+                r.url, sanitize(r.title, 200), sanitize(r.snippet, 400), bool(_trust(r.url))
+            )
+    candidates = sorted(case.sources, key=lambda s: not s.trusted)[:MAX_AUTO_READS]
 
     async def read(src: SourceRef) -> None:
         try:

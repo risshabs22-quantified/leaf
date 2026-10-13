@@ -145,4 +145,4 @@ What we learned building on Token Factory with Nemotron (October 2026):
 
 ## License
 
-[MIT](LICENSE). Evaluation photos are from Wikimedia Commons under their own licences, listed in `evals/README.md`.
+Leaf's code is [MIT](LICENSE). The evaluation photos in `evals/images/` are **not** MIT: each file keeps its own Wikimedia Commons licence (CC0, public domain, CC BY or CC BY-SA), and `evals/README.md` lists the author, source link, licence and changes (resized, re-encoded) for every file.

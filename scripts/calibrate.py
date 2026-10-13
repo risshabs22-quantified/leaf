@@ -4,7 +4,7 @@
 
 For every logged Deep case, eval.py records the first differential, the investigator's own,
 the second opinion and the confidence inputs. This script rebuilds each case and runs the
-production functions (blend, add_alternative, combine, escalation_reason) for a grid of
+production functions (blend, add_alternative, combine, deep_decision) for a grid of
 settings, reporting top-1, top-3, Brier score and escalation precision and recall, so the
 chosen values are measured on the tune split, not guessed.
 """
@@ -25,8 +25,9 @@ from backend.schemas import Observation  # noqa: E402
 from scripts.eval import hit, target  # noqa: E402
 
 
-def replay(row: dict, w_first: float, margin: float, critic_mode: str) -> dict:
-    """Rebuild the case from the log and run the production combination on it."""
+def rebuild(row: dict, w_first: float = 0.7, margin: float = 0.0, critic_mode: str = "vote"):
+    """Rebuild a logged Deep case and run the production combination on it.
+    The defaults are the shipped settings (deep_blend_first, the critic's own vote)."""
     case = Case()
     quality = (row.get("confidence_parts") or {}).get("quality", "none")
     if quality != "none":
@@ -49,7 +50,11 @@ def replay(row: dict, w_first: float, margin: float, critic_mode: str) -> dict:
     if critic_mode == "ignore":
         critic = None
     add_alternative(case, critic)
-    conf = combine(case, critic)
+    return case, combine(case, critic), critic
+
+
+def replay(row: dict, w_first: float, margin: float, critic_mode: str) -> dict:
+    case, conf, critic = rebuild(row, w_first, margin, critic_mode)
     names = [h.name for h in case.differential]
     expected = target(row["case"])
     return {

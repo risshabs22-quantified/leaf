@@ -11,7 +11,14 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from backend.app import RateLimiter, app
-from backend.journal import JournalEntry, MemoryJournal, SQLiteJournal, public_view
+from backend.journal import (
+    JournalEntry,
+    MemoryJournal,
+    S3Journal,
+    SQLiteJournal,
+    open_journal,
+    public_view,
+)
 from tests.conftest import make_leaf
 from tests.test_agent import RESP, finish, turn
 
@@ -269,3 +276,67 @@ def test_the_deep_cap_is_not_spent_by_a_refused_request(settings):
         app.state.slots = asyncio.Semaphore(0)
         r = c.post("/api/deep", data={"notes": "tomato"})
         assert r.status_code == 503 and app.state.deep_cap.left == before
+
+
+# ---------------------------------------------------------------- Object Storage
+
+
+class FakeS3:
+    """The four calls S3Journal makes, against a dict."""
+
+    class exceptions:  # noqa: N801 - mirrors boto3's client.exceptions
+        class NoSuchKey(Exception):
+            pass
+
+    def __init__(self):
+        self.objects: dict[tuple[str, str], bytes] = {}
+
+    def put_object(self, *, Bucket, Key, Body, ContentType):  # noqa: N803
+        self.objects[(Bucket, Key)] = Body
+
+    def get_object(self, *, Bucket, Key):  # noqa: N803
+        if (Bucket, Key) not in self.objects:
+            raise self.exceptions.NoSuchKey()
+        return {"Body": io.BytesIO(self.objects[(Bucket, Key)])}
+
+    def delete_object(self, *, Bucket, Key):  # noqa: N803
+        self.objects.pop((Bucket, Key), None)
+
+
+async def test_the_bucket_store_round_trips_and_drops_expired_entries():
+    s3 = FakeS3()
+    store = S3Journal("leaf-journal", client=s3)
+    live = JournalEntry(expires=time.time() + 60, report={"summary": "ok"})
+    gone = JournalEntry(expires=time.time() - 1)
+    await store.put(live)
+    await store.put(gone)
+    assert ("leaf-journal", f"journal/{live.id}.json") in s3.objects
+    got = await store.get(live.id)
+    assert got.report == {"summary": "ok"} and got.owner_token == live.owner_token
+    assert await store.get(gone.id) is None
+    assert ("leaf-journal", f"journal/{gone.id}.json") not in s3.objects  # deleted on read
+    assert await store.get("nope") is None
+    assert await store.get("../etc/passwd") is None  # never a key outside the prefix
+
+
+def test_the_bucket_is_used_only_when_configured(tmp_path):
+    assert isinstance(open_journal("memory"), MemoryJournal)
+    assert isinstance(open_journal(str(tmp_path / "j.db")), SQLiteJournal)
+    assert isinstance(open_journal("memory", "leaf-journal"), S3Journal)
+
+
+async def test_pinning_keeps_a_share_link_alive(tmp_path, monkeypatch):
+    from datetime import UTC, datetime
+
+    from scripts import pin_case
+
+    path = tmp_path / "j.db"
+    monkeypatch.setenv("LEAF_JOURNAL_PATH", str(path))
+    monkeypatch.setenv("LEAF_JOURNAL_BUCKET", "")
+    store = SQLiteJournal(path)
+    entry = JournalEntry(expires=time.time() + 60)
+    await store.put(entry)
+    until = datetime(2027, 1, 31, tzinfo=UTC)
+    assert await pin_case.pin(entry.id, until) == 0
+    assert (await store.get(entry.id)).expires == until.timestamp()
+    assert await pin_case.pin("missing", until) == 1

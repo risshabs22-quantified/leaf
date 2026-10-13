@@ -62,11 +62,25 @@ async def test_diagnose_happy_path_routes_models(settings):
     assert [t.step for t in res.trace] == ["vision", "diagnose", "plan"]
 
 
-async def test_low_confidence_always_escalates(settings):
+async def test_widely_spread_causes_always_go_to_a_lab(settings):
+    spread = {
+        **DIAG_LOW,
+        "candidates": [
+            {"name": "Early blight", "category": "fungal", "confidence": 0.3},
+            {"name": "Nitrogen deficiency", "category": "nutrient", "confidence": 0.25},
+        ],
+    }
+    leaf, _, _ = make_leaf(settings, {"vision": OBS, "diagnose": spread, "plan": PLAN})
+    res = await leaf.diagnose(image_b64="abc")
+    assert res.low_confidence is True and res.verdict == "lab"
+    assert res.plan.escalate is True  # enforced in code even though the model said False
+    assert res.diagnosis.follow_up_questions
+
+
+async def test_a_weak_lead_is_likely_with_follow_up_questions(settings):
     leaf, _, _ = make_leaf(settings, {"vision": OBS, "diagnose": DIAG_LOW, "plan": PLAN})
     res = await leaf.diagnose(image_b64="abc")
-    assert res.low_confidence is True
-    assert res.plan.escalate is True  # enforced in code even though the model said False
+    assert res.verdict == "likely" and res.low_confidence and not res.plan.escalate
     assert res.diagnosis.follow_up_questions
 
 

@@ -4,7 +4,7 @@
     likely     a care plan, plus what to watch for and when to send a sample
     lab        send a sample to a diagnostic lab: the causes are too spread out, the photo is
                too poor, the second opinion strongly disagrees, or a high-stakes condition
-               (late blight, a quarantined pest) is in the top two
+               (late blight, a quarantined pest) is in the top two or has 20% or more anywhere
 
 Quick scores are the model's raw candidate confidences; Deep's are its combined confidence,
 which runs lower, so each mode has its own thresholds. Both are fitted on the tune split
@@ -20,8 +20,10 @@ from backend.diseases import high_stakes
 
 Verdict = Literal["confident", "likely", "lab"]
 
-# A high-stakes condition sends the case to a lab only when Leaf gives it a real chance.
+# A high-stakes condition sends the case to a lab when Leaf gives it a real chance: at least
+# HIGH_STAKES_FLOOR in the top two, or HIGH_STAKES_ANYWHERE at any rank of the differential.
 HIGH_STAKES_FLOOR = 0.15
+HIGH_STAKES_ANYWHERE = 0.2
 
 
 @dataclass(frozen=True)
@@ -31,8 +33,12 @@ class Thresholds:
     margin: float  # a lead smaller than this is a near-tie, never Confident
 
 
-QUICK = Thresholds(confident_at=0.75, lab_below=0.5, margin=0.15)
-DEEP = Thresholds(confident_at=0.6, lab_below=0.35, margin=0.15)
+# Quick, fitted on 52 tune photos (scripts/fit_verdicts.py, run sprint-q0): Confident was right
+# 11 of 12 times at 0.8, and 5 of 5 on a second run with a different vision prompt.
+QUICK = Thresholds(confident_at=0.8, lab_below=0.4, margin=0.15)
+# Deep, fitted on the same photos (run sprint-deep, replayed): Confident was right 7 of 8 times
+# at a combined confidence of 0.6. No case fell below 0.35, so lab_below rarely decides.
+DEEP = Thresholds(confident_at=0.6, lab_below=0.3, margin=0.15)
 
 
 @dataclass(frozen=True)
@@ -63,9 +69,10 @@ def decide(
         return Decision("lab", "Leaf could not reach a diagnosis.")
     name, p = ranking[0]
     top = p if top_score is None else top_score
-    for cand, prob in ranking[:2]:
+    for rank, (cand, prob) in enumerate(ranking):
         cond = high_stakes(cand)
-        if cond and prob >= HIGH_STAKES_FLOOR:
+        floor = HIGH_STAKES_FLOOR if rank < 2 else HIGH_STAKES_ANYWHERE
+        if cond and prob >= floor:
             lead = "Leaf thinks this is" if cand == name else "Leaf can't rule out"
             return Decision(
                 "lab",

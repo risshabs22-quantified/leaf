@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from backend.app import DailyCap, RateLimiter, app
 from backend.deep import DeepLeaf
 from backend.store import MemoryCaseStore
-from backend.verdict import DEEP, HIGH_STAKES_FLOOR, QUICK, decide
+from backend.verdict import DEEP, HIGH_STAKES_ANYWHERE, HIGH_STAKES_FLOOR, QUICK, decide
 from tests.conftest import DIAG_HIGH, DIAG_LOW, make_leaf
 from tests.test_agent import RESP, finish, photo_bytes, photos, search, turn
 
@@ -23,7 +23,7 @@ from tests.test_agent import RESP, finish, photo_bytes, photos, search, turn
         ([("Early blight", 0.85), ("Septoria", 0.1)], "good", "confident", "well ahead"),
         ([("Early blight", 0.7), ("Septoria", 0.1)], "good", "likely", "most likely cause"),
         ([("Early blight", 0.7), ("Septoria", 0.6)], "good", "likely", "close behind"),
-        ([("Early blight", 0.4), ("Septoria", 0.3)], "good", "lab", "spread out"),
+        ([("Early blight", 0.35), ("Septoria", 0.3)], "good", "lab", "spread out"),
         ([("Early blight", 0.85), ("Septoria", 0.1)], "poor", "lab", "unclear"),
         ([("Late blight", 0.85)], "good", "lab", "thinks this is late blight"),
         ([("Early blight", 0.7), ("Late blight", 0.2)], "good", "lab", "can't rule out"),
@@ -39,9 +39,18 @@ def test_a_high_stakes_condition_needs_a_real_chance_to_force_a_lab():
     weak = HIGH_STAKES_FLOOR - 0.05
     d = decide([("Early blight", 0.85), ("Late blight", weak)], "good", QUICK)
     assert d.verdict != "lab"
-    # third place never forces a lab, however likely
-    d = decide([("Early blight", 0.5), ("Septoria", 0.3), ("Late blight", 0.2)], "good", QUICK)
-    assert "late blight" not in d.reason.lower()
+    # below the top two, it takes 20% to force a lab
+    d = decide([("Early blight", 0.5), ("Septoria", 0.3), ("Late blight", 0.19)], "good", QUICK)
+    assert d.verdict != "lab" and "late blight" not in d.reason.lower()
+
+
+def test_a_high_stakes_condition_at_20_percent_anywhere_goes_to_a_lab():
+    ranking = [("Early blight", 0.85), ("Septoria", 0.3), ("Gray mold", 0.25), ("ToBRFV", 0.2)]
+    for t in (QUICK, DEEP):
+        d = decide(ranking, "good", t, top_score=0.85)
+        assert d.verdict == "lab" and d.high_stakes == "Tomato brown rugose fruit virus"
+        assert "can't rule out" in d.reason
+    assert HIGH_STAKES_ANYWHERE == 0.2
 
 
 def test_deep_scores_on_its_combined_confidence():

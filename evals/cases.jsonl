@@ -28,3 +28,33 @@
 {"image": "evals/images/tune/apple_scab_2.jpg", "expected": ["scab", "venturia"], "crop": "apple", "notes": "", "region": "", "split": "tune", "tag": "subtle", "condition": "apple_scab"}
 {"image": "evals/images/tune/magnesium_deficiency_1.jpg", "expected": ["magnesium"], "crop": "maize", "notes": "", "region": "", "split": "tune", "tag": "clear", "condition": "magnesium_deficiency"}
 {"image": "evals/images/tune/magnesium_deficiency_2.jpg", "expected": ["magnesium"], "crop": "maize", "notes": "", "region": "", "split": "tune", "tag": "clear", "condition": "magnesium_deficiency"}
+{"image": "evals/images/tune/iron_chlorosis_1.jpg", "expected": ["iron"], "condition": "iron_chlorosis", "crop": "rose", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/magnesium_deficiency_3.jpg", "expected": ["magnesium"], "condition": "magnesium_deficiency", "crop": "alder buckthorn", "notes": "", "region": "", "split": "tune", "tag": "subtle"}
+{"image": "evals/images/tune/sunscald_1.jpg", "expected": ["sunscald", "sun scald", "sunburn"], "condition": "sunscald", "crop": "bell pepper (fruit)", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/herbicide_injury_1.jpg", "expected": ["herbicide"], "condition": "herbicide_injury", "crop": "soybean", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/aphids_1.jpg", "expected": ["aphid"], "condition": "aphids", "crop": "cherry", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/leaf_miner_1.jpg", "expected": ["leaf miner", "leafminer"], "condition": "leaf_miner", "crop": "unspecified vegetable", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/flea_beetle_1.jpg", "expected": ["beetle"], "condition": "chewing_insects", "crop": "Chinese cabbage", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/scale_insects_1.jpg", "expected": ["scale"], "condition": "scale_insects", "crop": "ficus", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/late_blight_4.jpg", "expected": ["late blight"], "condition": "late_blight", "crop": "potato", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/downy_mildew_3.jpg", "expected": ["downy mildew"], "condition": "downy_mildew", "crop": "basil", "notes": "", "region": "", "split": "tune", "tag": "subtle"}
+{"image": "evals/images/tune/anthracnose_1.jpg", "expected": ["anthracnose"], "condition": "anthracnose", "crop": "lima bean (pods)", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/rust_3.jpg", "expected": ["rust"], "condition": "rust", "crop": "crabapple", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/fire_blight_1.jpg", "expected": ["fire blight"], "condition": "fire_blight", "crop": "pear", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/iron_chlorosis_2.jpg", "expected": ["iron"], "condition": "iron_chlorosis", "crop": "hydrangea", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/nitrogen_deficiency_1.jpg", "expected": ["nitrogen"], "condition": "nitrogen_deficiency", "crop": "common bean", "notes": "", "region": "", "split": "tune", "tag": "subtle"}
+{"image": "evals/images/tune/potassium_deficiency_1.jpg", "expected": ["potassium"], "condition": "potassium_deficiency", "crop": "tomato", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/potassium_deficiency_2.jpg", "expected": ["potassium"], "condition": "potassium_deficiency", "crop": "soybean", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/manganese_deficiency_1.jpg", "expected": ["manganese"], "condition": "manganese_deficiency", "crop": "rose", "notes": "", "region": "", "split": "tune", "tag": "subtle"}
+{"image": "evals/images/tune/sunscald_2.jpg", "expected": ["sunscald", "sun scald", "sunburn"], "condition": "sunscald", "crop": "pepper (leaves)", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/blossom_end_rot_1.jpg", "expected": ["blossom end rot"], "condition": "blossom_end_rot", "crop": "tomato", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/frost_injury_2.jpg", "expected": ["frost", "cold"], "condition": "cold_injury", "crop": "tomato", "notes": "", "region": "", "split": "tune", "tag": "subtle"}
+{"image": "evals/images/tune/drought_stress_1.jpg", "expected": ["drought", "water stress"], "condition": "drought_scorch", "crop": "forsythia", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/spider_mites_1.jpg", "expected": ["spider mite"], "condition": "spider_mites", "crop": "common bean", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/japanese_beetle_1.jpg", "expected": ["beetle"], "condition": "chewing_insects", "crop": "crabapple", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/potato_early_blight_1.jpg", "expected": ["early blight"], "condition": "early_blight", "crop": "potato", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/tomato_septoria_leaf_spot_3.jpg", "expected": ["septoria"], "condition": "septoria", "crop": "tomato", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/powdery_mildew_3.jpg", "expected": ["powdery mildew"], "condition": "powdery_mildew", "crop": "pumpkin", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/rust_4.jpg", "expected": ["rust"], "condition": "rust", "crop": "rose", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/gray_mold_1.jpg", "expected": ["gray mold", "grey mould", "botrytis"], "condition": "gray_mold", "crop": "tomato", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/tune/mosaic_virus_1.jpg", "expected": ["mosaic"], "condition": "mosaic_virus", "crop": "tomato", "notes": "", "region": "", "split": "tune", "tag": "clear"}
