@@ -21,6 +21,7 @@ Flow: photo → vision model → Nemotron 3 Ultra diagnosis → Tavily sources �
 - `scripts/`: smoke test, eval, deploy
 - `docs/LEAF_PLAYBOOK.md`: full reference
 - `docs/PROGRESS.md`: session log
+- `docs/AGENT_V2.md`: Leaf v2 investigator-agent plan, verified facts, tool schemas, milestone checkboxes (planned files: `backend/agent.py`, `critic.py`, `tools.py`, `store.py`). Read it at the start of every v2 session
 
 ## Commands
 `make setup` · `make smoke` · `make smoke-all` · `make test` · `make check` · `make fmt` · `make run` · `make eval` · `make deploy` · `make help`
