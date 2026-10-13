@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from backend.agent import AgentError, AgentResult, Investigator
 from backend.case import Case, Evidence, Hypothesis, Photo, StepRecord
+from backend.conditions import WeatherClient
 from backend.crops import infer_crop
 from backend.models import ModelError, complete_json
 from backend.pipeline import ESCALATE_REASON, Leaf, _source_for_prompt, is_low_confidence
@@ -37,6 +38,10 @@ from backend.vision import describe
 log = logging.getLogger("leaf.deep")
 
 Emit = Callable[[dict[str, Any]], Awaitable[None]]
+
+FIRST_LOOK_TIMEOUT_S = 25
+PLAN_TIMEOUT_S = 25
+QUICK_FALLBACK_TIMEOUT_S = 40  # the request deadline (wall clock + 45 s) leaves room for it
 
 
 async def _ignore(_: dict[str, Any]) -> None:
@@ -76,10 +81,12 @@ def _source_int(source_id: str) -> int:
 
 
 class DeepLeaf:
-    def __init__(self, leaf: Leaf, store: CaseStore):
+    def __init__(self, leaf: Leaf, store: CaseStore, weather: WeatherClient | None = None):
         self.leaf = leaf
         self.store = store
-        self.investigator = Investigator(leaf.llm, leaf.searcher, leaf.settings, leaf.vision_model)
+        self.investigator = Investigator(
+            leaf.llm, leaf.searcher, leaf.settings, leaf.vision_model, weather=weather
+        )
 
     # ------------------------------------------------------------------ entry points
 
@@ -104,43 +111,59 @@ class DeepLeaf:
             ],
         )
         await emit({"type": "case", "case_id": case.id})
-        await self._first_looks(case, emit)
+        # One deadline for the whole case: first looks and investigation share the wall clock.
+        deadline = self.investigator.clock() + self.leaf.settings.deep_wall_s
+        await self._first_looks(case, emit, deadline)
         case.crop = infer_crop(
             notes, *(p.observation.plant_guess for p in case.photos if p.observation)
         )
-        return await self._investigate(case, emit, lambda: self.investigator.run(case, emit))
+        return await self._investigate(
+            case, emit, lambda: self.investigator.run(case, emit, deadline)
+        )
 
     async def resume(self, case: Case, answers: list[str], emit: Emit = _ignore) -> DeepResponse:
         # Checked with no await before the investigator marks the case running, so two
         # answer submissions for one case cannot both resume it.
         if case.status != "needs_answers":
             raise CaseStateError("This case is not waiting for answers.")
+        deadline = self.investigator.clock() + self.leaf.settings.deep_wall_s
         return await self._investigate(
-            case, emit, lambda: self.investigator.resume(case, answers, emit)
+            case, emit, lambda: self.investigator.resume(case, answers, emit, deadline)
         )
 
     # ------------------------------------------------------------------ steps
 
-    async def _first_looks(self, case: Case, emit: Emit) -> None:
+    async def _first_looks(self, case: Case, emit: Emit, deadline: float) -> None:
         vision = self.leaf.vision_model
         if not case.photos or not vision:
             return
         traces: list[list[ModelCall]] = [[] for _ in case.photos]
-        looks = await asyncio.gather(
-            *(
-                describe(
-                    self.leaf.llm,
-                    vision,
-                    p.view_b64,
-                    "image/jpeg",
-                    case.notes,
-                    t,
-                    self.leaf.settings.fast_model,
-                )
-                for p, t in zip(case.photos, traces, strict=True)
+        looks = [
+            describe(
+                self.leaf.llm,
+                vision,
+                p.view_b64,
+                "image/jpeg",
+                case.notes,
+                t,
+                self.leaf.settings.fast_model,
             )
-        )
-        for photo, obs, trace in zip(case.photos, looks, traces, strict=True):
+            for p, t in zip(case.photos, traces, strict=True)
+        ]
+        # Never let the first look eat the investigation's time.
+        budget = max(5.0, min(FIRST_LOOK_TIMEOUT_S, deadline - self.investigator.clock() - 30))
+        try:
+            observations = await asyncio.wait_for(asyncio.gather(*looks), budget)
+        except TimeoutError:
+            log.warning("first looks timed out for case %s", case.id)
+            observations = [
+                Observation(
+                    image_quality="poor",
+                    quality_notes="The photo could not be analysed in time.",
+                )
+                for _ in case.photos
+            ]
+        for photo, obs, trace in zip(case.photos, observations, traces, strict=True):
             photo.observation = obs
             for call in trace:
                 case.add_trace(call)
@@ -153,6 +176,10 @@ class DeepLeaf:
     ) -> DeepResponse:
         try:
             result = await work()
+        except asyncio.CancelledError:
+            # The request deadline cancelled us: never leave the case stuck as "running".
+            case.status = "failed"
+            raise
         except Exception as exc:  # noqa: BLE001 - any agent failure, even a bug, degrades to Quick
             if isinstance(exc, (AgentError, ModelError, TimeoutError)):
                 log.warning("deep case %s fell back to Quick: %s", case.id, exc)
@@ -165,7 +192,16 @@ class DeepLeaf:
         await self.store.put(case)
         if result.kind == "ask":
             return self._response(case, status="needs_answers", limit=result.limit)
-        plan = await self._plan(case)
+        try:
+            plan = await asyncio.wait_for(self._plan(case), PLAN_TIMEOUT_S)
+        except TimeoutError:
+            plan = CarePlan(
+                summary="Leaf could not write a care plan in time. Your diagnosis is above.",
+                escalate=True,
+                escalate_reason=(
+                    "Plan generation timed out; check with your local extension office."
+                ),
+            )
         case.status = "done"
         await self.store.put(case)
         response = self._response(case, plan=plan, limit=result.limit)
@@ -177,7 +213,7 @@ class DeepLeaf:
         sources = self._sources(case)
         diagnosis = self._diagnosis(case)
         plan_input = (
-            f"<diagnosis>{diagnosis.model_dump_json()}</diagnosis>\n"
+            f"<diagnosis>{sanitize(diagnosis.model_dump_json())}</diagnosis>\n"
             f"<sources>{json.dumps([_source_for_prompt(src) for src in sources])}</sources>\n"
             f"<region>{sanitize(case.region) or 'unknown'}</region>"
         )
@@ -281,10 +317,13 @@ class DeepLeaf:
         )
 
     async def _quick_fallback(self, case: Case, notice: str = "") -> DeepResponse:
-        quick = await self.leaf.diagnose(
-            image_b64=case.photos[0].view_b64 if case.photos else None,
-            notes=case.notes,
-            region=case.region,
+        quick = await asyncio.wait_for(
+            self.leaf.diagnose(
+                image_b64=case.photos[0].view_b64 if case.photos else None,
+                notes=case.notes,
+                region=case.region,
+            ),
+            QUICK_FALLBACK_TIMEOUT_S,
         )
         return DeepResponse(
             **quick.model_dump(),

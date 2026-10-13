@@ -19,6 +19,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from backend.config import Settings, get_settings
 from backend.deep import CaseStateError, DeepLeaf, DeepResponse
@@ -293,10 +294,10 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
 
 
 async def _read_photos(
-    images: list[UploadFile], labels: list[str] | None
+    pairs: list[tuple[StarletteUploadFile, str]],
 ) -> list[tuple[str, str, str]]:
     photos = []
-    for i, up in enumerate(images):
+    for up, raw_label in pairs:
         data = await up.read(MAX_UPLOAD_BYTES + 1)
         if len(data) > MAX_UPLOAD_BYTES:
             raise HTTPException(413, "A photo is over 10 MB. Try a smaller one.")
@@ -304,14 +305,16 @@ async def _read_photos(
             full, view = await asyncio.to_thread(prepare_photo, data)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-        label = (labels[i] if labels and i < len(labels) else "photo").strip().lower()
+        label = raw_label.strip().lower()
         photos.append((label if label in PHOTO_LABELS else "photo", full, view))
     return photos
 
 
 def _deep_deadline(request: Request) -> float:
     s = request.app.state.leaf.settings
-    return s.deep_wall_s + 40  # the loop's own clock, plus first looks and the care plan
+    # The case's own clock covers first looks and the investigation; the plan (25 s) or a Quick
+    # fallback (40 s) runs after it.
+    return s.deep_wall_s + 45
 
 
 class AnswersRequest(BaseModel):
@@ -321,22 +324,29 @@ class AnswersRequest(BaseModel):
 @app.post("/api/deep", response_model=DeepResponse)
 async def deep(
     request: Request,
-    images: Annotated[list[UploadFile] | None, File()] = None,
-    labels: Annotated[list[str] | None, Form()] = None,
     notes: Annotated[str, Form()] = "",
     region: Annotated[str, Form()] = "",
     lat: Annotated[float | None, Form()] = None,
     lon: Annotated[float | None, Form()] = None,
 ) -> DeepResponse:
     check_limits(request)
-    images = [im for im in (images or []) if im.filename]
-    if len(images) > MAX_DEEP_PHOTOS:
+    # Photos and labels are read from the form directly: browsers differ in how they send an
+    # empty file input (a file with no name, or a plain string), and either must be skipped
+    # without shifting the labels of the photos after it.
+    form = await request.form()
+    labels = [str(x) for x in form.getlist("labels")]
+    pairs = [
+        (im, labels[i] if i < len(labels) else "photo")
+        for i, im in enumerate(form.getlist("images"))
+        if isinstance(im, StarletteUploadFile) and im.filename
+    ]
+    if len(pairs) > MAX_DEEP_PHOTOS:
         raise HTTPException(400, f"Send at most {MAX_DEEP_PHOTOS} photos.")
-    if not images and not notes.strip():
+    if not pairs and not notes.strip():
         raise HTTPException(400, "Add a photo or describe what you see.")
     if lat is not None and lon is not None and not (-90 <= lat <= 90 and -180 <= lon <= 180):
         lat = lon = None
-    photos = await _read_photos(images, labels)
+    photos = await _read_photos(pairs)
     deep: DeepLeaf = request.app.state.deep
     if not request.app.state.deep_cap.take():
         cap = request.app.state.leaf.settings.deep_daily_cap

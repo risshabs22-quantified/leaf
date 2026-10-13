@@ -83,6 +83,22 @@ def step_of(messages: list[dict[str, Any]]) -> str:
 _call_ids = itertools.count(1)
 
 
+def assert_tool_protocol(messages: list[dict[str, Any]]) -> None:
+    """What OpenAI-compatible servers enforce: every assistant tool call is answered by exactly
+    one tool message with its id before the next assistant turn."""
+    pending: list[str] = []
+    for m in messages:
+        if m["role"] == "assistant":
+            assert not pending, f"unanswered tool calls before the next turn: {pending}"
+            pending = [c["id"] for c in m.get("tool_calls", [])]
+        elif m["role"] == "tool":
+            assert m["tool_call_id"] in pending, (
+                f"tool message for unknown call {m['tool_call_id']}"
+            )
+            pending.remove(m["tool_call_id"])
+    assert not pending, f"unanswered tool calls: {pending}"
+
+
 def turn(*calls: tuple[str, Any]) -> list[tuple[str, Any]]:
     """One scripted investigator turn: (tool name, arguments dict or raw string)."""
     return list(calls)
@@ -117,13 +133,19 @@ class FakeLLM:
         out = self.responses[step]
         text = out if isinstance(out, str) else json.dumps(out)
         return CallResult(
-            text=text, model=model, latency_ms=12, prompt_tokens=100, completion_tokens=50
+            text=text,
+            model=model,
+            latency_ms=12,
+            prompt_tokens=100,
+            completion_tokens=50,
+            cost_usd=0.0005,  # so budgets see vision, look_closer and plan spend too
         )
 
     async def complete_tools(
         self, *, model, messages, tools, tool_choice="auto", **kwargs: Any
     ) -> CallResult:
         names = [t["function"]["name"] for t in tools]
+        assert_tool_protocol(messages)
         self.calls.append(("investigate", model))
         self.sent.append(("investigate", copy.deepcopy(messages)))
         self.tool_kwargs.append({"model": model, "tools": names, "tool_choice": tool_choice})
@@ -162,7 +184,12 @@ class FakeSearcher:
         self.queries: list[str] = []
 
     async def search_web(self, query: str, **kwargs: Any) -> tuple[list[dict[str, Any]], int]:
+        self.web_calls = getattr(self, "web_calls", []) + [(query, kwargs)]
         return await self.search(query), 1
+
+    async def extract(self, url: str, query: str) -> tuple[list[str], int]:
+        self.extracted = getattr(self, "extracted", []) + [url]
+        return [f"Passage about {query} from {url}."], 1
 
     async def search(self, query: str) -> list[dict[str, Any]]:
         self.queries.append(query)

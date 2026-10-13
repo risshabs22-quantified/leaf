@@ -86,7 +86,7 @@ class Leaf:
 
         # 2. Reasoning (Ultra, then Super, then Lightning)
         context = (
-            f"<observations>{obs.model_dump_json()}</observations>\n"
+            f"<observations>{sanitize(obs.model_dump_json())}</observations>\n"
             f"<gardener_notes>{sanitize(notes) or 'none'}</gardener_notes>\n"
             f"<region>{sanitize(region) or 'unknown'}</region>\n"
             f"<follow_up_answers>{sanitize(answers) or 'none'}</follow_up_answers>"
@@ -118,7 +118,7 @@ class Leaf:
 
         # 4. Writing (Lightning, fast)
         plan_input = (
-            f"<diagnosis>{diagnosis.model_dump_json()}</diagnosis>\n"
+            f"<diagnosis>{sanitize(diagnosis.model_dump_json())}</diagnosis>\n"
             f"<sources>{json.dumps([_source_for_prompt(src) for src in sources])}</sources>\n"
             f"<region>{sanitize(region) or 'unknown'}</region>"
         )

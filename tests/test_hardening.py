@@ -614,3 +614,48 @@ async def test_repair_keeps_the_json_when_it_follows_long_reasoning_prose():
     fixed = await _repair(llm, "m", bad, CarePlan, "plan", [])
     assert fixed is not None
     assert "THE-JSON" in llm.sent[0][1][0]["content"]
+
+
+async def test_a_retried_call_bills_both_attempts():
+    answers = iter([reply('{"a": ', "length"), reply('{"ok": true}')])
+
+    async def create(**_):
+        return next(answers)
+
+    tf = token_factory(create)
+    tf.prices["m"] = (1e-6, 2e-6)
+    res = await tf.complete(model="m", messages=[], json_mode=True)
+    assert (res.prompt_tokens, res.completion_tokens) == (2, 4)  # 1/2 tokens per reply, twice
+    assert res.cost_usd == pytest.approx(2 * 1e-6 + 4 * 2e-6)
+
+
+async def test_a_call_that_fails_after_retrying_still_reports_what_it_cost():
+    async def create(**_):
+        return reply("", "length")
+
+    tf = token_factory(create)
+    tf.prices["m"] = (1e-6, 2e-6)
+    with pytest.raises(ModelError) as err:
+        await tf.complete(model="m", messages=[])
+    assert err.value.cost_usd == pytest.approx(2 * 1e-6 + 4 * 2e-6)
+
+
+async def test_failed_attempts_are_billed_in_the_trace(settings):
+    from backend.models import complete_json
+    from backend.schemas import CarePlan
+
+    class Billing(FakeLLM):
+        async def complete(self, *, model, messages, **kw):
+            raise ModelError("m: empty content", cost_usd=0.012)
+
+    trace = []
+    with pytest.raises(ModelError):
+        await complete_json(
+            Billing({}),
+            step="plan",
+            models=["m"],
+            messages=[{"role": "user", "content": "x"}],
+            schema=CarePlan,
+            trace=trace,
+        )
+    assert trace[0].cost_usd == 0.012 and trace[0].note == "failed"

@@ -204,11 +204,12 @@ Acceptance:
 - [x] Live Deep cases: early blight photo, asked 2 questions, answers moved it to early blight 0.75, total $0.070 (20 s + 15 s); Septoria photo, Septoria 0.55 (escalated), $0.041, 27 s
 
 ### M2: conditions, read_source, alerts
-- [ ] `get_conditions`: geocoding, 14-day weather, wet-hour proxy, and only the table-listed rules per crop, each with its citation in the code; attribution shown
-- [ ] Wallin table re-verified against the primary document before it is coded
-- [ ] `read_source` uses Tavily extract with the relevance query and refuses any URL the model wrote
-- [ ] `check_alerts` time-limited news search
-- [ ] Unit tests for every rule against hand-computed cases, and for every refusal
+- [x] `get_conditions`: geocoding (a bare US state is located at its capital, since the geocoder would otherwise pick a namesake village), 14 complete local days (forecast hours dropped), wet-hour proxy, and only the table-listed rules per crop, each cited in `backend/disease_rules.py`; attribution in the data (shown in the UI in M4); responses cached
+- [x] Wallin table re-verified against the UMaine 2418 PDF; its worked examples (18 h at 65/56/50 F gives 3/2/1; three 6 h periods give 0) are unit tests
+- [x] `read_source` uses Tavily extract (basic depth, relevance query, 3 chunks) and only opens URLs this case's own searches returned; non-web schemes and private, loopback and metadata addresses are refused
+- [x] `check_alerts`: Tavily news, last month; "nothing found" is reported as a finding
+- [x] Unit tests for every rule against hand-computed cases, the weather client (mocked HTTP), crop gating, and every refusal (197 tests in total)
+- Live finding: on a late-blight photo Deep let dry local weather overrule a visible sign (white sporulation) and said early blight, while Quick was right. Fixes: "signs outweigh symptoms" and "weather never rules out what is visible" in the prompt, no hypothesis above 0.9, per-case tool caps (3 searches, 3 reads, 1 weather, 1 alerts). Deep then got it right in 1 of 2 runs; M3's critic and M6's evals address the rest.
 
 ### M3: second opinion, calibration, claim check, lab handoff
 - [ ] Critic on Super sees evidence only; disagreement lowers confidence and escalates

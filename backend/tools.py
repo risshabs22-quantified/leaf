@@ -10,17 +10,20 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import ipaddress
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from backend.case import Case, normalise_differential
+from backend.conditions import ConditionsError, Place, WeatherClient, summarise
 from backend.config import Settings
+from backend.crops import infer_crop
 from backend.models import LLM
 from backend.prompts import sanitize
-from backend.search import Searcher, rank_sources
+from backend.search import Searcher, _trust, rank_sources
 
 Emit = Callable[[dict[str, Any]], Awaitable[None]]
 
@@ -34,8 +37,9 @@ class ToolError(Exception):
 
 class ToolArgs(BaseModel):
     model_config = ConfigDict(extra="ignore")
+    # Long text is trimmed when shown, not rejected: a refusal costs the model a whole turn.
     reason: str = Field(
-        ..., min_length=3, max_length=300, description="One sentence for the gardener: why."
+        ..., min_length=3, max_length=2000, description="One sentence for the gardener: why."
     )
 
 
@@ -56,8 +60,39 @@ class SearchArgs(ToolArgs):
     query: str = Field(..., min_length=3, max_length=200)
 
 
+class ConditionsArgs(ToolArgs):
+    crop: str | None = Field(
+        None, max_length=60, description="The crop, e.g. tomato; omit if unknown"
+    )
+
+
+class ReadSourceArgs(ToolArgs):
+    source_id: str = Field(..., max_length=8, description="An id from search_sources, e.g. S2")
+    query: str = Field(..., min_length=3, max_length=200, description="What to look for in it")
+
+
+class AlertsArgs(ToolArgs):
+    region: str = Field(..., min_length=2, max_length=100)
+
+
+def _alias(data: Any, target: str, *names: str) -> Any:
+    """Models sometimes use a near-synonym for an argument name; accept the common ones."""
+    if isinstance(data, dict) and target not in data:
+        for n in names:
+            if n in data:
+                return {**data, target: data[n]}
+    return data
+
+
 class HypothesisIn(BaseModel):
     model_config = ConfigDict(extra="ignore")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _synonyms(cls, data: Any) -> Any:
+        data = _alias(data, "name", "hypothesis", "diagnosis", "disease", "cause")
+        return _alias(data, "probability", "p", "prob", "confidence", "likelihood")
+
     name: str = Field(..., min_length=1, max_length=120)
     probability: float = Field(..., description="0-1")
     evidence_for: list[str] = Field(default_factory=list, description="Evidence ids, e.g. E2")
@@ -67,14 +102,28 @@ class HypothesisIn(BaseModel):
 class DifferentialArgs(ToolArgs):
     hypotheses: list[HypothesisIn] = Field(..., min_length=1, max_length=8)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _synonyms(cls, data: Any) -> Any:
+        return _alias(data, "hypotheses", "differential", "diagnoses", "candidates")
+
 
 class AskUserArgs(ToolArgs):
     questions: list[str] = Field(..., min_length=1, max_length=5)
 
 
 class FinishArgs(ToolArgs):
-    hypotheses: list[HypothesisIn] = Field(..., min_length=1, max_length=8)
-    summary: str = Field(..., min_length=3, max_length=800)
+    # The summary explains the result, so finish's reason is optional. Hypotheses may be
+    # omitted when update_differential already recorded them.
+    reason: str = Field("Final differential.", max_length=2000)
+    hypotheses: list[HypothesisIn] = Field(default_factory=list, max_length=8)
+    summary: str = Field("", max_length=6000)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _synonyms(cls, data: Any) -> Any:
+        data = _alias(data, "hypotheses", "differential", "diagnoses", "candidates", "diagnosis")
+        return _alias(data, "summary", "explanation", "rationale", "conclusion", "reason")
 
 
 # ----------------------------------------------------------------------------- runtime
@@ -88,6 +137,7 @@ class ToolContext:
     case: Case
     vision_model: str | None
     emit: Emit
+    weather: WeatherClient | None = None
 
 
 @dataclass
@@ -177,13 +227,135 @@ async def _look_closer(args: LookCloserArgs, ctx: ToolContext) -> ToolOutcome:
     )
 
 
+async def _get_conditions(args: ConditionsArgs, ctx: ToolContext) -> ToolOutcome:
+    case = ctx.case
+    weather = ctx.weather or WeatherClient()
+    crop = infer_crop(args.crop) or case.crop
+    try:
+        if case.lat is not None and case.lon is not None:
+            place: Place | None = Place("your location (approximate)", case.lat, case.lon)
+        elif case.region:
+            place = await weather.geocode(case.region)
+            if place is None:
+                raise ToolError(
+                    f"Could not find {sanitize(case.region, 60)!r}; a city name works best."
+                )
+        else:
+            raise ToolError(
+                "No location was given, so weather cannot be checked. Continue without it, or "
+                "ask the gardener for a city."
+            )
+        hours, _tz = await weather.history(place.lat, place.lon)
+        summary = summarise(hours, crop, place)
+    except ConditionsError as exc:  # geocoding or weather outage: a clean message
+        raise ToolError(str(exc)) from exc
+    await ctx.emit({"type": "weather", **summary})
+    daily = summary["daily"]
+    data = {k: v for k, v in summary.items() if k not in ("daily", "attribution")}
+    # Compact arrays instead of 14 verbose rows: the model reads this on every later turn.
+    data.update(
+        daily_rain_mm=[d["rain_mm"] for d in daily],
+        daily_wet_hours=[d["wet_h"] for d in daily],
+        daily_tmin_c=[d["tmin"] for d in daily],
+        daily_tmax_c=[d["tmax"] for d in daily],
+    )
+    for idx in data.get("indices", []):
+        idx.pop("daily", None)
+    line = (
+        f"{place.label}: {summary['rain_mm_total']} mm rain on {summary['rainy_days']} days, "
+        f"{summary['wet_hours_total']} humid (wet) hours in {summary['days']} days"
+    )
+    if summary["indices"]:
+        first = summary["indices"][0]
+        value = first.get("last_7_days", first.get("count"))
+        line += (
+            f"; {first['name']}: {value} (last 7 days)"
+            if "last_7_days" in first
+            else (f"; {first['name']}: {value}")
+        )
+    return ToolOutcome(summary=line, data=data)
+
+
+def _safe_url(url: str) -> bool:
+    """Only web pages: http(s), a real host name, never a private or loopback address."""
+    from urllib.parse import urlparse
+
+    parts = urlparse(url)
+    host = (parts.hostname or "").lower()
+    if parts.scheme not in ("http", "https") or not host or host == "localhost":
+        return False
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return True  # a domain name
+    return ip.is_global
+
+
+async def _read_source(args: ReadSourceArgs, ctx: ToolContext) -> ToolOutcome:
+    case = ctx.case
+    src = case.source(args.source_id.strip().upper())
+    if src is None:
+        ids = ", ".join(s.id for s in case.sources) or "none yet; call search_sources first"
+        raise ToolError(f"Unknown source_id {sanitize(args.source_id, 8)!r}. Known: {ids}.")
+    # The URL comes from this case's own search results, never from the model: no SSRF.
+    if not _safe_url(src.url):
+        raise ToolError("That source cannot be opened.")
+    passages, credits = await ctx.searcher.extract(src.url, args.query)
+    case.tavily_credits += credits
+    clean = [sanitize(p, 900) for p in passages if p.strip()][:3]
+    if not clean:
+        raise ToolError("That page could not be read. Try another source.")
+    src.passages = list(dict.fromkeys(src.passages + clean))[:6]
+    return ToolOutcome(
+        summary=f"Read {src.id} ({src.title[:70]}): {len(clean)} relevant passage(s)",
+        data={"source_id": src.id, "trusted": src.trusted, "passages": clean},
+        source_ids=[src.id],
+    )
+
+
+async def _check_alerts(args: AlertsArgs, ctx: ToolContext) -> ToolOutcome:
+    crop = ctx.case.crop or "plant"
+    query = f"{crop} disease outbreak {sanitize(args.region, 100)}"
+    results, credits = await ctx.searcher.search_web(
+        query, topic="news", time_range="month", max_results=5
+    )
+    ctx.case.tavily_credits += credits
+    dates = {r.get("url"): r.get("published_date", "") for r in results}
+    found = []
+    for r in rank_sources(results, limit=5):
+        src = ctx.case.add_source(
+            r.url, sanitize(r.title, 200), sanitize(r.snippet, 400), bool(_trust(r.url))
+        )
+        found.append(
+            {
+                "source_id": src.id,
+                "title": src.title,
+                "published": sanitize(dates.get(r.url) or "", 40),
+                "trusted": src.trusted,
+                "snippet": src.snippet[:250],
+            }
+        )
+    if not found:  # finding nothing is a result too
+        return ToolOutcome(
+            summary=f"No outbreak news in the last month for {sanitize(args.region, 60)}",
+            data={
+                "results": [],
+                "note": "No recent reports found; this does not rule anything out.",
+            },
+        )
+    return ToolOutcome(
+        summary=f"{len(found)} recent news item(s) for {sanitize(args.region, 60)}",
+        data={"results": found, "note": "News is untrusted; treat it as a lead, not proof."},
+        source_ids=[f["source_id"] for f in found],
+    )
+
+
 async def _search_sources(args: SearchArgs, ctx: ToolContext) -> ToolOutcome:
     results, credits = await ctx.searcher.search_web(args.query, max_results=6)
     ctx.case.tavily_credits += credits
     ranked = rank_sources(results, limit=5)  # trusted hosts first, then Tavily's score
     if not ranked:
         raise ToolError("No results for that query. Try different words.")
-    from backend.search import _trust
 
     found = []
     for r in ranked:
@@ -233,13 +405,13 @@ async def _ask_user(args: AskUserArgs, ctx: ToolContext) -> ToolOutcome:
 
 
 async def _finish(args: FinishArgs, ctx: ToolContext) -> ToolOutcome:
-    hyps = normalise_differential(
-        [h.model_dump() for h in args.hypotheses], ctx.case.evidence_ids()
-    )
+    case = ctx.case
+    hyps = normalise_differential([h.model_dump() for h in args.hypotheses], case.evidence_ids())
+    hyps = hyps or case.differential  # fall back to the last recorded differential
     if not hyps:
-        raise ToolError("finish needs at least one named hypothesis.")
-    ctx.case.differential = hyps
-    ctx.case.summary = sanitize(args.summary, 800)
+        raise ToolError("finish needs at least one named hypothesis with a probability.")
+    case.differential = hyps
+    case.summary = sanitize(args.summary, 800).strip() or case.summary
     return ToolOutcome(summary="Finished", evidence=False, terminal="finish")
 
 
@@ -255,11 +427,34 @@ TOOLS: dict[str, ToolSpec] = {
             timeout_s=30,
         ),
         ToolSpec(
+            "get_conditions",
+            "The last 14 days of local weather (rain, humid hours, temperature) and, only for "
+            "crops with a published rule, a disease-pressure index. A risk signal, not proof.",
+            ConditionsArgs,
+            _get_conditions,
+            timeout_s=20,
+        ),
+        ToolSpec(
             "search_sources",
             "Search the web for extension and university guidance. Returns source ids; trusted "
             "(.edu, .gov, extension services) are listed first.",
             SearchArgs,
             _search_sources,
+            timeout_s=20,
+        ),
+        ToolSpec(
+            "read_source",
+            "Read the passages of one search result most relevant to your question. Only "
+            "accepts a source_id returned by search_sources or check_alerts.",
+            ReadSourceArgs,
+            _read_source,
+            timeout_s=25,
+        ),
+        ToolSpec(
+            "check_alerts",
+            "Search news from the last month for disease outbreak reports in a region.",
+            AlertsArgs,
+            _check_alerts,
             timeout_s=20,
         ),
         ToolSpec(

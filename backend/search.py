@@ -32,6 +32,10 @@ class Searcher(Protocol):
         """Results plus Tavily credits charged (0 on a cache hit)."""
         ...
 
+    async def extract(self, url: str, query: str) -> tuple[list[str], int]:
+        """Passages of one page most relevant to `query`, plus credits charged."""
+        ...
+
 
 class TavilySearcher:
     """Basic-depth search (1 credit per call). Queries are steered to extension guides.
@@ -45,6 +49,7 @@ class TavilySearcher:
 
         self._client = AsyncTavilyClient(api_key=api_key)
         self._cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+        self._extract_cache: dict[str, tuple[float, list[str]]] = {}
 
     async def search(self, query: str) -> list[dict[str, Any]]:
         """Quick mode: steer to extension guides."""
@@ -77,6 +82,26 @@ class TavilySearcher:
         self._cache[key] = (time.time(), results)
         return results, 1  # basic search: 1 credit (docs.tavily.com/documentation/api-credits)
 
+    async def extract(self, url: str, query: str) -> tuple[list[str], int]:
+        key = f"extract|{url}|{' '.join(query.lower().split())}"
+        hit = self._extract_cache.get(key)
+        if hit and time.time() - hit[0] < CACHE_TTL_S:
+            return hit[1], 0
+        # Basic depth with a relevance query returns the page's best ~800-character chunks;
+        # tested Oct 2026, advanced depth gave the same chunks for twice the credits.
+        resp = await self._client.extract(
+            urls=[url], query=query, chunks_per_source=3, extract_depth="basic"
+        )
+        results = resp.get("results") or []
+        if not results:
+            return [], 0  # failed extractions are not charged
+        raw = str(results[0].get("raw_content") or "")
+        passages = [c.strip()[:900] for c in raw.split("[...]") if c.strip()][:3]
+        if len(self._extract_cache) >= CACHE_MAX:
+            self._extract_cache.clear()
+        self._extract_cache[key] = (time.time(), passages)
+        return passages, 1  # basic extract: 1 credit per 5 successful URLs
+
 
 class NullSearcher:
     """Used when TAVILY_API_KEY is missing; Leaf still works, just without citations."""
@@ -85,6 +110,9 @@ class NullSearcher:
         return []
 
     async def search_web(self, query: str, **_: Any) -> tuple[list[dict[str, Any]], int]:
+        return [], 0
+
+    async def extract(self, url: str, query: str) -> tuple[list[str], int]:
         return [], 0
 
 

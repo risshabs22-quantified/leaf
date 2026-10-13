@@ -21,6 +21,7 @@ from typing import Any, Literal
 from pydantic import ValidationError
 
 from backend.case import Case, StepRecord
+from backend.conditions import WeatherClient
 from backend.config import Settings
 from backend.models import LLM, CallResult, ModelError, ToolCall
 from backend.prompts import AGENT_SYSTEM, sanitize
@@ -33,7 +34,12 @@ log = logging.getLogger("leaf.agent")
 TERMINAL = ("finish", "ask_user")
 FORCE_FINISH = {"type": "function", "function": {"name": "finish"}}
 MIN_SECONDS_TO_FINISH = 20  # leave room for the finishing turn and the care plan
+FINISH_RESERVE_S = 12  # a normal turn never eats the time the forced finish needs
 BUDGET_SHARE_FOR_LOOP = 0.8  # the rest of the dollar budget pays for the plan and checks
+LOOK_CLOSER_COST_ESTIMATE = 0.004  # Kimi with thinking off: about $0.002 per crop, measured
+# Per-case caps so the call budget goes to new evidence: live runs spent five of eight calls
+# re-searching, and a second weather or alerts call returns the same data.
+PER_CASE_CAPS = {"search_sources": 3, "read_source": 3, "get_conditions": 1, "check_alerts": 1}
 
 
 class AgentError(Exception):
@@ -70,7 +76,8 @@ def case_brief(case: Case, settings: Settings) -> str:
         f"<gardener_notes>{sanitize(case.notes) or 'none'}</gardener_notes>\n"
         f"<region>{sanitize(place, 100)}</region>\n"
         f"<crop>{sanitize(case.crop or 'unknown', 60)}</crop>\n"
-        f"<photos>{json.dumps(photos)}</photos>\n"
+        # The first looks are model-written (and a photo can contain text): sanitise them.
+        f"<photos>{sanitize(json.dumps(photos))}</photos>\n"
         f"Budget: {settings.deep_max_calls} tool calls (update_differential, ask_user and "
         f"finish are free), about {settings.deep_wall_s} seconds."
     )
@@ -125,17 +132,22 @@ class Investigator:
         settings: Settings,
         vision_model: str | None,
         clock: Callable[[], float] = time.monotonic,
+        weather: WeatherClient | None = None,
     ):
         self.llm, self.searcher, self.settings = llm, searcher, settings
         self.vision_model = vision_model
         self.clock = clock
+        self.weather = weather or WeatherClient()
 
     # ------------------------------------------------------------------ public
 
-    async def run(self, case: Case, emit: Emit) -> AgentResult:
+    async def run(self, case: Case, emit: Emit, deadline: float | None = None) -> AgentResult:
+        """`deadline` is absolute, on self.clock(); every model attempt and tool call is timed
+        against it, so the wall clock is a hard limit, not a per-turn suggestion."""
         s = self.settings
-        start = self.clock()
-        ctx = ToolContext(self.llm, self.searcher, s, case, self.vision_model, emit)
+        if deadline is None:
+            deadline = self.clock() + s.deep_wall_s
+        ctx = ToolContext(self.llm, self.searcher, s, case, self.vision_model, emit, self.weather)
         if not case.messages:
             case.messages = [
                 {"role": "system", "content": AGENT_SYSTEM},
@@ -143,7 +155,9 @@ class Investigator:
             ]
         limit, nudged, refused_turns, last_text = "", False, 0, ""
         for _turn in range(s.deep_max_calls + 8):
-            remaining = s.deep_wall_s - (self.clock() - start)
+            remaining = deadline - self.clock()
+            if remaining <= 0:
+                break
             if not limit:
                 limit = self._limit_reached(case, remaining)
                 if limit:
@@ -155,7 +169,14 @@ class Investigator:
                             "differential and the evidence ids you have.",
                         }
                     )
-            res = await self._turn(case, forced=bool(limit), remaining=remaining, emit=emit)
+            res = await self._turn(case, forced=bool(limit), deadline=deadline, emit=emit)
+            if res is None:  # no time left for a normal turn: go straight to the forced finish
+                limit = "time budget"
+                await emit({"type": "limit", "limit": limit})
+                case.messages.append(
+                    {"role": "user", "content": "Time is up. Call finish now with what you have."}
+                )
+                continue
             case.messages.append(_assistant_message(res))
             if res.text.strip():
                 last_text = res.text.strip()
@@ -175,7 +196,9 @@ class Investigator:
                 )
                 continue
             steps_before = len(case.steps)
-            outcome = await self._run_calls(res.tool_calls, ctx, forced=bool(limit), start=start)
+            outcome = await self._run_calls(
+                res.tool_calls, ctx, forced=bool(limit), deadline=deadline
+            )
             if outcome is not None:
                 outcome.limit = limit
                 return outcome
@@ -198,7 +221,9 @@ class Investigator:
             return AgentResult("finish", limit=limit or "turn limit")
         raise AgentError("the investigator did not reach a diagnosis")
 
-    async def resume(self, case: Case, answers: list[str], emit: Emit) -> AgentResult:
+    async def resume(
+        self, case: Case, answers: list[str], emit: Emit, deadline: float | None = None
+    ) -> AgentResult:
         """Continue a case that stopped at ask_user, feeding the gardener's answers back."""
         if case.status != "needs_answers" or not case.pending_call_id:
             raise AgentError("this case is not waiting for answers")
@@ -210,7 +235,7 @@ class Investigator:
         case.messages.append(_tool_message(call, {"answers": pairs}))
         case.status, case.pending_call_id = "running", None
         await emit({"type": "answers", "answers": pairs})
-        return await self.run(case, emit)
+        return await self.run(case, emit, deadline)
 
     # ------------------------------------------------------------------ limits and turns
 
@@ -224,7 +249,10 @@ class Investigator:
             return "time budget"
         return ""
 
-    async def _turn(self, case: Case, forced: bool, remaining: float, emit: Emit) -> CallResult:
+    async def _turn(
+        self, case: Case, forced: bool, deadline: float, emit: Emit
+    ) -> CallResult | None:
+        """One model turn, Ultra then Super. None means no time is left for a normal turn."""
         s = self.settings
         names = ["finish"] if forced else [n for n in TOOLS if not (n == "ask_user" and case.asked)]
         tools = tool_schemas(names)
@@ -234,7 +262,13 @@ class Investigator:
         errors = []
         for i, model in enumerate([s.reason_model, s.fallback_model]):
             for choice in choices:
-                budget = max(5.0, remaining - 3) if remaining > 0 else 10.0
+                left = deadline - self.clock()
+                budget = left - 1 if forced else left - FINISH_RESERVE_S
+                if budget < 2:
+                    if not forced:
+                        return None
+                    errors.append("out of time")
+                    break
                 try:
                     res = await asyncio.wait_for(
                         self.llm.complete_tools(
@@ -250,7 +284,13 @@ class Investigator:
                 except (ModelError, TimeoutError) as exc:
                     log.warning("investigator turn failed on %s: %s", model, exc)
                     case.add_trace(
-                        ModelCall(step="investigate", model=model, latency_ms=0, note="failed")
+                        ModelCall(
+                            step="investigate",
+                            model=model,
+                            latency_ms=0,
+                            cost_usd=getattr(exc, "cost_usd", 0.0) or None,
+                            note="failed",
+                        )
                     )
                     errors.append(str(exc))
                     continue
@@ -270,7 +310,7 @@ class Investigator:
     # ------------------------------------------------------------------ tool calls
 
     async def _run_calls(
-        self, calls: list[ToolCall], ctx: ToolContext, forced: bool, start: float
+        self, calls: list[ToolCall], ctx: ToolContext, forced: bool, deadline: float
     ) -> AgentResult | None:
         case = ctx.case
         terminal = [c for c in calls if c.name in TERMINAL]
@@ -283,6 +323,7 @@ class Investigator:
             if p.args is not None and key in seen:  # identical call twice in one turn
                 if TOOLS[call.name].counts:
                     case.calls_used -= 1  # refund: it never runs
+                    case.tool_counts[call.name] -= 1
                 p.args, p.record.ok, p.record.skipped = None, False, "duplicate call in this turn"
             seen.add(key)
             prepared.append(p)
@@ -292,7 +333,7 @@ class Investigator:
                     {"type": "step", **p.record.model_dump(include={"n", "tool", "reason", "args"})}
                 )
         await asyncio.gather(
-            *(self._execute(p, ctx, start) for p in prepared if p.args is not None)
+            *(self._execute(p, ctx, deadline) for p in prepared if p.args is not None)
         )
         for p in prepared:
             case.steps.append(p.record)
@@ -320,7 +361,7 @@ class Investigator:
             case.steps.append(p.record)
             case.messages.append(_tool_message(chosen, {"skipped": p.record.skipped}))
             return None
-        await self._execute(p, ctx, start)
+        await self._execute(p, ctx, deadline)
         case.steps.append(p.record)
         if not p.record.ok:
             case.messages.append(_tool_message(chosen, {"skipped": p.record.skipped}))
@@ -360,7 +401,11 @@ class Investigator:
             record.ok, record.skipped = False, "arguments were not valid JSON"
             return prepared
         except ValidationError as exc:
-            record.ok, record.skipped = False, f"invalid arguments: {_short_errors(exc)}"
+            got = ", ".join(sorted(map(str, raw))[:8]) if isinstance(raw, dict) else "none"
+            record.ok = False
+            record.skipped = (
+                f"invalid arguments: {_short_errors(exc)} (you sent: {sanitize(got, 120)})"
+            )
             return prepared
         record.reason = sanitize(args.reason, 300)
         record.args = _public_args(args)
@@ -371,17 +416,33 @@ class Investigator:
             if case.calls_used >= self.settings.deep_max_calls:
                 record.ok, record.skipped = False, "tool-call budget spent"
                 return prepared
+            # Checked per call, not just per turn, so one turn of many calls cannot overshoot.
+            estimate = LOOK_CLOSER_COST_ESTIMATE if call.name == "look_closer" else 0.0
+            if case.cost_usd + estimate >= self.settings.deep_budget_usd * BUDGET_SHARE_FOR_LOOP:
+                record.ok, record.skipped = False, "cost budget spent"
+                return prepared
+            cap = PER_CASE_CAPS.get(call.name)
+            if cap is not None and case.tool_counts.get(call.name, 0) >= cap:
+                record.ok = False
+                record.skipped = (
+                    f"{call.name} limit reached for this case ({cap}); use what you have"
+                )
+                return prepared
             case.calls_used += 1
+            case.tool_counts[call.name] = case.tool_counts.get(call.name, 0) + 1
         prepared.args = args
         return prepared
 
-    async def _execute(self, p: _Prepared, ctx: ToolContext, start: float) -> None:
+    async def _execute(self, p: _Prepared, ctx: ToolContext, deadline: float) -> None:
         spec = TOOLS[p.call.name]
-        remaining = self.settings.deep_wall_s - (self.clock() - start)
+        remaining = deadline - self.clock()
         t0 = time.perf_counter()
+        if remaining <= 1 and spec.counts:
+            p.record.ok, p.record.skipped = False, "time budget spent"
+            return
         try:
             out: ToolOutcome = await asyncio.wait_for(
-                spec.handler(p.args, ctx), timeout=max(3.0, min(spec.timeout_s, remaining))
+                spec.handler(p.args, ctx), timeout=max(1.0, min(spec.timeout_s, remaining - 1))
             )
         except ToolError as exc:
             p.record.ok, p.record.skipped = False, sanitize(str(exc), 300)

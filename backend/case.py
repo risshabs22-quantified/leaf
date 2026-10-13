@@ -12,6 +12,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from backend.prompts import sanitize
 from backend.schemas import ModelCall, Observation, _unit
 
 
@@ -85,6 +86,7 @@ class Case(BaseModel):
     trace: list[ModelCall] = Field(default_factory=list)
     calls_used: int = 0
     step_seq: int = 0
+    tool_counts: dict[str, int] = Field(default_factory=dict)
     look_closer_used: int = 0
     differential_updates: int = 0
     cost_usd: float = 0.0
@@ -124,13 +126,16 @@ class Case(BaseModel):
         self.cost_usd = round(self.cost_usd + (call.cost_usd or 0.0), 6)
 
 
+MAX_PROBABILITY = 0.9  # photos and web pages never justify near-certainty
+
+
 def normalise_differential(raw: list[dict[str, Any]], known_evidence: set[str]) -> list[Hypothesis]:
     """Code, not the model, decides what a valid differential is: at most 5 named hypotheses,
     probabilities in 0-1 summing to at most 1, evidence ids that really exist, best first."""
     hyps: list[Hypothesis] = []
     seen: set[str] = set()
     for h in raw[:10]:
-        name = str(h.get("name", "")).strip()[:120]
+        name = sanitize(str(h.get("name", "")), 120).strip()
         if not name or name.lower() in seen:
             continue
         p = _unit(h.get("probability", 0.0))
@@ -153,4 +158,6 @@ def normalise_differential(raw: list[dict[str, Any]], known_evidence: set[str]) 
     if total > 1.0:
         for x in hyps:
             x.probability = round(x.probability / total, 3)
+    for x in hyps:
+        x.probability = min(x.probability, MAX_PROBABILITY)
     return hyps

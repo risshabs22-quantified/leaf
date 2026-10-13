@@ -40,7 +40,14 @@ DEFAULT_TOP_P = 0.95
 
 
 class ModelError(RuntimeError):
-    """A model call failed in a way the caller should handle (fallback or 502)."""
+    """A model call failed in a way the caller should handle (fallback or 502).
+
+    `cost_usd` is what the failed attempts were still billed (e.g. a reply that used all its
+    tokens thinking), so budgets count it."""
+
+    def __init__(self, message: str = "", cost_usd: float = 0.0):
+        super().__init__(message)
+        self.cost_usd = cost_usd
 
 
 @dataclass
@@ -189,10 +196,20 @@ class TokenFactory:
             return resp, int((time.perf_counter() - start) * 1000)
         raise ModelError(f"{model}: gave up after parameter retries")
 
-    def _result(self, model: str, resp, latency: int, text: str, **extra) -> CallResult:
-        usage = resp.usage
-        p_in = getattr(usage, "prompt_tokens", None)
-        p_out = getattr(usage, "completion_tokens", None)
+    @staticmethod
+    def _usage(resp) -> tuple[int, int]:
+        usage = getattr(resp, "usage", None)
+        return (
+            getattr(usage, "prompt_tokens", 0) or 0,
+            getattr(usage, "completion_tokens", 0) or 0,
+        )
+
+    def _result(
+        self, model: str, resp, latency: int, text: str, spent: tuple[int, int] = (0, 0), **extra
+    ) -> CallResult:
+        """Usage includes earlier attempts of the same call (`spent`): they were billed too."""
+        u_in, u_out = self._usage(resp)
+        p_in, p_out = u_in + spent[0], u_out + spent[1]
         result = CallResult(
             text=text,
             model=model,
@@ -224,7 +241,7 @@ class TokenFactory:
         temperature: float = DEFAULT_TEMPERATURE,
         top_p: float = DEFAULT_TOP_P,
     ) -> CallResult:
-        tokens = max_tokens
+        tokens, spent = max_tokens, (0, 0)
         for doubled in (False, True):
             kwargs = {
                 "messages": messages,
@@ -239,11 +256,16 @@ class TokenFactory:
             # can spend most of max_tokens thinking. (Truncated prose is still readable.)
             truncated = json_mode and getattr(choice, "finish_reason", None) == "length"
             if text.strip() and not truncated:
-                return self._result(model, resp, latency, text)
+                return self._result(model, resp, latency, text, spent)
+            u = self._usage(resp)
+            spent = (spent[0] + u[0], spent[1] + u[1])
             # Reasoning tokens count toward max_tokens; give it more room once.
             if doubled or tokens >= 16000:
                 why = "truncated at max_tokens" if text.strip() else "empty content"
-                raise ModelError(f"{model}: {why} (reasoning may have used max_tokens)")
+                raise ModelError(
+                    f"{model}: {why} (reasoning may have used max_tokens)",
+                    cost_usd=self.cost(model, *spent),
+                )
             tokens *= 2
         raise ModelError(f"{model}: no usable reply")  # pragma: no cover - loop always returns
 
@@ -261,7 +283,7 @@ class TokenFactory:
     ) -> CallResult:
         """A chat turn that may request tool calls (never combined with JSON mode: with both,
         Nemotron stops calling tools and writes JSON text instead; probed Oct 2026)."""
-        tokens = max_tokens
+        tokens, spent = max_tokens, (0, 0)
         for doubled in (False, True):
             kwargs = {
                 "messages": messages,
@@ -290,13 +312,17 @@ class TokenFactory:
                     resp,
                     latency,
                     text,
+                    spent,
                     reasoning=reasoning[:4000],
                     tool_calls=calls,
                     finish_reason=finish,
                 )
+            u = self._usage(resp)
+            spent = (spent[0] + u[0], spent[1] + u[1])
             if doubled or tokens >= 16000:
                 raise ModelError(
-                    f"{model}: no tool call or text (reasoning may have used max_tokens)"
+                    f"{model}: no tool call or text (reasoning may have used max_tokens)",
+                    cost_usd=self.cost(model, *spent),
                 )
             tokens *= 2
         raise ModelError(f"{model}: no usable reply")  # pragma: no cover - loop always returns
@@ -382,7 +408,15 @@ async def complete_json(
             )
         except ModelError as exc:
             log.warning("%s call failed: %s", step, exc)  # detail stays server-side
-            trace.append(ModelCall(step=step, model=model, latency_ms=0, note="failed"))
+            trace.append(
+                ModelCall(
+                    step=step,
+                    model=model,
+                    latency_ms=0,
+                    cost_usd=getattr(exc, "cost_usd", 0.0) or None,
+                    note="failed",
+                )
+            )
             errors.append(str(exc))
             continue
         try:
