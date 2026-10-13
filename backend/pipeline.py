@@ -34,6 +34,24 @@ LOW_CONFIDENCE = 0.6
 AMBIGUITY_MARGIN = 0.15  # top two causes closer than this: Leaf cannot tell them apart
 
 
+def is_low_confidence(scores: list[float], image_quality: str) -> bool:
+    """Never confident when: no cause found, the best is weak, the top two are nearly tied, or
+    the photo is poor, whatever the model scored. Shared by Quick and Deep."""
+    scores = sorted(scores, reverse=True)
+    top = scores[0] if scores else 0.0
+    return (
+        top < LOW_CONFIDENCE
+        or (len(scores) > 1 and top - scores[1] < AMBIGUITY_MARGIN)
+        or image_quality == "poor"
+    )
+
+
+ESCALATE_REASON = (
+    "Leaf isn't confident from this photo. Answer the follow-up questions or "
+    "take a sample to your local extension office."
+)
+
+
 class Leaf:
     def __init__(self, llm: LLM, searcher: Searcher, settings: Settings, vision_model: str | None):
         self.llm = llm
@@ -88,15 +106,7 @@ class Leaf:
             repair_model=s.fast_model,
         )
         diagnosis.candidates.sort(key=lambda c: c.confidence, reverse=True)
-        scores = [c.confidence for c in diagnosis.candidates]
-        top = scores[0] if scores else 0.0
-        # Never confident when: no cause found, the best is weak, the top two are nearly
-        # tied, or the photo is poor, whatever the model scored.
-        low = (
-            top < LOW_CONFIDENCE
-            or (len(scores) > 1 and top - scores[1] < AMBIGUITY_MARGIN)
-            or obs.image_quality == "poor"
-        )
+        low = is_low_confidence([c.confidence for c in diagnosis.candidates], obs.image_quality)
 
         # 3. Grounding (parallel web search)
         queries = diagnosis.search_queries or [
@@ -141,10 +151,7 @@ class Leaf:
             step.source_ids = [i for i in step.source_ids if i in valid_ids]
         if low and not plan.escalate:
             plan.escalate = True
-            plan.escalate_reason = (
-                "Leaf isn't confident from this photo. Answer the follow-up questions or "
-                "take a sample to your local extension office."
-            )
+            plan.escalate_reason = ESCALATE_REASON
 
         return DiagnoseResponse(
             observation=obs,

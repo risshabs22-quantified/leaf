@@ -18,19 +18,24 @@ from typing import Annotated, TypeVar
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
 from backend.config import Settings, get_settings
+from backend.deep import CaseStateError, DeepLeaf, DeepResponse
 from backend.models import ModelError, TokenFactory
 from backend.pipeline import Leaf
 from backend.schemas import ChatRequest, ChatResponse, DiagnoseResponse
 from backend.search import NullSearcher, TavilySearcher
-from backend.vision import discover_vision_model, prepare_image
+from backend.store import MemoryCaseStore
+from backend.vision import discover_vision_model, prepare_image, prepare_photo
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 log = logging.getLogger("leaf.app")
 
 FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+MAX_DEEP_PHOTOS = 3
+PHOTO_LABELS = {"whole plant", "close-up", "underside", "photo"}
 MAX_LIMITER_KEYS = 10_000
 T = TypeVar("T")
 
@@ -74,6 +79,25 @@ class RateLimiter:
             raise HTTPException(429, "You've hit the hourly limit. Please try again later.")
         q.append(now)
         self.day_count += 1
+
+
+class DailyCap:
+    """A per-day counter (Deep mode has its own, smaller cap than the overall demo cap)."""
+
+    def __init__(self, cap: int):
+        self.cap, self.day, self.count = cap, date.today(), 0
+
+    def take(self) -> bool:
+        if date.today() != self.day:
+            self.day, self.count = date.today(), 0
+        if self.count >= self.cap:
+            return False
+        self.count += 1
+        return True
+
+    @property
+    def left(self) -> int:
+        return max(0, self.cap - self.count) if date.today() == self.day else self.cap
 
 
 def client_ip(request: Request, hops: int = 1) -> str:
@@ -142,7 +166,7 @@ async def build_leaf(settings: Settings) -> Leaf:
     searcher = (
         TavilySearcher(settings.tavily_api_key) if settings.tavily_api_key else NullSearcher()
     )
-    vision = await discover_vision_model(llm, settings)
+    vision, _ = await asyncio.gather(discover_vision_model(llm, settings), llm.load_prices())
     return Leaf(llm, searcher, settings, vision)
 
 
@@ -153,13 +177,21 @@ async def lifespan(app: FastAPI):
     app.state.slots = asyncio.Semaphore(settings.max_concurrent)
     if not getattr(app.state, "leaf", None):
         app.state.leaf = await build_leaf(settings)
+    deep = getattr(app.state, "deep", None)
+    if deep is None or deep.leaf is not app.state.leaf:
+        app.state.deep = DeepLeaf(app.state.leaf, MemoryCaseStore())
+    app.state.deep_cap = DailyCap(app.state.leaf.settings.deep_daily_cap)
     yield
 
 
 app = FastAPI(title="Leaf", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     BodyLimitMiddleware,
-    limits={"/api/diagnose": MAX_UPLOAD_BYTES + 256 * 1024, "/api/chat": 256 * 1024},
+    limits={
+        "/api/diagnose": MAX_UPLOAD_BYTES + 256 * 1024,
+        "/api/deep": MAX_DEEP_PHOTOS * MAX_UPLOAD_BYTES + 256 * 1024,
+        "/api/chat": 256 * 1024,
+    },
     default=64 * 1024,
 )
 
@@ -181,7 +213,9 @@ def check_limits(request: Request) -> None:
     request.app.state.limiter.check(client_ip(request, settings.trusted_proxy_hops))
 
 
-async def run_limited(request: Request, work: Callable[[], Awaitable[T]]) -> T:
+async def run_limited(
+    request: Request, work: Callable[[], Awaitable[T]], timeout: float | None = None
+) -> T:
     """Run one diagnosis or chat under the concurrency cap and the whole-request deadline.
 
     Each model call has its own timeout and retries, which add up across fallbacks; the
@@ -189,13 +223,14 @@ async def run_limited(request: Request, work: Callable[[], Awaitable[T]]) -> T:
     """
     leaf: Leaf = request.app.state.leaf
     slots: asyncio.Semaphore = request.app.state.slots
+    deadline = timeout or leaf.settings.deadline_s
     if slots.locked():
         raise HTTPException(503, "Leaf is busy right now. Please try again in a minute.")
     async with slots:
         try:
-            return await asyncio.wait_for(work(), timeout=leaf.settings.deadline_s)
+            return await asyncio.wait_for(work(), timeout=deadline)
         except TimeoutError as exc:
-            log.error("request exceeded %ss deadline", leaf.settings.deadline_s)
+            log.error("request exceeded %ss deadline", deadline)
             raise HTTPException(504, "That took too long. Please try again.") from exc
         except ModelError as exc:
             log.error("model pipeline failed: %s", exc)
@@ -215,6 +250,7 @@ async def health(request: Request) -> dict:
             "fast": s.fast_model,
         },
         "search": type(leaf.searcher).__name__,
+        "deep": {"left_today": request.app.state.deep_cap.left},
     }
 
 
@@ -254,6 +290,88 @@ async def diagnose(
 async def chat(request: Request, body: ChatRequest) -> ChatResponse:
     check_limits(request)
     return await run_limited(request, lambda: request.app.state.leaf.chat(body))
+
+
+async def _read_photos(
+    images: list[UploadFile], labels: list[str] | None
+) -> list[tuple[str, str, str]]:
+    photos = []
+    for i, up in enumerate(images):
+        data = await up.read(MAX_UPLOAD_BYTES + 1)
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(413, "A photo is over 10 MB. Try a smaller one.")
+        try:
+            full, view = await asyncio.to_thread(prepare_photo, data)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        label = (labels[i] if labels and i < len(labels) else "photo").strip().lower()
+        photos.append((label if label in PHOTO_LABELS else "photo", full, view))
+    return photos
+
+
+def _deep_deadline(request: Request) -> float:
+    s = request.app.state.leaf.settings
+    return s.deep_wall_s + 40  # the loop's own clock, plus first looks and the care plan
+
+
+class AnswersRequest(BaseModel):
+    answers: list[Annotated[str, Field(max_length=400)]] = Field(..., max_length=3)
+
+
+@app.post("/api/deep", response_model=DeepResponse)
+async def deep(
+    request: Request,
+    images: Annotated[list[UploadFile] | None, File()] = None,
+    labels: Annotated[list[str] | None, Form()] = None,
+    notes: Annotated[str, Form()] = "",
+    region: Annotated[str, Form()] = "",
+    lat: Annotated[float | None, Form()] = None,
+    lon: Annotated[float | None, Form()] = None,
+) -> DeepResponse:
+    check_limits(request)
+    images = [im for im in (images or []) if im.filename]
+    if len(images) > MAX_DEEP_PHOTOS:
+        raise HTTPException(400, f"Send at most {MAX_DEEP_PHOTOS} photos.")
+    if not images and not notes.strip():
+        raise HTTPException(400, "Add a photo or describe what you see.")
+    if lat is not None and lon is not None and not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        lat = lon = None
+    photos = await _read_photos(images, labels)
+    deep: DeepLeaf = request.app.state.deep
+    if not request.app.state.deep_cap.take():
+        cap = request.app.state.leaf.settings.deep_daily_cap
+        return await run_limited(
+            request,
+            lambda: deep.quick_only(
+                photos=photos,
+                notes=notes[:2000],
+                region=region[:100],
+                notice=f"Deep mode has reached today's limit of {cap} cases, "
+                "so this is a Quick diagnosis.",
+            ),
+        )
+    return await run_limited(
+        request,
+        lambda: deep.start(
+            photos=photos, notes=notes[:2000], region=region[:100], lat=lat, lon=lon
+        ),
+        timeout=_deep_deadline(request),
+    )
+
+
+@app.post("/api/deep/{case_id}/answers", response_model=DeepResponse)
+async def deep_answers(request: Request, case_id: str, body: AnswersRequest) -> DeepResponse:
+    check_limits(request)
+    deep: DeepLeaf = request.app.state.deep
+    case = await deep.store.get(case_id[:64])
+    if case is None:
+        raise HTTPException(404, "This case has expired or does not exist. Start a new one.")
+    try:
+        return await run_limited(
+            request, lambda: deep.resume(case, body.answers), timeout=_deep_deadline(request)
+        )
+    except CaseStateError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 if FRONTEND.exists():

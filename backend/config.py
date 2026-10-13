@@ -20,6 +20,15 @@ NEMOTRON_ULTRA = "nvidia/Nemotron-3-Ultra-550b-a55b"
 NEMOTRON_SUPER = "nvidia/nemotron-3-super-120b-a12b"
 NEMOTRON_LIGHTNING = "nvidia/Nemotron-3_5-Lightning"
 
+# Fallback prices in dollars per token (input, output), from the Token Factory catalog,
+# Oct 2026. At startup the live prices from GET /models replace these.
+DEFAULT_PRICES_PER_TOKEN = {
+    NEMOTRON_ULTRA: (1.00e-6, 3.00e-6),
+    NEMOTRON_SUPER: (0.30e-6, 0.90e-6),
+    NEMOTRON_LIGHTNING: (0.06e-6, 0.24e-6),
+    "moonshotai/Kimi-K2.6": (0.95e-6, 4.00e-6),
+}
+
 # Token Factory has no public NVIDIA vision model right now (Nemotron Nano 2 VL was
 # disabled Apr 13, 2026). Leaf auto-detects an image-capable model and prefers NVIDIA
 # ones if any appear. Override with LEAF_VISION_MODEL.
@@ -55,6 +64,13 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(_env(name, str(default)))
+    except ValueError:
+        return default
+
+
 @dataclass(frozen=True)
 class Settings:
     nebius_api_key: str = field(default_factory=lambda: _env("NEBIUS_API_KEY"))
@@ -76,6 +92,13 @@ class Settings:
     deadline_s: int = field(default_factory=lambda: _env_int("LEAF_DEADLINE_S", 100))
     # Requests allowed to run at once; extra ones get a quick 503 instead of queueing.
     max_concurrent: int = field(default_factory=lambda: _env_int("LEAF_MAX_CONCURRENT", 8))
+    # Deep mode (the investigator agent). Limits are enforced in code.
+    deep_daily_cap: int = field(default_factory=lambda: _env_int("LEAF_DEEP_DAILY_CAP", 20))
+    deep_max_calls: int = field(default_factory=lambda: _env_int("LEAF_DEEP_MAX_CALLS", 8))
+    deep_wall_s: int = field(default_factory=lambda: _env_int("LEAF_DEEP_WALL_S", 90))
+    deep_budget_usd: float = field(default_factory=lambda: _env_float("LEAF_DEEP_BUDGET_USD", 0.10))
+    deep_max_photos: int = 3
+    deep_max_look_closer: int = 3
     # Proxies in front of Leaf that append to X-Forwarded-For (0 = none, trust the socket).
     trusted_proxy_hops: int = field(default_factory=lambda: _env_int("LEAF_TRUSTED_PROXY_HOPS", 1))
 

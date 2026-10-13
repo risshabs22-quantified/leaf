@@ -21,6 +21,17 @@ CACHE_MAX = 500
 class Searcher(Protocol):
     async def search(self, query: str) -> list[dict[str, Any]]: ...
 
+    async def search_web(
+        self,
+        query: str,
+        *,
+        topic: str = "general",
+        time_range: str | None = None,
+        max_results: int = 5,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Results plus Tavily credits charged (0 on a cache hit)."""
+        ...
+
 
 class TavilySearcher:
     """Basic-depth search (1 credit per call). Queries are steered to extension guides.
@@ -36,21 +47,35 @@ class TavilySearcher:
         self._cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 
     async def search(self, query: str) -> list[dict[str, Any]]:
-        key = query.strip().lower()
+        """Quick mode: steer to extension guides."""
+        results, _ = await self.search_web(f"{query.strip()} university extension")
+        return results
+
+    async def search_web(
+        self,
+        query: str,
+        *,
+        topic: str = "general",
+        time_range: str | None = None,
+        max_results: int = 5,
+    ) -> tuple[list[dict[str, Any]], int]:
+        key = f"{topic}|{time_range}|{max_results}|{' '.join(query.lower().split())}"
         hit = self._cache.get(key)
         if hit and time.time() - hit[0] < CACHE_TTL_S:
-            return hit[1]
-        resp = await self._client.search(
-            f"{query} university extension",
-            search_depth="basic",
-            topic="general",
-            max_results=5,
-        )
+            return hit[1], 0
+        kwargs: dict[str, Any] = {
+            "search_depth": "basic",
+            "topic": topic,
+            "max_results": max_results,
+        }
+        if time_range:
+            kwargs["time_range"] = time_range
+        resp = await self._client.search(query, **kwargs)
         results = resp.get("results", [])
         if len(self._cache) >= CACHE_MAX:
             self._cache.clear()
         self._cache[key] = (time.time(), results)
-        return results
+        return results, 1  # basic search: 1 credit (docs.tavily.com/documentation/api-credits)
 
 
 class NullSearcher:
@@ -58,6 +83,9 @@ class NullSearcher:
 
     async def search(self, query: str) -> list[dict[str, Any]]:
         return []
+
+    async def search_web(self, query: str, **_: Any) -> tuple[list[dict[str, Any]], int]:
+        return [], 0
 
 
 def _trust(url: str) -> int:

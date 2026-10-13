@@ -2,15 +2,24 @@
 
 from __future__ import annotations
 
+import copy
+import itertools
 import json
 from typing import Any
 
 import pytest
 
 from backend.config import Settings
-from backend.models import CallResult, ModelError
+from backend.models import CallResult, ModelError, ToolCall
 from backend.pipeline import Leaf
-from backend.prompts import CHAT_SYSTEM, DIAGNOSE_SYSTEM, PLAN_SYSTEM, VISION_SYSTEM
+from backend.prompts import (
+    AGENT_SYSTEM,
+    CHAT_SYSTEM,
+    DIAGNOSE_SYSTEM,
+    LOOK_CLOSER_SYSTEM,
+    PLAN_SYSTEM,
+    VISION_SYSTEM,
+)
 
 OBS = {
     "plant_guess": "tomato",
@@ -66,15 +75,34 @@ def step_of(messages: list[dict[str, Any]]) -> str:
         DIAGNOSE_SYSTEM: "diagnose",
         PLAN_SYSTEM: "plan",
         CHAT_SYSTEM: "chat",
+        AGENT_SYSTEM: "investigate",
+        LOOK_CLOSER_SYSTEM: "look_closer",
     }.get(system, "repair")
+
+
+_call_ids = itertools.count(1)
+
+
+def turn(*calls: tuple[str, Any]) -> list[tuple[str, Any]]:
+    """One scripted investigator turn: (tool name, arguments dict or raw string)."""
+    return list(calls)
 
 
 class FakeLLM:
     """Scripted model. responses[step] is a dict (sent as JSON) or a raw string."""
 
-    def __init__(self, responses: dict[str, Any], failing_models: set[str] | None = None):
+    def __init__(
+        self,
+        responses: dict[str, Any],
+        failing_models: set[str] | None = None,
+        tool_script: list[Any] | None = None,
+        turn_cost: float = 0.001,
+    ):
         self.responses = responses
         self.failing = failing_models or set()
+        self.tool_script = list(tool_script or [])  # turns: list of calls, a str, or a callable
+        self.tool_kwargs: list[dict[str, Any]] = []
+        self.turn_cost = turn_cost
         self.calls: list[tuple[str, str]] = []
         self.sent: list[tuple[str, list[dict[str, Any]]]] = []  # prompts, for injection tests
         self.kwargs: list[tuple[str, dict[str, Any]]] = []  # call settings, e.g. max_tokens
@@ -92,6 +120,39 @@ class FakeLLM:
             text=text, model=model, latency_ms=12, prompt_tokens=100, completion_tokens=50
         )
 
+    async def complete_tools(
+        self, *, model, messages, tools, tool_choice="auto", **kwargs: Any
+    ) -> CallResult:
+        names = [t["function"]["name"] for t in tools]
+        self.calls.append(("investigate", model))
+        self.sent.append(("investigate", copy.deepcopy(messages)))
+        self.tool_kwargs.append({"model": model, "tools": names, "tool_choice": tool_choice})
+        if model in self.failing:
+            raise ModelError(f"{model}: HTTP 503")
+        step = self.tool_script.pop(0) if self.tool_script else "I have nothing more to add."
+        if callable(step):
+            step = step(messages=messages, tools=names, tool_choice=tool_choice)
+        if isinstance(step, Exception):
+            raise step
+        base = dict(
+            model=model,
+            latency_ms=10,
+            prompt_tokens=100,
+            completion_tokens=50,
+            cost_usd=self.turn_cost,
+        )
+        if isinstance(step, str):
+            return CallResult(text=step, finish_reason="stop", **base)
+        calls = [
+            ToolCall(
+                id=f"call_{next(_call_ids)}",
+                name=name,
+                arguments=args if isinstance(args, str) else json.dumps(args),
+            )
+            for name, args in step
+        ]
+        return CallResult(text="", tool_calls=calls, finish_reason="tool_calls", **base)
+
     async def list_models(self) -> list[dict[str, Any]]:
         return []
 
@@ -99,6 +160,9 @@ class FakeLLM:
 class FakeSearcher:
     def __init__(self):
         self.queries: list[str] = []
+
+    async def search_web(self, query: str, **kwargs: Any) -> tuple[list[dict[str, Any]], int]:
+        return await self.search(query), 1
 
     async def search(self, query: str) -> list[dict[str, Any]]:
         self.queries.append(query)
@@ -123,7 +187,13 @@ def settings() -> Settings:
     return Settings(nebius_api_key="test", tavily_api_key="test", vision_model="nvidia/fake-vl")
 
 
-def make_leaf(settings: Settings, responses: dict[str, Any], failing: set[str] | None = None):
-    llm = FakeLLM(responses, failing)
+def make_leaf(
+    settings: Settings,
+    responses: dict[str, Any],
+    failing: set[str] | None = None,
+    tool_script: list[Any] | None = None,
+    turn_cost: float = 0.001,
+):
+    llm = FakeLLM(responses, failing, tool_script, turn_cost)
     searcher = FakeSearcher()
     return Leaf(llm, searcher, settings, settings.vision_model), llm, searcher

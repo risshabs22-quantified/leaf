@@ -13,7 +13,7 @@ import json
 import logging
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol, TypeVar
 
 import httpx
@@ -27,7 +27,7 @@ from openai import (
 )
 from pydantic import BaseModel, ValidationError
 
-from backend.config import Settings, thinking_key
+from backend.config import DEFAULT_PRICES_PER_TOKEN, Settings, thinking_key
 from backend.schemas import ModelCall
 
 log = logging.getLogger("leaf.models")
@@ -44,12 +44,25 @@ class ModelError(RuntimeError):
 
 
 @dataclass
+class ToolCall:
+    """One tool call requested by a model. `arguments` is the raw JSON string it wrote."""
+
+    id: str
+    name: str
+    arguments: str
+
+
+@dataclass
 class CallResult:
     text: str
     model: str
     latency_ms: int
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
+    cost_usd: float | None = None
+    reasoning: str = ""
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    finish_reason: str | None = None
 
     def to_trace(self, step: str, note: str = "") -> ModelCall:
         return ModelCall(
@@ -58,6 +71,7 @@ class CallResult:
             latency_ms=self.latency_ms,
             prompt_tokens=self.prompt_tokens,
             completion_tokens=self.completion_tokens,
+            cost_usd=self.cost_usd,
             note=note,
         )
 
@@ -71,6 +85,19 @@ class LLM(Protocol):
         json_mode: bool = False,
         thinking: bool | None = None,
         max_tokens: int = 2048,
+        temperature: float = DEFAULT_TEMPERATURE,
+        top_p: float = DEFAULT_TOP_P,
+    ) -> CallResult: ...
+
+    async def complete_tools(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        tool_choice: str | dict[str, Any] = "auto",
+        thinking: bool | None = True,
+        max_tokens: int = 4096,
         temperature: float = DEFAULT_TEMPERATURE,
         top_p: float = DEFAULT_TOP_P,
     ) -> CallResult: ...
@@ -89,6 +116,8 @@ class TokenFactory:
         # Learned at runtime: params a model rejected, so we stop sending them.
         self._no_template_kwargs: set[str] = set()
         self._no_json_mode: set[str] = set()
+        # Dollars per token, (input, output). Refreshed from /models at startup.
+        self.prices: dict[str, tuple[float, float]] = dict(DEFAULT_PRICES_PER_TOKEN)
 
     def _client(self, base_url: str) -> AsyncOpenAI:
         if base_url not in self._clients:
@@ -100,27 +129,31 @@ class TokenFactory:
             )
         return self._clients[base_url]
 
-    async def complete(
-        self,
-        *,
-        model: str,
-        messages: list[dict[str, Any]],
-        json_mode: bool = False,
-        thinking: bool | None = None,
-        max_tokens: int = 2048,
-        temperature: float = DEFAULT_TEMPERATURE,
-        top_p: float = DEFAULT_TOP_P,
-    ) -> CallResult:
+    async def load_prices(self) -> None:
+        """Use Token Factory's own per-token prices (GET /models?verbose=true) when listed."""
+        try:
+            models = await self.list_models()
+        except Exception as exc:  # noqa: BLE001 - prices are best-effort; defaults remain
+            log.warning("could not load prices: %s", exc)
+            return
+        for m in models:
+            p = m.get("pricing") or {}
+            try:
+                self.prices[m["id"]] = (float(p["prompt"]), float(p["completion"]))
+            except (KeyError, TypeError, ValueError):
+                continue
+
+    def cost(self, model: str, prompt_tokens: int | None, completion_tokens: int | None) -> float:
+        price_in, price_out = self.prices.get(model, (0.0, 0.0))
+        return round((prompt_tokens or 0) * price_in + (completion_tokens or 0) * price_out, 6)
+
+    async def _send(
+        self, model: str, kwargs: dict[str, Any], thinking: bool | None, json_mode: bool
+    ):
+        """One request with the provider-quirk handling shared by every call type."""
         client = self._client(self.settings.base_url_for(model))
-        tokens, doubled = max_tokens, False
-        for _attempt in range(4):
-            kwargs: dict[str, Any] = {
-                "model": model,
-                "messages": messages,
-                "max_tokens": tokens,
-                "temperature": temperature,
-                "top_p": top_p,
-            }
+        for _attempt in range(3):
+            body = dict(kwargs, model=model)
             extra_body: dict[str, Any] = {}
             use_template = thinking is not None and model not in self._no_template_kwargs
             if use_template:
@@ -128,11 +161,10 @@ class TokenFactory:
                 extra_body["chat_template_kwargs"] = {thinking_key(model): thinking}
             use_json = json_mode and model not in self._no_json_mode
             if use_json:
-                kwargs["response_format"] = {"type": "json_object"}
-
+                body["response_format"] = {"type": "json_object"}
             start = time.perf_counter()
             try:
-                resp = await client.chat.completions.create(**kwargs, extra_body=extra_body or None)
+                resp = await client.chat.completions.create(**body, extra_body=extra_body or None)
             except BadRequestError as exc:
                 msg = str(exc).lower()
                 # Only learn from errors that name the parameter, so an unrelated 400
@@ -154,37 +186,120 @@ class TokenFactory:
                 raise ModelError(f"{model}: network error: {exc}") from exc
             except APIStatusError as exc:
                 raise ModelError(f"{model}: HTTP {exc.status_code}") from exc
+            return resp, int((time.perf_counter() - start) * 1000)
+        raise ModelError(f"{model}: gave up after parameter retries")
 
-            latency = int((time.perf_counter() - start) * 1000)
+    def _result(self, model: str, resp, latency: int, text: str, **extra) -> CallResult:
+        usage = resp.usage
+        p_in = getattr(usage, "prompt_tokens", None)
+        p_out = getattr(usage, "completion_tokens", None)
+        result = CallResult(
+            text=text,
+            model=model,
+            latency_ms=latency,
+            prompt_tokens=p_in,
+            completion_tokens=p_out,
+            cost_usd=self.cost(model, p_in, p_out),
+            **extra,
+        )
+        log.info(
+            "model_call model=%s latency_ms=%d in=%s out=%s cost=%.5f tools=%d",
+            model,
+            latency,
+            p_in,
+            p_out,
+            result.cost_usd or 0.0,
+            len(result.tool_calls),
+        )
+        return result
+
+    async def complete(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, Any]],
+        json_mode: bool = False,
+        thinking: bool | None = None,
+        max_tokens: int = 2048,
+        temperature: float = DEFAULT_TEMPERATURE,
+        top_p: float = DEFAULT_TOP_P,
+    ) -> CallResult:
+        tokens = max_tokens
+        for doubled in (False, True):
+            kwargs = {
+                "messages": messages,
+                "max_tokens": tokens,
+                "temperature": temperature,
+                "top_p": top_p,
+            }
+            resp, latency = await self._send(model, kwargs, thinking, json_mode)
             choice = resp.choices[0] if resp.choices else None
             text = strip_think((choice.message.content or "") if choice else "")
             # JSON cut off by the token limit is as useless as an empty reply: reasoning models
             # can spend most of max_tokens thinking. (Truncated prose is still readable.)
             truncated = json_mode and getattr(choice, "finish_reason", None) == "length"
-            if not text.strip() or truncated:
-                # Reasoning tokens count toward max_tokens; give it more room once.
-                if not doubled and tokens < 16000:
-                    tokens, doubled = tokens * 2, True
-                    continue
+            if text.strip() and not truncated:
+                return self._result(model, resp, latency, text)
+            # Reasoning tokens count toward max_tokens; give it more room once.
+            if doubled or tokens >= 16000:
                 why = "truncated at max_tokens" if text.strip() else "empty content"
                 raise ModelError(f"{model}: {why} (reasoning may have used max_tokens)")
-            usage = resp.usage
-            result = CallResult(
-                text=text,
-                model=model,
-                latency_ms=latency,
-                prompt_tokens=getattr(usage, "prompt_tokens", None),
-                completion_tokens=getattr(usage, "completion_tokens", None),
-            )
-            log.info(
-                "model_call model=%s latency_ms=%d in=%s out=%s",
-                model,
-                latency,
-                result.prompt_tokens,
-                result.completion_tokens,
-            )
-            return result
-        raise ModelError(f"{model}: gave up after parameter retries")
+            tokens *= 2
+        raise ModelError(f"{model}: no usable reply")  # pragma: no cover - loop always returns
+
+    async def complete_tools(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        tool_choice: str | dict[str, Any] = "auto",
+        thinking: bool | None = True,
+        max_tokens: int = 4096,
+        temperature: float = DEFAULT_TEMPERATURE,
+        top_p: float = DEFAULT_TOP_P,
+    ) -> CallResult:
+        """A chat turn that may request tool calls (never combined with JSON mode: with both,
+        Nemotron stops calling tools and writes JSON text instead; probed Oct 2026)."""
+        tokens = max_tokens
+        for doubled in (False, True):
+            kwargs = {
+                "messages": messages,
+                "tools": tools,
+                "tool_choice": tool_choice,
+                "max_tokens": tokens,
+                "temperature": temperature,
+                "top_p": top_p,
+            }
+            resp, latency = await self._send(model, kwargs, thinking, json_mode=False)
+            choice = resp.choices[0] if resp.choices else None
+            msg = choice.message if choice else None
+            calls = [
+                ToolCall(id=tc.id, name=tc.function.name, arguments=tc.function.arguments or "{}")
+                for tc in ((msg.tool_calls if msg else None) or [])
+                if tc.function and tc.function.name
+            ]
+            text = strip_think((msg.content or "") if msg else "")
+            finish = getattr(choice, "finish_reason", None)
+            # Tool arguments cut off at max_tokens are unusable JSON; so is a silent turn.
+            if (calls or text.strip()) and finish != "length":
+                extras = msg.model_dump() if msg is not None and hasattr(msg, "model_dump") else {}
+                reasoning = str(extras.get("reasoning_content") or extras.get("reasoning") or "")
+                return self._result(
+                    model,
+                    resp,
+                    latency,
+                    text,
+                    reasoning=reasoning[:4000],
+                    tool_calls=calls,
+                    finish_reason=finish,
+                )
+            if doubled or tokens >= 16000:
+                raise ModelError(
+                    f"{model}: no tool call or text (reasoning may have used max_tokens)"
+                )
+            tokens *= 2
+        raise ModelError(f"{model}: no usable reply")  # pragma: no cover - loop always returns
 
     async def list_models(self) -> list[dict[str, Any]]:
         """Raw model list with modality info (GET /v1/models?verbose=true)."""

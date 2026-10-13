@@ -195,13 +195,13 @@ Suggested calendar (18 days): M1 Oct 13-14, M2 Oct 15-16, M3 Oct 17-19, M4 Oct 2
 
 ### M1: tool layer, investigator loop, fallback to Quick, offline tests
 Acceptance:
-- [ ] `models.py` supports `tools`, streams tool-call deltas, returns `reasoning_content`, reports usage and cost
-- [ ] `backend/tools.py` defines schemas and validates arguments; unknown tools and bad arguments are refused
-- [ ] `backend/agent.py` loop with the differential state, 8-call limit, cost budget, 90 s wall clock, parallel calls counted, forced `finish` at a limit
-- [ ] `look_closer`, `search_sources` and `finish` working; `ask_user` ends the loop and the in-memory case registry resumes it
-- [ ] Any agent failure falls back to Quick and the trace says so
-- [ ] Offline tests with scripted tool calls cover every limit, malformed arguments, parallel calls, tool failure, fallback and URL refusal; `make check` green
-- [ ] One live Deep case recorded with its real cost
+- [x] `models.py` supports `tools`, returns `reasoning_content`, reports usage and cost (live prices from `/models`). Changed: no token-level streaming; progress streams per step (events), sent over SSE in M4
+- [x] `backend/tools.py` defines schemas (generated from pydantic, inlined) and validates arguments; unknown tools and bad arguments are refused with a message naming the real tools
+- [x] `backend/agent.py` loop with the differential state, 8-call limit, cost budget, 90 s wall clock, parallel calls counted, forced `finish` at a limit (named `tool_choice`, then `auto` with only `finish`), plus "no progress" and "no tool call" guards found in live runs
+- [x] `look_closer`, `search_sources` and `finish` working; `ask_user` ends the loop and the in-memory case registry (`store.py`, behind the `CaseStore` interface) resumes it
+- [x] Any agent failure, including an unexpected bug, falls back to Quick and the response says so
+- [x] Offline tests with scripted tool calls cover every limit, malformed arguments, parallel calls, tool failure, fallback and resume; `make check` green (128 tests). URL refusal moves to M2 with `read_source`
+- [x] Live Deep cases: early blight photo, asked 2 questions, answers moved it to early blight 0.75, total $0.070 (20 s + 15 s); Septoria photo, Septoria 0.55 (escalated), $0.041, 27 s
 
 ### M2: conditions, read_source, alerts
 - [ ] `get_conditions`: geocoding, 14-day weather, wet-hour proxy, and only the table-listed rules per crop, each with its citation in the code; attribution shown

@@ -9,14 +9,15 @@ from __future__ import annotations
 import base64
 import io
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from PIL import Image, ImageOps, UnidentifiedImageError
+from pydantic import BaseModel, Field, field_validator
 
 from backend.config import VISION_PREFERENCE, Settings
 from backend.models import LLM, ModelError, complete_json
-from backend.prompts import VISION_SYSTEM, sanitize
-from backend.schemas import ModelCall, Observation
+from backend.prompts import LOOK_CLOSER_SYSTEM, VISION_SYSTEM, sanitize
+from backend.schemas import ModelCall, Observation, _unit
 
 log = logging.getLogger("leaf.vision")
 
@@ -61,12 +62,13 @@ async def discover_vision_model(llm: LLM, settings: Settings) -> str | None:
     return chosen
 
 
-def prepare_image(data: bytes) -> tuple[str, str]:
-    """Validate, downscale and JPEG-encode an upload. Returns (base64, mime).
+FULL_SIDE = 2048  # kept for look_closer crops, so a crop still has detail
+MIN_CROP_SIDE = 32
+CROP_TARGET_SIDE = 768  # small crops are upscaled so the vision model sees the detail
 
-    Raises ValueError (shown to the user as a 400) for anything that is not a readable,
-    reasonably sized image. CPU-bound: call it off the event loop.
-    """
+
+def _load(data: bytes) -> Image.Image:
+    """Decode an upload safely. Raises ValueError (a 400) for anything unreadable or huge."""
     try:
         img = Image.open(io.BytesIO(data))  # reads the header only
         if img.width * img.height > MAX_PIXELS:
@@ -76,11 +78,47 @@ def prepare_image(data: bytes) -> tuple[str, str]:
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         # Decompression bombs surface here (or as a size error above), never as a 500.
         raise ValueError("That file isn't an image we can read. Try a JPG or PNG.") from exc
-    img = img.convert("RGB")
-    img.thumbnail((MAX_SIDE, MAX_SIDE))
+    return img.convert("RGB")
+
+
+def _jpeg_b64(img: Image.Image, side: int, quality: int = 85) -> str:
+    img = img.copy()
+    img.thumbnail((side, side))
     out = io.BytesIO()
-    img.save(out, format="JPEG", quality=85)
-    return base64.b64encode(out.getvalue()).decode(), "image/jpeg"
+    img.save(out, format="JPEG", quality=quality)
+    return base64.b64encode(out.getvalue()).decode()
+
+
+def prepare_image(data: bytes) -> tuple[str, str]:
+    """Validate, downscale and JPEG-encode an upload. Returns (base64, mime).
+
+    Raises ValueError (shown to the user as a 400) for anything that is not a readable,
+    reasonably sized image. CPU-bound: call it off the event loop.
+    """
+    return _jpeg_b64(_load(data), MAX_SIDE), "image/jpeg"
+
+
+def prepare_photo(data: bytes) -> tuple[str, str]:
+    """Decode once, return (full, view): base64 JPEGs at 2048 px for crops and 1024 px for
+    the first look. Same validation as prepare_image. CPU-bound: call it off the loop."""
+    img = _load(data)
+    return _jpeg_b64(img, FULL_SIDE, quality=88), _jpeg_b64(img, MAX_SIDE)
+
+
+def crop_photo(full_b64: str, x: float, y: float, w: float, h: float) -> str:
+    """Crop a region given as 0-1 fractions of the photo; small crops are upscaled."""
+    img = Image.open(io.BytesIO(base64.b64decode(full_b64))).convert("RGB")
+    x0 = min(max(x, 0.0), 1.0) * img.width
+    y0 = min(max(y, 0.0), 1.0) * img.height
+    x1 = min(max(x + w, 0.0), 1.0) * img.width
+    y1 = min(max(y + h, 0.0), 1.0) * img.height
+    if x1 - x0 < MIN_CROP_SIDE or y1 - y0 < MIN_CROP_SIDE:
+        raise ValueError("That region is too small to see anything. Choose a larger area.")
+    crop = img.crop((int(x0), int(y0), int(x1), int(y1)))
+    if max(crop.size) < CROP_TARGET_SIDE:
+        scale = CROP_TARGET_SIDE / max(crop.size)
+        crop = crop.resize((int(crop.width * scale), int(crop.height * scale)), Image.LANCZOS)
+    return _jpeg_b64(crop, MAX_SIDE)
 
 
 async def describe(
@@ -124,3 +162,54 @@ async def describe(
             image_quality="poor",
             quality_notes="The photo could not be analysed; diagnosis uses your notes only.",
         )
+
+
+class RegionAnswer(BaseModel):
+    answer: str
+    visible_features: list[str] = Field(default_factory=list)
+    confidence: float = Field(0.5, ge=0.0, le=1.0)
+    image_quality: Literal["good", "fair", "poor"] = "fair"
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _conf(cls, v: Any) -> Any:
+        return _unit(v)
+
+    @field_validator("image_quality", mode="before")
+    @classmethod
+    def _quality(cls, v: Any) -> Any:
+        v = v.strip().lower() if isinstance(v, str) else v
+        return v if v in ("good", "fair", "poor") else "fair"
+
+
+async def look_closer(
+    llm: LLM,
+    model: str,
+    crop_b64: str,
+    question: str,
+    trace: list[ModelCall],
+    repair_model: str | None = None,
+) -> RegionAnswer:
+    """Ask the vision model one targeted question about a crop. Raises ModelError."""
+    messages = [
+        {"role": "system", "content": LOOK_CLOSER_SYSTEM},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": f"<question>{sanitize(question, 300)}</question>"},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{crop_b64}"}},
+            ],
+        },
+    ]
+    return await complete_json(
+        llm,
+        step="look_closer",
+        models=[model],
+        messages=messages,
+        schema=RegionAnswer,
+        trace=trace,
+        thinking=False,
+        max_tokens=VISION_MAX_TOKENS,
+        temperature=0.4,
+        repair_model=repair_model,
+    )

@@ -136,6 +136,7 @@ class ModelCall(BaseModel):
     latency_ms: int
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
+    cost_usd: float | None = None
     note: str = ""
 
 

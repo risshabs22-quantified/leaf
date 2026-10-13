@@ -1,0 +1,309 @@
+"""Deep mode: run one case through the investigator, then write the care plan.
+
+    photos --vision (thinking off, in parallel)--> first looks
+           --investigator (Ultra + tools)--> differential with evidence ids
+           --Lightning--> care plan from the case's sources
+Any failure in the investigation falls back to the Quick pipeline, and the response says so.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+from collections.abc import Awaitable, Callable
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
+
+from backend.agent import AgentError, AgentResult, Investigator
+from backend.case import Case, Evidence, Hypothesis, Photo, StepRecord
+from backend.crops import infer_crop
+from backend.models import ModelError, complete_json
+from backend.pipeline import ESCALATE_REASON, Leaf, _source_for_prompt, is_low_confidence
+from backend.prompts import PLAN_SYSTEM, sanitize
+from backend.schemas import (
+    Candidate,
+    CarePlan,
+    DiagnoseResponse,
+    Diagnosis,
+    ModelCall,
+    Observation,
+    Source,
+)
+from backend.store import CaseStore
+from backend.vision import describe
+
+log = logging.getLogger("leaf.deep")
+
+Emit = Callable[[dict[str, Any]], Awaitable[None]]
+
+
+async def _ignore(_: dict[str, Any]) -> None:
+    return None
+
+
+class CaseStateError(Exception):
+    """The case is not in a state that allows this action (e.g. answers sent twice)."""
+
+
+class PhotoInfo(BaseModel):
+    id: str
+    label: str
+    observation: Observation | None = None
+
+
+class DeepResponse(DiagnoseResponse):
+    """A superset of the Quick response, so the same page can render either."""
+
+    mode: Literal["deep", "quick"] = "deep"
+    case_id: str = ""
+    status: Literal["done", "needs_answers", "fallback"] = "done"
+    notice: str = ""
+    questions: list[str] = Field(default_factory=list)
+    differential: list[Hypothesis] = Field(default_factory=list)
+    evidence: list[Evidence] = Field(default_factory=list)
+    steps: list[StepRecord] = Field(default_factory=list)
+    photos: list[PhotoInfo] = Field(default_factory=list)
+    summary: str = ""
+    limit: str = ""
+    cost_usd: float = 0.0
+    tavily_credits: int = 0
+
+
+def _source_int(source_id: str) -> int:
+    return int(source_id.lstrip("S") or 0)
+
+
+class DeepLeaf:
+    def __init__(self, leaf: Leaf, store: CaseStore):
+        self.leaf = leaf
+        self.store = store
+        self.investigator = Investigator(leaf.llm, leaf.searcher, leaf.settings, leaf.vision_model)
+
+    # ------------------------------------------------------------------ entry points
+
+    async def start(
+        self,
+        *,
+        photos: list[tuple[str, str, str]],  # (label, full_b64, view_b64)
+        notes: str = "",
+        region: str = "",
+        lat: float | None = None,
+        lon: float | None = None,
+        emit: Emit = _ignore,
+    ) -> DeepResponse:
+        case = Case(
+            notes=notes,
+            region=region,
+            lat=None if lat is None else round(lat, 1),  # never keep a precise location
+            lon=None if lon is None else round(lon, 1),
+            photos=[
+                Photo(id=f"P{i + 1}", label=label, full_b64=full, view_b64=view)
+                for i, (label, full, view) in enumerate(photos)
+            ],
+        )
+        await emit({"type": "case", "case_id": case.id})
+        await self._first_looks(case, emit)
+        case.crop = infer_crop(
+            notes, *(p.observation.plant_guess for p in case.photos if p.observation)
+        )
+        return await self._investigate(case, emit, lambda: self.investigator.run(case, emit))
+
+    async def resume(self, case: Case, answers: list[str], emit: Emit = _ignore) -> DeepResponse:
+        # Checked with no await before the investigator marks the case running, so two
+        # answer submissions for one case cannot both resume it.
+        if case.status != "needs_answers":
+            raise CaseStateError("This case is not waiting for answers.")
+        return await self._investigate(
+            case, emit, lambda: self.investigator.resume(case, answers, emit)
+        )
+
+    # ------------------------------------------------------------------ steps
+
+    async def _first_looks(self, case: Case, emit: Emit) -> None:
+        vision = self.leaf.vision_model
+        if not case.photos or not vision:
+            return
+        traces: list[list[ModelCall]] = [[] for _ in case.photos]
+        looks = await asyncio.gather(
+            *(
+                describe(
+                    self.leaf.llm,
+                    vision,
+                    p.view_b64,
+                    "image/jpeg",
+                    case.notes,
+                    t,
+                    self.leaf.settings.fast_model,
+                )
+                for p, t in zip(case.photos, traces, strict=True)
+            )
+        )
+        for photo, obs, trace in zip(case.photos, looks, traces, strict=True):
+            photo.observation = obs
+            for call in trace:
+                case.add_trace(call)
+            await emit(
+                {"type": "first_look", "photo_id": photo.id, "observation": obs.model_dump()}
+            )
+
+    async def _investigate(
+        self, case: Case, emit: Emit, work: Callable[[], Awaitable[AgentResult]]
+    ) -> DeepResponse:
+        try:
+            result = await work()
+        except Exception as exc:  # noqa: BLE001 - any agent failure, even a bug, degrades to Quick
+            if isinstance(exc, (AgentError, ModelError, TimeoutError)):
+                log.warning("deep case %s fell back to Quick: %s", case.id, exc)
+            else:
+                log.exception("deep case %s crashed; falling back to Quick", case.id)
+            case.status = "failed"
+            await self.store.put(case)
+            await emit({"type": "fallback", "reason": "The investigation could not finish."})
+            return await self._quick_fallback(case)
+        await self.store.put(case)
+        if result.kind == "ask":
+            return self._response(case, status="needs_answers", limit=result.limit)
+        plan = await self._plan(case)
+        case.status = "done"
+        await self.store.put(case)
+        response = self._response(case, plan=plan, limit=result.limit)
+        await emit({"type": "done", "case_id": case.id})
+        return response
+
+    async def _plan(self, case: Case) -> CarePlan:
+        s = self.leaf.settings
+        sources = self._sources(case)
+        diagnosis = self._diagnosis(case)
+        plan_input = (
+            f"<diagnosis>{diagnosis.model_dump_json()}</diagnosis>\n"
+            f"<sources>{json.dumps([_source_for_prompt(src) for src in sources])}</sources>\n"
+            f"<region>{sanitize(case.region) or 'unknown'}</region>"
+        )
+        trace: list[ModelCall] = []
+        try:
+            plan = await complete_json(
+                self.leaf.llm,
+                step="plan",
+                models=[s.fast_model, s.fallback_model],
+                messages=[
+                    {"role": "system", "content": PLAN_SYSTEM},
+                    {"role": "user", "content": plan_input},
+                ],
+                schema=CarePlan,
+                trace=trace,
+                thinking=False,
+                max_tokens=2500,
+                temperature=0.6,
+                repair_model=s.fast_model,
+            )
+        except ModelError:
+            plan = CarePlan(
+                summary="Leaf could not write a care plan right now. Your diagnosis is above.",
+                escalate=True,
+                escalate_reason="Plan generation failed; check with your local extension office.",
+            )
+        finally:
+            for call in trace:
+                case.add_trace(call)
+        valid = {src.id for src in sources}
+        for step in plan.steps:
+            step.source_ids = [i for i in step.source_ids if i in valid]
+        if self._low(case) and not plan.escalate:
+            plan.escalate, plan.escalate_reason = True, ESCALATE_REASON
+        return plan
+
+    # ------------------------------------------------------------------ conversions
+
+    def _low(self, case: Case) -> bool:
+        qualities = [p.observation.image_quality for p in case.photos if p.observation]
+        quality = "poor" if qualities and all(q == "poor" for q in qualities) else "fair"
+        return is_low_confidence([h.probability for h in case.differential], quality)
+
+    def _sources(self, case: Case) -> list[Source]:
+        return [
+            Source(
+                id=_source_int(src.id),
+                title=src.title,
+                url=src.url,
+                snippet=(" … ".join(src.passages) or src.snippet)[:1200],
+            )
+            for src in case.sources
+        ]
+
+    def _diagnosis(self, case: Case) -> Diagnosis:
+        by_id = {e.id: e.summary for e in case.evidence}
+        return Diagnosis(
+            candidates=[
+                Candidate(
+                    name=h.name,
+                    confidence=h.probability,
+                    evidence_for=[by_id[e] for e in h.evidence_for if e in by_id][:4],
+                    evidence_against=[by_id[e] for e in h.evidence_against if e in by_id][:4],
+                )
+                for h in case.differential
+            ],
+            follow_up_questions=case.questions[:3] if case.status == "needs_answers" else [],
+            reasoning_summary=case.summary,
+        )
+
+    def _response(
+        self,
+        case: Case,
+        *,
+        status: Literal["done", "needs_answers"] = "done",
+        plan: CarePlan | None = None,
+        limit: str = "",
+    ) -> DeepResponse:
+        first = next((p.observation for p in case.photos if p.observation), None)
+        return DeepResponse(
+            observation=first or Observation(quality_notes="No photo; using your notes only."),
+            diagnosis=self._diagnosis(case),
+            plan=plan or CarePlan(summary="Answer the questions so Leaf can finish this case."),
+            sources=self._sources(case),
+            trace=case.trace,
+            low_confidence=self._low(case),
+            mode="deep",
+            case_id=case.id,
+            status=status,
+            questions=case.questions if status == "needs_answers" else [],
+            differential=case.differential,
+            evidence=case.evidence,
+            steps=case.steps,
+            photos=[
+                PhotoInfo(id=p.id, label=p.label, observation=p.observation) for p in case.photos
+            ],
+            summary=case.summary,
+            limit=limit,
+            cost_usd=round(case.cost_usd, 5),
+            tavily_credits=case.tavily_credits,
+        )
+
+    async def _quick_fallback(self, case: Case, notice: str = "") -> DeepResponse:
+        quick = await self.leaf.diagnose(
+            image_b64=case.photos[0].view_b64 if case.photos else None,
+            notes=case.notes,
+            region=case.region,
+        )
+        return DeepResponse(
+            **quick.model_dump(),
+            mode="quick",
+            case_id=case.id,
+            status="fallback",
+            notice=notice or "Deep mode could not finish this case, so this is a Quick diagnosis.",
+            steps=case.steps,
+            cost_usd=round(case.cost_usd + sum(t.cost_usd or 0 for t in quick.trace), 5),
+            tavily_credits=case.tavily_credits,
+        )
+
+    async def quick_only(
+        self, *, photos: list[tuple[str, str, str]], notes: str, region: str, notice: str
+    ) -> DeepResponse:
+        """Used when Deep is unavailable (daily cap): a Quick diagnosis that says why."""
+        case = Case(
+            notes=notes,
+            region=region,
+            photos=[Photo(id="P1", label=lbl, full_b64=f, view_b64=v) for lbl, f, v in photos[:1]],
+        )
+        return await self._quick_fallback(case, notice=notice)
