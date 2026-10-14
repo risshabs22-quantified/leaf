@@ -123,6 +123,18 @@ def test_a_journal_outage_never_fails_the_diagnosis(settings):
         app.state.journal.put = broken
         r = c.post("/api/diagnose", data={"notes": "spots"})
     assert r.status_code == 200 and r.json()["diagnosis"]["candidates"]
+    assert r.json()["owner_token"] == ""  # not saved, so no share link is offered
+
+
+def test_unreadable_storage_is_a_503_not_a_crash(settings):
+    with api(settings) as (c, _):
+
+        async def broken(entry_id):
+            raise OSError("no credentials")
+
+        app.state.journal.get = broken
+        r = c.get("/api/cases/abc")
+    assert r.status_code == 503 and "unavailable" in r.json()["detail"]
 
 
 def test_unknown_reports_are_404(settings):

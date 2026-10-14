@@ -300,7 +300,7 @@ function render(d) {
   renderVerdict(d, top);
 
   renderConfidence(d);
-  const saved = d.case_id && d.status !== "needs_answers";
+  const saved = d.case_id && d.owner_token && d.status !== "needs_answers";
   $("share").hidden = !saved;
   if (saved) {
     // The owner token rides in the fragment, which browsers never send to the server.

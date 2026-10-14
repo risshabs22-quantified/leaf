@@ -667,10 +667,15 @@ async def save_report(
         await request.app.state.journal.put(entry)
     except Exception:  # noqa: BLE001 - the gardener still gets the diagnosis
         log.exception("could not save the report to the journal")
+        report.owner_token = ""  # nothing was saved, so the page offers no share link
 
 
 async def _entry(request: Request, case_id: str) -> JournalEntry:
-    entry = await request.app.state.journal.get(case_id[:64])
+    try:
+        entry = await request.app.state.journal.get(case_id[:64])
+    except Exception as e:  # noqa: BLE001 - storage down or misconfigured
+        log.exception("could not read the journal")
+        raise HTTPException(503, "Saved reports are unavailable right now. Try again later.") from e
     if entry is None:
         raise HTTPException(404, "This report has expired or does not exist.")
     return entry
