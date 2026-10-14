@@ -151,7 +151,9 @@ def test_unknown_reports_are_404(settings):
 def test_the_share_page_is_served(settings):
     with api(settings) as (c, _):
         r = c.get("/c/anything")
+        js = c.get("/static/app.js")
     assert r.status_code == 200 and "text/html" in r.headers["content-type"]
+    assert r.headers["cache-control"] == js.headers["cache-control"] == "no-cache"
 
 
 # ---------------------------------------------------------------- check-ins

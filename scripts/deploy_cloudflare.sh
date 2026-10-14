@@ -48,10 +48,10 @@ json.dump({k: env[k] for k in keys}, open(sys.argv[1], "w"))
 print(f"{len(keys)} secrets ready")
 PY
 
-echo "==> Building the image and deploying the Worker"
-"${WRANGLER[@]}" deploy
-echo "==> Setting secrets"
-"${WRANGLER[@]}" secret bulk "$SECRETS_FILE"
+# Secrets ship with the version (--secrets-file). Setting them afterwards is too late: the
+# rollout restarts the container as soon as the version is live, with the env it had then.
+echo "==> Building the image and deploying the Worker with its secrets"
+"${WRANGLER[@]}" deploy --secrets-file "$SECRETS_FILE"
 
 echo "==> Deployed. Open the URL Wrangler printed above, once, in a browser."
 echo "    Container status:  npx --prefix cloudflare wrangler containers list"

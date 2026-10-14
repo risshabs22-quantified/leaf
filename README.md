@@ -6,7 +6,7 @@ Leaf is a plant-doctor agent for home gardeners and small growers. Upload up to 
 
 Built for the [Nebius x NVIDIA Global AI Hackathon](https://nebiusglobalaihackathon.devpost.com/), Best Apps and Agents track, with Tavily at runtime.
 
-**Try it:** _demo URL coming soon_ · **Video:** _coming soon_
+**Try it:** https://leaf.risshabs-22.workers.dev · **Video:** _coming soon_
 
 ## Why
 
@@ -117,7 +117,7 @@ Every finished report is saved for 30 days under an unguessable link (`/c/<id>`)
 
 - **Nebius Token Factory**: every model call (OpenAI-compatible API, `backend/models.py`), including native tool calling for the investigator and live per-token prices from `/models` for the cost meter.
 - **NVIDIA Nemotron 3 Ultra, Super and 3.5 Lightning**: every reasoning and writing step.
-- **Hosting**: the app container runs on Cloudflare Containers (`make deploy-cloudflare`, `cloudflare/`), with reports in an R2 bucket. Only the hosting is there: every model call still goes to Token Factory. `scripts/deploy_nebius.sh` deploys the same image to a Nebius Serverless Endpoint instead.
+- **Hosting**: Leaf runs on Cloudflare Containers (`cloudflare/`, `make deploy-cloudflare`), with saved reports in a Cloudflare R2 bucket. Cloudflare only hosts the app: every model call goes to Nebius Token Factory.
 - **Tavily**: search, extract and news at runtime (`backend/search.py`, `backend/tools.py`).
 - **Open-Meteo**: weather for the disease-risk rules. Weather data by [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0).
 
@@ -133,7 +133,7 @@ make smoke-all      # checks keys, models, regions, vision model (under 1 cent +
 make run            # http://localhost:8000
 ```
 
-Other commands: `make test` (offline tests, no credits), `make check`, `make eval`, `make docker-build`, `make deploy-cloudflare` (or `make deploy` for Nebius). See `make help`. Settings are listed in `.env.example`; Deep is capped at 20 cases a day by default (`LEAF_DEEP_DAILY_CAP`).
+Other commands: `make test` (offline tests, no credits), `make check`, `make eval`, `make docker-build`, `make deploy-cloudflare`. See `make help`. Settings are listed in `.env.example`; Deep is capped at 20 cases a day by default (`LEAF_DEEP_DAILY_CAP`).
 
 ## Project layout
 
@@ -143,7 +143,7 @@ backend/    FastAPI app; Token Factory client (models.py); Quick pipeline (pipel
             weather and rules (conditions.py, disease_rules.py); journal.py, checkin.py
 frontend/   index.html (diagnosis), case.html (shared report), no build step
 tests/      offline tests with scripted fake models, tools and search
-scripts/    smoke test, eval runner, calibration, Cloudflare and Nebius deploys
+scripts/    smoke test, eval runner, calibration, deploy
 cloudflare/ the Worker and config that serve the container on Cloudflare
 evals/      labelled photo cases and their licences
 docs/       AGENT_V2.md (agent design, verified facts, milestones), PROGRESS.md

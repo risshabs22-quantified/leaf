@@ -1,5 +1,7 @@
 # One container serves the API and the frontend. No GPU needed: models run on Token Factory.
 FROM python:3.12-slim
+LABEL org.opencontainers.image.source=https://github.com/risshabs22-quantified/leaf \
+      org.opencontainers.image.licenses=MIT
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 WORKDIR /app

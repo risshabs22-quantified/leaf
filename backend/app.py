@@ -247,6 +247,10 @@ async def security_headers(request: Request, call_next):
     response.headers.setdefault("Referrer-Policy", "no-referrer")
     if not request.url.path.startswith(("/docs", "/redoc", "/openapi")):
         response.headers.setdefault("Content-Security-Policy", CSP)
+    if request.url.path == "/" or request.url.path.startswith(("/static/", "/c/")):
+        # Revalidate every time (a cheap 304 via ETag), so a deploy never leaves a returning
+        # visitor running last version's script against this version's API.
+        response.headers.setdefault("Cache-Control", "no-cache")
     return response
 
 
