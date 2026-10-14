@@ -1,0 +1,17 @@
+{
+  "name": "leaf-cloudflare",
+  "private": true,
+  "description": "Cloudflare Worker that serves Leaf's container",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "0.3.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260929.1",
+    "typescript": "5.9.3",
+    "wrangler": "4.144.0"
+  }
+}

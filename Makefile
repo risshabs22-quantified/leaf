@@ -2,7 +2,7 @@
 PY := .venv/bin/python
 PIP := .venv/bin/pip
 
-.PHONY: help setup smoke smoke-all test lint fmt check run docker-build docker-run deploy eval clean
+.PHONY: help setup smoke smoke-all test lint fmt check run docker-build docker-run deploy deploy-cloudflare eval clean
 
 help:  ## List targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-13s %s\n", $$1, $$2}'
@@ -40,6 +40,9 @@ docker-run:  ## Run the container with your .env
 
 deploy:  ## Deploy to a Nebius Serverless Endpoint (needs IMAGE; DRY_RUN=1 validates only)
 	./scripts/deploy_nebius.sh
+
+deploy-cloudflare:  ## Deploy to Cloudflare Containers (DRY_RUN=1 validates only)
+	./scripts/deploy_cloudflare.sh
 
 eval:  ## Score Leaf on evals/cases.jsonl (spends credits)
 	$(PY) scripts/eval.py

@@ -16,7 +16,7 @@ Keep it short: newest entries first.
 | Tavily live | done | `make smoke-all` OK; live `/api/diagnose` returned 6 sources |
 | Eval set | tune split done (52 Commons photos); test split waiting on the user's phone photos | `evals/README.md`, `docs/ACCURACY_AUDIT.md` |
 | Three verdicts and Auto mode (Auto is the default) | done | README "Quick, Deep and Auto (measured)" |
-| Deployed on Nebius Serverless Endpoint | todo | public URL + `/api/health` |
+| Deployed (Cloudflare Containers; Nebius AI Cloud billing suspended) | todo | public URL + `/api/health` |
 | README final, video, Devpost draft | todo | `/submission-check` |
 
 ## Next
