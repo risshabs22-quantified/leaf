@@ -14,6 +14,7 @@ import json
 import logging
 import re
 
+from backend.actives import garden_prompt
 from backend.config import Settings
 from backend.models import LLM, ModelError, complete_json
 from backend.prompts import CHAT_SYSTEM, DIAGNOSE_SYSTEM, PLAN_SYSTEM, sanitize
@@ -23,6 +24,7 @@ from backend.schemas import (
     ChatResponse,
     DiagnoseResponse,
     Diagnosis,
+    Garden,
     ModelCall,
     Observation,
 )
@@ -56,7 +58,9 @@ class Leaf:
         notes: str = "",
         region: str = "",
         answers: str = "",
+        garden: Garden | None = None,
     ) -> DiagnoseResponse:
+        garden = garden or Garden()
         trace: list[ModelCall] = []
         s = self.settings
 
@@ -118,7 +122,8 @@ class Leaf:
         plan_input = (
             f"<diagnosis>{sanitize(diagnosis.model_dump_json())}</diagnosis>\n"
             f"<sources>{json.dumps([_source_for_prompt(src) for src in sources])}</sources>\n"
-            f"<region>{sanitize(region) or 'unknown'}</region>"
+            f"<region>{sanitize(region) or 'unknown'}</region>\n"
+            f"<garden>{garden_prompt(garden)}</garden>"
         )
         try:
             plan = await complete_json(
@@ -158,6 +163,7 @@ class Leaf:
             verdict=decision.verdict,
             verdict_reason=decision.reason,
             notice=PAUSED_NOTICE if not sources and search_paused(self.searcher) else "",
+            garden=garden,
         )
 
     async def chat(self, req: ChatRequest) -> ChatResponse:

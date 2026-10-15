@@ -25,6 +25,7 @@
     "LEAF_DAILY_CAP": "60",
     "LEAF_TRUSTED_PROXY_HOPS": "1",
     "LEAF_JOURNAL_BUCKET": "leaf-journal",
+    "LEAF_PUBLIC_URL": "https://leaf.risshabs-22.workers.dev",
     "AWS_ENDPOINT_URL": "https://a5df400bbbb2f6a57594bc84d3d11c56.r2.cloudflarestorage.com",
     "AWS_REGION": "auto"
   }

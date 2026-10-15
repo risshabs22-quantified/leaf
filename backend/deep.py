@@ -45,6 +45,7 @@ from backend.schemas import (
     CarePlan,
     DiagnoseResponse,
     Diagnosis,
+    Garden,
     ModelCall,
     Observation,
     Source,
@@ -173,10 +174,12 @@ class DeepLeaf:
         lat: float | None = None,
         lon: float | None = None,
         emit: Emit = _ignore,
+        garden: Garden | None = None,
     ) -> DeepResponse:
         case = Case(
             notes=notes,
             region=region,
+            garden=garden or Garden(),
             lat=None if lat is None else round(lat, 1),  # never keep a precise location
             lon=None if lon is None else round(lon, 1),
             photos=[
@@ -221,6 +224,7 @@ class DeepLeaf:
         lon: float | None = None,
         emit: Emit = _ignore,
         may_investigate: Callable[[], str] = lambda: "",
+        garden: Garden | None = None,
     ) -> DeepResponse:
         """Quick first. Only when Quick is unsure does Leaf open a Deep case, which starts from
         Quick's look at the first photo, its differential, evidence and sources instead of
@@ -230,7 +234,10 @@ class DeepLeaf:
         # Bounded, so the investigation that may follow still fits in the request deadline.
         quick = await asyncio.wait_for(
             self.leaf.diagnose(
-                image_b64=photos[0][2] if photos else None, notes=notes, region=region
+                image_b64=photos[0][2] if photos else None,
+                notes=notes,
+                region=region,
+                garden=garden,
             ),
             self.leaf.settings.deadline_s,
         )
@@ -251,6 +258,7 @@ class DeepLeaf:
         case = Case(
             notes=notes,
             region=region,
+            garden=garden or Garden(),
             lat=None if lat is None else round(lat, 1),  # never keep a precise location
             lon=None if lon is None else round(lon, 1),
             photos=[
@@ -610,6 +618,7 @@ class DeepLeaf:
             mode="deep",
             case_id=case.id,
             status=status,
+            garden=case.garden,
             questions=case.questions if status == "needs_answers" else [],
             differential=case.differential,
             first_differential=case.first_differential,
@@ -639,6 +648,7 @@ class DeepLeaf:
                     image_b64=case.photos[0].view_b64 if case.photos else None,
                     notes=case.notes,
                     region=case.region,
+                    garden=case.garden,
                 ),
                 QUICK_FALLBACK_TIMEOUT_S,
             )
@@ -679,12 +689,19 @@ class DeepLeaf:
         )
 
     async def quick_only(
-        self, *, photos: list[tuple[str, str, str]], notes: str, region: str, notice: str
+        self,
+        *,
+        photos: list[tuple[str, str, str]],
+        notes: str,
+        region: str,
+        notice: str,
+        garden: Garden | None = None,
     ) -> DeepResponse:
         """Used when Deep is unavailable (daily cap): a Quick diagnosis that says why."""
         case = Case(
             notes=notes,
             region=region,
+            garden=garden or Garden(),
             photos=[Photo(id="P1", label=lbl, full_b64=f, view_b64=v) for lbl, f, v in photos[:1]],
         )
         return await self._quick_fallback(case, notice=notice)

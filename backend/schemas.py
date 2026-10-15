@@ -184,11 +184,24 @@ class Source(BaseModel):
     snippet: str = ""
 
 
+class Garden(BaseModel):
+    """The gardener's preferences, applied to the care plan in code (backend/actives.py)."""
+
+    organic: bool = False  # only methods allowed in organic growing
+    pets: bool = False  # pets or children use this garden
+
+
 class PlanStep(BaseModel):
     action: str
     why: str = ""
     source_ids: list[int] = Field(default_factory=list)
     flag: str = ""  # set by the claim check when a source only partly supports the step
+    # Set in code from backend/actives.py, never by the model:
+    actives: list[str] = Field(default_factory=list)  # products named in the step
+    organic: bool | None = None  # None when the step names no product
+    pet_risk: str = ""  # "", low, caution or high
+    bee_risk: bool = False
+    precautions: list[str] = Field(default_factory=list)
 
 
 class CarePlan(BaseModel):
@@ -201,6 +214,12 @@ class CarePlan(BaseModel):
     check_in_days: int = Field(5, ge=1, le=30)
     escalate: bool = False  # set in code from the verdict: True means "send to a lab"
     escalate_reason: str = ""
+    # Set in code from backend/actives.py:
+    removed: list[str] = Field(default_factory=list)  # steps dropped for the gardener's preferences
+    cautions: list[str] = Field(default_factory=list)  # plan-wide (oil with sulfur, bees, pets)
+    spray: bool = False  # the plan applies a product, so a spray window helps
+    heat_limit_c: float = 32.0  # hottest hour to spray in (29 C for oils and sulfur)
+    bee_safe_hours: bool = False  # a product harms bees: spray only when they are not foraging
 
     @field_validator("watch_for", mode="before")
     @classmethod
@@ -247,6 +266,7 @@ class DiagnoseResponse(BaseModel):
     low_confidence: bool  # True unless the verdict is "confident"
     verdict: Literal["confident", "likely", "lab"] = "likely"
     verdict_reason: str = ""
+    garden: Garden = Field(default_factory=Garden)
 
 
 class ChatTurn(BaseModel):

@@ -115,6 +115,8 @@ class Settings:
     journal_days: int = field(default_factory=lambda: _env_int("LEAF_JOURNAL_DAYS", 30))
     # Set in production: entries go to this Object Storage bucket (AWS_* variables configure it).
     journal_bucket: str = field(default_factory=lambda: _env("LEAF_JOURNAL_BUCKET", ""))
+    # The site's public address for links in calendar reminders ("" = the request's own host).
+    public_url: str = field(default_factory=lambda: _env("LEAF_PUBLIC_URL", ""))
     # Proxies in front of Leaf that append to X-Forwarded-For (0 = none, trust the socket).
     trusted_proxy_hops: int = field(default_factory=lambda: _env_int("LEAF_TRUSTED_PROXY_HOPS", 1))
 

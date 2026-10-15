@@ -18,18 +18,21 @@ from pathlib import Path
 from typing import Annotated, Any, TypeVar
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
+from backend.actives import apply_garden
+from backend.calendar_file import Reminder, ics
 from backend.checkin import check_in
+from backend.conditions import ConditionsError, WeatherClient
 from backend.config import Settings, get_settings
 from backend.deep import CaseStateError, DeepLeaf, DeepResponse
 from backend.journal import JournalEntry, open_journal, public_view, thumbnail
 from backend.models import ModelError, TokenFactory
 from backend.pipeline import Leaf
-from backend.schemas import ChatRequest, ChatResponse, DiagnoseResponse
+from backend.schemas import ChatRequest, ChatResponse, DiagnoseResponse, Garden
 from backend.search import (
     CreditBudget,
     NullSearcher,
@@ -38,6 +41,7 @@ from backend.search import (
     search_paused,
     tavily_balance,
 )
+from backend.spray import SprayForecast, plan_spray
 from backend.store import MemoryCaseStore
 from backend.vision import discover_vision_model, prepare_image, prepare_photo
 
@@ -204,6 +208,10 @@ async def build_leaf(settings: Settings) -> Leaf:
 async def lifespan(app: FastAPI):
     settings = get_settings()
     app.state.limiter = RateLimiter(settings.per_ip_per_hour, settings.daily_cap)
+    # Spray windows and calendar files cost no credits; this only protects the weather service.
+    app.state.tool_limiter = RateLimiter(TOOL_PER_IP_PER_HOUR, TOOL_DAILY_CAP)
+    if not getattr(app.state, "weather", None):
+        app.state.weather = WeatherClient()
     app.state.slots = asyncio.Semaphore(settings.max_concurrent)
     if not getattr(app.state, "leaf", None):
         app.state.leaf = await build_leaf(settings)
@@ -310,6 +318,8 @@ async def diagnose(
     notes: Annotated[str, Form()] = "",
     region: Annotated[str, Form()] = "",
     answers: Annotated[str, Form()] = "",
+    organic: Annotated[bool, Form()] = False,
+    pets: Annotated[bool, Form()] = False,
 ) -> DiagnoseResponse:
     check_limits(request)
     if image is None and not notes.strip():
@@ -331,10 +341,59 @@ async def diagnose(
             notes=notes[:2000],
             region=region[:100],
             answers=answers[:2000],
+            garden=Garden(organic=organic, pets=pets),
         ),
     )
     await save_report(request, result, "quick", [image_b64] if image_b64 else [], ["photo"])
     return result
+
+
+TOOL_PER_IP_PER_HOUR, TOOL_DAILY_CAP = 40, 4000
+
+
+class SprayRequest(BaseModel):
+    region: str = Field("", max_length=100)
+    lat: float | None = Field(None, ge=-90, le=90)
+    lon: float | None = Field(None, ge=-180, le=180)
+    heat_limit_c: float = Field(32.0, ge=20, le=40)
+    bees: bool = False
+
+
+@app.post("/api/spray-window", response_model=SprayForecast)
+async def spray_window(request: Request, body: SprayRequest) -> SprayForecast:
+    """The best hours to spray in the next five days, scored in code from the forecast."""
+    request.app.state.tool_limiter.check(
+        client_ip(request, request.app.state.leaf.settings.trusted_proxy_hops)
+    )
+    weather: WeatherClient = request.app.state.weather
+    try:
+        if body.lat is not None and body.lon is not None:
+            lat, lon, place = body.lat, body.lon, "your location"
+        elif body.region.strip():
+            found = await weather.geocode(body.region)
+            if found is None:
+                raise HTTPException(404, "Leaf could not find that place. Try a city and state.")
+            lat, lon, place = found.lat, found.lon, found.label
+        else:
+            raise HTTPException(400, "Add your town or use your location to plan a spray.")
+        data = await weather.forecast(lat, lon)
+    except ConditionsError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    return plan_spray(data, None, body.heat_limit_c, body.bees, place)
+
+
+@app.post("/api/calendar.ics")
+async def calendar_file(request: Request, body: Reminder) -> Response:
+    """A calendar reminder (check-in or spray window) as an .ics file to open or import."""
+    request.app.state.tool_limiter.check(
+        client_ip(request, request.app.state.leaf.settings.trusted_proxy_hops)
+    )
+    text = ics(body, request.app.state.leaf.settings.public_url or str(request.base_url))
+    return Response(
+        text,
+        media_type="text/calendar; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="leaf-reminder.ics"'},
+    )
 
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -395,7 +454,7 @@ async def _deep_inputs(
 
 
 def _deep_work(
-    request: Request, photos, notes: str, region: str, lat, lon
+    request: Request, photos, notes: str, region: str, lat, lon, garden: Garden
 ) -> tuple[Callable[[Any], Awaitable[DeepResponse]], float | None]:
     """What to run for a new case: Deep, or Quick with a notice once today's Deep cap is used."""
     deep: DeepLeaf = request.app.state.deep
@@ -408,19 +467,21 @@ def _deep_work(
             f"Deep mode has reached today's limit of {cap} cases, so this is a Quick diagnosis."
         )
         return (
-            lambda emit: deep.quick_only(photos=photos, notes=notes, region=region, notice=notice),
+            lambda emit: deep.quick_only(
+                photos=photos, notes=notes, region=region, notice=notice, garden=garden
+            ),
             None,
         )
     return (
         lambda emit: deep.start(
-            photos=photos, notes=notes, region=region, lat=lat, lon=lon, emit=emit
+            photos=photos, notes=notes, region=region, lat=lat, lon=lon, emit=emit, garden=garden
         ),
         _deep_deadline(request),
     )
 
 
 def _auto_work(
-    request: Request, photos, notes: str, region: str, lat, lon
+    request: Request, photos, notes: str, region: str, lat, lon, garden: Garden
 ) -> tuple[Callable[[Any], Awaitable[DeepResponse]], float]:
     """Auto: Quick first; today's Deep cap is spent only if Leaf decides to investigate."""
     deep: DeepLeaf = request.app.state.deep
@@ -441,6 +502,7 @@ def _auto_work(
             lon=lon,
             emit=emit,
             may_investigate=may_investigate,
+            garden=garden,
         ),
         request.app.state.leaf.settings.deadline_s + _deep_deadline(request),
     )
@@ -457,10 +519,14 @@ async def auto(
     region: Annotated[str, Form()] = "",
     lat: Annotated[float | None, Form()] = None,
     lon: Annotated[float | None, Form()] = None,
+    organic: Annotated[bool, Form()] = False,
+    pets: Annotated[bool, Form()] = False,
 ) -> DeepResponse:
     check_limits(request)
     photos, lat, lon = await _deep_inputs(request, notes, region, lat, lon)
-    work, timeout = _auto_work(request, photos, notes, region, lat, lon)
+    work, timeout = _auto_work(
+        request, photos, notes, region, lat, lon, Garden(organic=organic, pets=pets)
+    )
     result = await run_limited(request, lambda: work(_ignore_event), timeout=timeout)
     await save_report(
         request, result, result.mode, [v for _, _, v in photos], [lb for lb, _, _ in photos]
@@ -475,10 +541,14 @@ async def auto_stream(
     region: Annotated[str, Form()] = "",
     lat: Annotated[float | None, Form()] = None,
     lon: Annotated[float | None, Form()] = None,
+    organic: Annotated[bool, Form()] = False,
+    pets: Annotated[bool, Form()] = False,
 ) -> StreamingResponse:
     check_limits(request)
     photos, lat, lon = await _deep_inputs(request, notes, region, lat, lon)
-    work, timeout = _auto_work(request, photos, notes, region, lat, lon)
+    work, timeout = _auto_work(
+        request, photos, notes, region, lat, lon, Garden(organic=organic, pets=pets)
+    )
     return _event_stream(request, work, timeout, [(v, lb) for lb, _, v in photos])
 
 
@@ -489,10 +559,14 @@ async def deep(
     region: Annotated[str, Form()] = "",
     lat: Annotated[float | None, Form()] = None,
     lon: Annotated[float | None, Form()] = None,
+    organic: Annotated[bool, Form()] = False,
+    pets: Annotated[bool, Form()] = False,
 ) -> DeepResponse:
     check_limits(request)
     photos, lat, lon = await _deep_inputs(request, notes, region, lat, lon)
-    work, timeout = _deep_work(request, photos, notes, region, lat, lon)
+    work, timeout = _deep_work(
+        request, photos, notes, region, lat, lon, Garden(organic=organic, pets=pets)
+    )
     result = await run_limited(request, lambda: work(_ignore_event), timeout=timeout)
     await save_report(
         request, result, result.mode, [v for _, _, v in photos], [lb for lb, _, _ in photos]
@@ -624,10 +698,14 @@ async def deep_stream(
     region: Annotated[str, Form()] = "",
     lat: Annotated[float | None, Form()] = None,
     lon: Annotated[float | None, Form()] = None,
+    organic: Annotated[bool, Form()] = False,
+    pets: Annotated[bool, Form()] = False,
 ) -> StreamingResponse:
     check_limits(request)
     photos, lat, lon = await _deep_inputs(request, notes, region, lat, lon)
-    work, timeout = _deep_work(request, photos, notes, region, lat, lon)
+    work, timeout = _deep_work(
+        request, photos, notes, region, lat, lon, Garden(organic=organic, pets=pets)
+    )
     return _event_stream(request, work, timeout, [(v, lb) for lb, _, v in photos])
 
 
@@ -655,6 +733,7 @@ async def save_report(
     for answers is saved when it finishes. A journal failure never fails the diagnosis."""
     if getattr(report, "status", "done") == "needs_answers":
         return
+    apply_garden(report.plan, report.garden)  # in code, whatever the plan writer did
     settings = request.app.state.leaf.settings
     try:
         thumbs = [await asyncio.to_thread(thumbnail, v) for v in views[:MAX_DEEP_PHOTOS]]

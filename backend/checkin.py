@@ -13,12 +13,13 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from backend.actives import apply_garden, garden_prompt
 from backend.claims import CHEMICAL, FOLLOW_LABEL, unsourced_amounts
 from backend.config import Settings
 from backend.journal import MAX_CHECKINS, CheckIn, JournalEntry, thumbnail
 from backend.models import LLM, ModelError, complete_json
 from backend.prompts import CHECKIN_PLAN_SYSTEM, CHECKIN_VISION_SYSTEM, sanitize
-from backend.schemas import ModelCall, PlanStep, _unit
+from backend.schemas import CarePlan, Garden, ModelCall, PlanStep, _unit
 
 SPREADING_REASON = (
     "The problem is still spreading. A diagnostic lab can confirm the cause before you treat "
@@ -112,6 +113,7 @@ async def check_in(
         "diagnosis": top,
         "earlier_plan": {"summary": plan.get("summary", ""), "steps": plan.get("steps", [])},
         "change": progress.model_dump(),
+        "garden": garden_prompt(Garden.model_validate(report.get("garden") or {})),
     }
     advice = _Advice(advice="Keep following your care plan and check in again in a few days.")
     try:
@@ -148,7 +150,11 @@ async def check_in(
         if CHEMICAL.search(text) and "label" not in text.lower():
             step.action = f"{step.action.rstrip('. ')}. {FOLLOW_LABEL}"
         kept.append(step)
-    advice.steps = kept
+    # The gardener's preferences hold for check-in advice too, enforced in code.
+    garden = Garden.model_validate(report.get("garden") or {})
+    checked = CarePlan(summary="", steps=kept)
+    apply_garden(checked, garden)
+    advice.steps = checked.steps
     if unsourced_amounts(advice.advice, source_text):
         advice.advice = "Follow the steps below; each one cites its source."
     spreading = progress.status == "spreading"

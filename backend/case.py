@@ -13,7 +13,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from backend.prompts import sanitize
-from backend.schemas import ModelCall, Observation, _unit
+from backend.schemas import Garden, ModelCall, Observation, _unit
 
 
 def new_case_id() -> str:
@@ -74,6 +74,7 @@ class Case(BaseModel):
     status: Literal["running", "needs_answers", "done", "failed"] = "running"
     notes: str = ""
     region: str = ""
+    garden: Garden = Field(default_factory=Garden)  # the gardener's preferences for the plan
     lat: float | None = None
     lon: float | None = None
     crop: str | None = None

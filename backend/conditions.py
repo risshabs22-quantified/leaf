@@ -229,6 +229,29 @@ class WeatherClient:
             self._wx[key] = (time.time(), data)
         return parse_hours(data, self._now()), str(data.get("timezone", ""))
 
+    async def forecast(self, lat: float, lon: float) -> dict[str, Any]:
+        """Hourly forecast for the next 6 days in local time (Open-Meteo's raw response)."""
+        lat, lon = round(lat, 1), round(lon, 1)
+        key = (lat, lon, "forecast " + self._now().strftime("%Y-%m-%dT%H"))
+        hit = self._wx.get(key)
+        if hit and time.time() - hit[0] < WEATHER_TTL_S:
+            return hit[1]
+        data = await self._get(
+            FORECAST_URL,
+            {
+                "latitude": lat,
+                "longitude": lon,
+                "forecast_days": 6,
+                "timezone": "auto",
+                "hourly": "temperature_2m,relative_humidity_2m,precipitation,"
+                "precipitation_probability,wind_speed_10m,wind_gusts_10m",
+            },
+        )
+        if len(self._wx) >= CACHE_MAX:
+            self._wx.clear()
+        self._wx[key] = (time.time(), data)
+        return data
+
 
 def parse_hours(data: dict[str, Any], now_utc: datetime) -> list[rules.Hour]:
     """Keep only hours of complete days before today (local), dropping forecast hours and

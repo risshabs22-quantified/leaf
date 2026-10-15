@@ -17,6 +17,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from backend.actives import garden_prompt
 from backend.case import Case, SourceRef
 from backend.config import Settings
 from backend.models import LLM, ModelError, complete_json
@@ -214,7 +215,8 @@ async def write_plan(
     user = (
         f"<diagnosis>{sanitize(json.dumps(diagnosis, ensure_ascii=False))}</diagnosis>\n"
         f"<passages>{sanitize(json.dumps(passages, ensure_ascii=False))}</passages>\n"
-        f"<region>{sanitize(region) or 'unknown'}</region>"
+        f"<region>{sanitize(region) or 'unknown'}</region>\n"
+        f"<garden>{garden_prompt(case.garden)}</garden>"
     )
     return await complete_json(
         llm,
