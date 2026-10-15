@@ -12,6 +12,9 @@
   --amber: #8a5200;
   --amber-line: #d9a84e;
   --rain: #9fb3a6;
+  --glass: rgba(255, 255, 255, .84);   /* frosted panels over the rainforest */
+  --glass-solid: rgba(255, 255, 255, .94);
+  --glass-line: rgba(255, 255, 255, .7);
   --serif: Newsreader, "Iowan Old Style", Georgia, serif;
   --sans: "Instrument Sans", "Helvetica Neue", Arial, sans-serif;
   --gutter: clamp(16px, 3vw, 36px);
@@ -21,6 +24,7 @@
     --paper: #0c140f; --ink: #d9f2df; --muted: #93b39c; --line: #22352a; --wash: #102018;
     --green: #7fd492; --leaf: #5cc477; --marker: #2f5a22; --amber: #f0b45b; --amber-line: #9a7228;
     --rain: #4b5f53;
+    --glass: rgba(11, 20, 15, .8); --glass-solid: rgba(11, 20, 15, .92); --glass-line: rgba(140, 200, 160, .14);
   }
 }
 
@@ -41,8 +45,15 @@ h1, h2, h3, p, ol, ul, figure { margin: 0; }
 .skip { position: absolute; left: -999px; top: 8px; background: var(--ink); color: var(--paper); padding: 8px 14px; font: 500 15px var(--sans); z-index: 10; }
 .skip:focus { left: 8px; }
 
+/* the rainforest canvas (rainforest.js) sits behind every page */
+html { background: var(--paper); }
+body:has(#forest) { background: transparent; }
+#forest { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: -1; display: block; opacity: 0; transition: opacity .8s ease; }
+#forest.ready { opacity: 1; }
+
 /* site header, shared by every page */
-.site { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px var(--gutter); border-bottom: 1px solid var(--line); font-family: var(--sans); }
+.site { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px var(--gutter); border-bottom: 1px solid var(--glass-line); background: var(--glass-solid); font-family: var(--sans); }
+@supports (backdrop-filter: blur(1px)) { .site { background: var(--glass); backdrop-filter: blur(16px) saturate(1.2); } }
 .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); line-height: 1; }
 .mark { width: 22px; height: 30px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
 .word { font: 500 1.35rem/1 var(--serif); letter-spacing: -.01em; }
@@ -56,6 +67,9 @@ h1, h2, h3, p, ol, ul, figure { margin: 0; }
 
 /* the column */
 .page { flex: 1; width: 100%; margin: 0 auto; max-width: calc(34em + 2 * var(--gutter)); padding: clamp(40px, 8vh, 88px) var(--gutter) 64px; }
+body.calm .page { width: calc(100% - 2 * var(--gutter)); margin: clamp(20px, 5vh, 56px) auto; padding: clamp(28px, 5vh, 56px) clamp(18px, 4vw, 48px) 48px; background: var(--glass-solid); border: 1px solid var(--glass-line); border-radius: 24px; }
+@supports (backdrop-filter: blur(1px)) { body.calm .page { background: var(--glass); backdrop-filter: blur(14px) saturate(1.15); } }
+@media (max-width: 640px) { body.calm .page { border-radius: 18px; } }
 .page > * + * { margin-top: 2.2em; }
 .intro > * + * { margin-top: 1.1em; }
 .lede { font-weight: 500; }
@@ -175,7 +189,7 @@ textarea:focus, input:focus { outline: none; border-bottom-color: var(--green); 
 
 .trust { font-size: .8em; color: var(--muted); max-width: 32em; }
 
-.foot { display: flex; flex-wrap: wrap; gap: 6px 28px; padding: 24px var(--gutter); border-top: 1px solid var(--line); font: 400 13px var(--sans); color: var(--muted); }
+.foot { display: flex; flex-wrap: wrap; gap: 6px 28px; padding: 20px var(--gutter); border-top: 1px solid var(--glass-line); background: var(--glass-solid); font: 400 13px var(--sans); color: var(--muted); }
 .foot a { color: inherit; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -253,6 +267,8 @@ textarea:focus, input:focus { outline: none; border-bottom-color: var(--green); 
 .step-flag { display: block; font-size: .8em; color: var(--amber); font-style: italic; }
 
 @media print {
+  #forest { display: none !important; }
+  body.calm .page { background: #fff !important; border: 0; backdrop-filter: none !important; margin: 0; width: 100%; }
   .site, .intro, .intake, .foot, .trust, .chat, .trace, #followups, #evidence-block, #weather, #second, #print, .skip { display: none !important; }
   body { background: #fff; color: #000; font-size: 12pt; }
   .results { border: 0; padding: 0; }

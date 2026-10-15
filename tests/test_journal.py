@@ -400,3 +400,11 @@ def test_landing_app_and_plants_pages_are_served(settings):
     assert 'href="/app"' in home.text and 'id="organic"' in diag.text and 'id="spray"' in diag.text
     assert 'id="plants"' in plants.text
     assert all(r.headers["cache-control"] == "no-cache" for r in (home, diag, plants))
+
+
+def test_every_page_has_the_rainforest_behind_it(settings):
+    with api(settings) as (c, _):
+        pages = [c.get(p).text for p in ("/", "/app", "/plants", "/c/anything")]
+        js = c.get("/static/rainforest.js")
+    assert js.status_code == 200 and "prefers-reduced-motion" in js.text
+    assert all('id="forest"' in p and "/static/rainforest.js" in p for p in pages)

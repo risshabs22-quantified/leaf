@@ -10,9 +10,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=2026101501">
+<link rel="stylesheet" href="/static/style.css?v=2026101502">
 </head>
-<body>
+<body class="calm">
+<canvas id="forest" aria-hidden="true"></canvas>
 <a class="skip" href="#intake-h">Skip to the diagnosis form</a>
 
 <header class="site">
@@ -30,8 +31,7 @@
 
 <main id="top" class="page">
   <div class="intro">
-    <p class="lede">Leaf is a plant doctor. Show it a sick leaf and it weighs the likely causes, searches extension-office guides, and writes you a care plan that cites its sources.</p>
-    <p>It can tell <a href="#intake-h" class="try" data-try="Brown ringed spots on my tomato leaves, mostly the lower ones, after a week of rain.">early blight from a nutrient problem</a>, work out <a href="#intake-h" class="try" data-try="The lower leaves on my pepper plants are turning yellow and dropping.">why pepper leaves turn yellow</a>, or look into <a href="#intake-h" class="try" data-try="White powdery coating on my squash leaves.">a white powder on squash</a>. When it isn't sure, it says so.</p>
+    <p class="lede">Add a photo, say what you've noticed, and Leaf works out what's wrong. Try <a href="#intake-h" class="try" data-try="Brown ringed spots on my tomato leaves, mostly the lower ones, after a week of rain.">ringed spots on tomato</a>, <a href="#intake-h" class="try" data-try="The lower leaves on my pepper plants are turning yellow and dropping.">yellow pepper leaves</a> or <a href="#intake-h" class="try" data-try="White powdery coating on my squash leaves.">white powder on squash</a>.</p>
   </div>
 
   <section class="intake" aria-labelledby="intake-h">
@@ -239,7 +239,8 @@
   <span>Built with NVIDIA Nemotron on Nebius Token Factory and Tavily search</span>
   <span><a href="https://open-meteo.com/" target="_blank" rel="noopener">Weather data by Open-Meteo.com</a></span>
 </footer>
-<script src="/static/remind.js?v=2026101501"></script>
-<script src="/static/app.js?v=2026101501"></script>
+<script src="/static/remind.js?v=2026101502"></script>
+<script src="/static/app.js?v=2026101502"></script>
+<script src="/static/rainforest.js?v=2026101502"></script>
 </body>
 </html>

@@ -45,8 +45,11 @@
     log.appendChild(li);
   }
 
+  const STEPS = ["s1", "s2", "s3", "s5"];
+  const setStep = (...on) => STEPS.forEach((c) => specimen.classList.toggle(c, on.includes(c)));
+
   function finalState() {
-    specimen.className = "specimen s2 s3 s5";
+    setStep("s2", "s3", "s5");
     drawDiff(STATES[3]);
     log.innerHTML = "";
     EVIDENCE.forEach(addLog);
@@ -58,7 +61,7 @@
     if (running) return;
     running = true;
     while (visible) {
-      specimen.className = "specimen";
+      setStep();
       log.innerHTML = "";
       drawDiff(STATES[0]);
       await wait(700);
