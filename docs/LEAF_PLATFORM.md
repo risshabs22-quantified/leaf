@@ -281,14 +281,14 @@ Seven milestones in eight days leaves no slack. If any milestone runs over, the 
 ### M1 Foundation
 - [x] Verified free-tier limits (above)
 - [x] D1, KV and Queue bindings; the container data bridge (outbound interception)
-- [ ] Migrations (`0001_platform.sql`) applied to SQLite locally and to D1 remotely
+- [x] Migrations (`0001_platform.sql`) applied to SQLite locally and to D1 remotely
 - [x] Typed repository: gardens (private link), plants, tasks, events, notification settings, photos, jobs, meter
 - [x] `ROUTES` routing table with per-task budgets in `config.py`; every call site uses it
 - [x] Nano 3 front door (route + screen), with rules-only fallback and a cache; screens chat input
 - [x] Job queue: cron → queue → consumer → `/internal/jobs/run`; idempotent, retries, DLQ; `housekeeping` and `garden_ready`
 - [x] Meter, trace id per request, spend guard (brownout, rules-only), `GET /api/ops/usage`
 - [x] Worker type check in `make check`; offline tests for every new endpoint
-- [ ] Live: a garden created on production, its `garden_ready` job done through the queue, and a front-door call metered in D1
+- [x] Live: a garden created on production, its `garden_ready` job done through the queue, and a front-door call metered in D1
 
 ### M2 Climate engine
 - [ ] Hourly forecast and grid cache; climatology 1991-2020; USDA zone; frost dates at 10/50/90%; season length; monthly normals
