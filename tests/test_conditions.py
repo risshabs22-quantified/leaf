@@ -174,7 +174,8 @@ def test_gdd_caps_the_maximum_and_floors_at_zero():
     cold = rules.group_days(
         [rules.Hour(DAY0 + timedelta(hours=h), 5 if h < 12 else 12, 50) for h in range(24)]
     )[0]
-    assert rules.gdd(hot) == 12.5 and rules.gdd(cold) == 0.0
+    # USBR raises Tmin to the base: (12 + 10) / 2 - 10 = 1.0 (review fix, Oct 2026).
+    assert rules.gdd(hot) == 12.5 and rules.gdd(cold) == 1.0
 
 
 # ---------------------------------------------------------------- summary and crop gating

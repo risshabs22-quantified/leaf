@@ -315,9 +315,49 @@ Made by the user on 2026-10-14, after M1.
 - [x] Live: a garden created on production, its `garden_ready` job done through the queue, and a front-door call metered in D1
 
 ### M2 Climate engine
-- [ ] Hourly forecast and grid cache; climatology 1991-2020; USDA zone; frost dates at 10/50/90%; season length; monthly normals
-- [ ] NWS alerts; FAO-56 water balance (outdoor), indoor model; GDD; soil-temperature sowing thresholds; coefficient sources
-- [ ] Golden tests: zone, frost dates, water balance
+- [x] Hourly forecast and grid cache; climatology 1991-2020; USDA zone; frost dates at 10/50/90%; season length; monthly normals
+- [x] NWS alerts; FAO-56 water balance (outdoor), indoor model; GDD; soil-temperature sowing thresholds; coefficient sources
+- [x] Golden tests: zone, frost dates, water balance
+- [ ] Live: a production garden's cell gets its climatology built through the queue into D1
+
+**What M2 is, in code (`backend/climate/`).**
+- **Hourly forecast** (Open-Meteo, 19 variables, 7 past and 7 coming days, about 1.9 units) is fetched once per 0.1° cell per hour and shared through KV.
+- **Climatology** comes from the 1991-2020 archive (`era5_seamless`; ERA5-Land alone returns no precipitation or ET0 through Open-Meteo). It is fetched in six 5-year chunks, 20 s apart, about 780 units per cell. Chunks are cached, so a retried build resumes. It is built once per cell by the `climatology` job, at most 8 new cells a day.
+- **Zone and frost dates:** USDA zone, last-spring and first-autumn frost (0 °C) at 10/50/90%, season length and monthly normals.
+- **NWS alerts** are cached for 10 minutes. A cell outside the US is remembered only when NWS answers "out of bounds".
+- **Watering:** the FAO-56 water balance for outdoor plants, in the ground, raised beds or pots. Indoor plants get a separate, openly heuristic model that learns from "too wet / too dry" answers and never uses outdoor ET0.
+- **Season tools:** degree days by the USBR method with MRCC bases, sowing readiness from soil temperature at 6 cm, spray windows, and the existing disease-risk rules for tomato and potato, all in the garden view.
+- **Sources:** every coefficient names its source in `backend/climate/sources.py`. Values with no published source are labelled "Leaf heuristic" to the gardener.
+- **Allowance:** Open-Meteo use is counted in D1 per day (8,000 of 10,000) and per hour (4,000 of 5,000), and covers the older spray and investigator weather calls too. Builds that would exceed it wait for the next hour or day, staggered per cell. `/api/climate` (public, any point) has its own limit of 20 an hour per IP and 500 a day, and never starts a climatology build.
+
+**Endpoints.**
+- `GET /api/gardens/{id}/climate`: zone, frost dates, normals, 7 days, the next 48 hours, risks, NWS alerts, sowing, degree days, spray window and disease risk.
+- `GET /api/gardens/{id}/plants/{pid}/water`: FAO-56 outdoors, the heuristic model indoors.
+- `POST /api/gardens/{id}/plants/{pid}/log`: watered (L or mm), too wet, too dry or just right.
+- `GET /api/climate?lat=&lon=`.
+
+**Golden tests.** FAO-56 Example 36 (TAW and RAW for 3 crops on 3 soils) and Example 38 (days 1 and 10) reproduce the published numbers. USDA zone boundaries are tested in °F. Synthetic 30-year climates check the frost dates at each level, frost-free years, leap years, the southern hemisphere and missing data.
+
+**Zone check on real data (2026-10-15).** Each city's 1991-2020 climatology was built from Open-Meteo and compared with its 2023 USDA zone. The reference zones come from the phzmapi.org mirror, a third party; the USDA lookup itself could not be fetched.
+
+| City | Leaf (ERA5, 11 km cell) | USDA 2023 | Mean annual extreme minimum (Leaf) |
+| --- | --- | --- | --- |
+| Minneapolis | 4b | 5a | -20.3 F |
+| Denver | 5b | 6a | -13.8 F |
+| Boston | 6b | 7a | -3.9 F |
+| Atlanta | 8b | 8a | 17.3 F |
+| Seattle | 8b | 9a | 19.4 F |
+
+None of the five matched exactly, and all five were within one half zone (four colder, one warmer). Reanalysis on an 11 km grid smooths the local extremes that the station-based USDA map keeps, such as city warmth and cold hollows. So Leaf shows its zone as an estimate with that caveat and makes no correction fitted to five cities. The FAO-56 water balance and frost dates are unaffected by the map, but they share the same reanalysis.
+
+**Labelled heuristics** (no published source; shown to the gardener as assumptions):
+- the starting soil-water deficit, 0.5 RAW, when no watering is logged;
+- forecast rain counted only at a 70% chance or more;
+- pots hold plant-available water equal to 25% of their volume (UC ANR only gives a 40% minimum total water-holding);
+- a plant's leaves cover twice the pot's top;
+- the indoor intervals, and the pot-size, light, winter and feedback factors.
+
+**Departure from a literal reading of FAO-56:** water applied early in the day drains before that day's ETc, as FAO's Example 38 table does. Eq. 88 read literally would take ETc first.
 
 ### M3 Knowledge graph and identify
 - [ ] Species profiles from Tavily sources (Lightning extracts, Super verifies, unsourced facts marked)

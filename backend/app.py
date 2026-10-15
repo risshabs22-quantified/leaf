@@ -27,6 +27,7 @@ from backend.actives import apply_garden
 from backend.cache import SharedCache
 from backend.calendar_file import Reminder, ics
 from backend.checkin import check_in
+from backend.climate import Climate
 from backend.conditions import ConditionsError, WeatherClient
 from backend.config import ULTRA, Settings, get_settings
 from backend.context import REQUEST, RequestContext
@@ -65,6 +66,8 @@ MAX_LIMITER_KEYS = 10_000
 # The front door costs a tiny Nano call; garden creation writes to D1. Both have own limits.
 ROUTE_PER_IP_PER_HOUR, ROUTE_DAILY_CAP = 60, 3000
 GARDEN_PER_IP_PER_HOUR, GARDEN_DAILY_CAP = 10, 500
+# Public /api/climate: about 1.9 Open-Meteo units per new cell-hour, so its own small budget.
+CLIMATE_PER_IP_PER_HOUR, CLIMATE_DAILY_CAP = 20, 500
 # Every garden request reads or writes D1 and keeps the container awake.
 GARDEN_USE_PER_IP_PER_HOUR, GARDEN_USE_DAILY_CAP = 600, 50_000
 SPEND_CAP_MESSAGE = (
@@ -236,7 +239,7 @@ async def lifespan(app: FastAPI):
     await start_platform(app, app.state.leaf.settings)  # before anything holds leaf.llm
     deep = getattr(app.state, "deep", None)
     if deep is None or deep.leaf is not app.state.leaf:
-        app.state.deep = DeepLeaf(app.state.leaf, MemoryCaseStore())
+        app.state.deep = DeepLeaf(app.state.leaf, MemoryCaseStore(), weather=app.state.weather)
     app.state.deep_cap = DailyCap(app.state.leaf.settings.deep_daily_cap)
     s = app.state.leaf.settings
     if getattr(app.state, "journal", None) is None:
@@ -280,13 +283,21 @@ async def start_platform(app: FastAPI, s: Settings) -> None:
         leaf.llm.meter = meter
     else:
         leaf.llm = MeteredLLM(leaf.llm, meter)
+    app.state.cache = SharedCache(data.kv, meter)
+    if getattr(app.state, "climate", None) is None or app.state.climate.repo is not data.repo:
+        app.state.climate = Climate(data.repo, app.state.cache)
+    weather = getattr(app.state, "weather", None)
+    if isinstance(weather, WeatherClient) and weather.om is None:
+        weather.om = app.state.climate.om  # every Open-Meteo forecast call shares one allowance
+    app.state.climate_limiter = RateLimiter(CLIMATE_PER_IP_PER_HOUR, CLIMATE_DAILY_CAP)
     queue = BridgeQueue(data.bridge) if data.bridge else LocalQueue()
     objects = S3Objects(s.journal_bucket) if s.journal_bucket else None
-    runner = JobRunner(JobContext(data.repo, queue, s, meter, objects))
+    runner = JobRunner(
+        JobContext(data.repo, queue, s, meter, objects, extra={"climate": app.state.climate})
+    )
     if isinstance(queue, LocalQueue):
         queue.runner = runner
     app.state.data, app.state.meter, app.state.queue, app.state.runner = data, meter, queue, runner
-    app.state.cache = SharedCache(data.kv, meter)
     app.state.route_limiter = RateLimiter(ROUTE_PER_IP_PER_HOUR, ROUTE_DAILY_CAP)
     app.state.garden_limiter = RateLimiter(GARDEN_PER_IP_PER_HOUR, GARDEN_DAILY_CAP)
     app.state.garden_use_limiter = RateLimiter(GARDEN_USE_PER_IP_PER_HOUR, GARDEN_USE_DAILY_CAP)

@@ -10,16 +10,28 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
+from backend.climate import Climate, cell_center
+from backend.climate.crops import GENERAL_GDD_BASE_C, Crop, find_crop
+from backend.climate.forecast import Forecast
+from backend.climate.nws import AlertsUnavailable
+from backend.climate.openmeteo import ATTRIBUTION, ATTRIBUTION_URL, WeatherUnavailable
+from backend.climate.risk import gdd_recent, risks, soil_temperature_now, sowing
+from backend.climate.sources import cite
+from backend.climate.water import Placement, WaterAdvice, indoor_advice, outdoor_advice
+from backend.conditions import ConditionsError, Place, parse_hours
+from backend.conditions import summarise as summarise_conditions
 from backend.config import ROUTES
 from backend.context import REQUEST
 from backend.data.driver import DataError
 from backend.data.repo import (
     Event,
+    EventIn,
     Garden,
     GardenIn,
     NotificationSettings,
@@ -28,10 +40,13 @@ from backend.data.repo import (
     Repo,
     Task,
     TaskStatus,
+    grid_cell,
+    now_s,
 )
 from backend.jobs import JobMessage
 from backend.router import REFUSALS, front_door
 from backend.schemas import FrontDoorDecision, Intent
+from backend.spray import plan_spray
 
 log = logging.getLogger("leaf.platform")
 
@@ -315,3 +330,203 @@ async def run_job(
         log.error("job %s: storage error: %s", msg.key, exc)
         return JSONResponse({"status": "storage_error"}, status_code=503)
     return JSONResponse(body, status_code=status)
+
+
+# ---------- climate (M2) ----------
+
+
+def _climate(request: Request) -> Climate:
+    return request.app.state.climate
+
+
+def _day_list(fc: Forecast) -> list[dict[str, Any]]:
+    today = fc.local_today().isoformat()
+    return [
+        {
+            "date": d["date"],
+            "high_c": d["temperature_2m_max"],
+            "low_c": d["temperature_2m_min"],
+            "rain_mm": d["precipitation_sum"],
+            "rain_chance": d["precipitation_probability_max"],
+            "et0_mm": d["et0_fao_evapotranspiration"],
+            "gust_kmh": d["wind_gusts_10m_max"],
+            "sunrise": d["sunrise"],
+            "sunset": d["sunset"],
+        }
+        for d in fc.day_rows()
+        if d["date"] >= today
+    ]
+
+
+def _next_hours(fc: Forecast, hours: int = 48) -> list[dict[str, Any]]:
+    now = datetime.fromtimestamp(datetime.now(UTC).timestamp() + fc.utc_offset_s, UTC)
+    start = now.replace(tzinfo=None, minute=0, second=0, microsecond=0).isoformat(
+        timespec="minutes"
+    )
+    return [h for h in fc.hour_rows() if h["time"] >= start][:hours]
+
+
+def _raw(fc: Forecast) -> dict[str, Any]:
+    """The forecast in Open-Meteo's own shape, for the existing spray and disease tools."""
+    return {"hourly": fc.hourly, "utc_offset_seconds": fc.utc_offset_s, "timezone": fc.timezone}
+
+
+async def garden_extras(
+    request: Request, cell: str, fc: Forecast, crops: list[Crop], garden: Garden
+) -> dict[str, Any]:
+    """Spray windows, the published disease-risk rules and season degree days for a garden."""
+    extras: dict[str, Any] = {}
+    spray = plan_spray(_raw(fc), None, bees=False, place="")
+    extras["spray_window"] = spray.model_dump(mode="json")
+    hours = parse_hours(_raw(fc), datetime.now(UTC))
+    lat, lon = cell_center(cell)
+    place = Place(label=f"grid cell {cell}", lat=lat, lon=lon)
+    disease = {}
+    for crop in crops:
+        if crop.key in ("tomato", "potato") and hours:
+            try:
+                disease[crop.key] = summarise_conditions(hours, crop.key, place)
+            except ConditionsError:
+                pass
+    extras["disease_risk"] = disease
+    bases = sorted({c.gdd_base_c for c in crops if c.gdd_base_c is not None} | {GENERAL_GDD_BASE_C})
+    try:
+        extras["season_degree_days"] = {
+            **await _climate(request).season_gdd(cell, bases),
+            "sources": cite("usbr_gdd", "mrcc_gdd"),
+        }
+    except WeatherUnavailable as exc:
+        log.warning("season degree days unavailable for %s: %s", cell, exc)
+        extras["season_degree_days"] = None
+    return extras
+
+
+async def climate_view(
+    request: Request, cell: str, crops: list[Crop] | None, garden: Garden | None = None
+) -> dict[str, Any]:
+    """Everything the climate engine knows about a cell. Never starts a climatology build."""
+    climate = _climate(request)
+    try:
+        fc = await climate.forecast(cell)
+    except WeatherUnavailable as exc:
+        log.warning("forecast unavailable for %s: %s", cell, exc)
+        raise HTTPException(503, "The weather service is unavailable. Try again later.") from exc
+    try:
+        alerts: dict[str, Any] = (await climate.alerts(cell)).model_dump()
+    except AlertsUnavailable as exc:
+        log.warning("NWS unavailable for %s: %s", cell, exc)
+        alerts = {"covered": None, "alerts": [], "note": "NWS did not answer."}
+    clim = await climate.climatology(cell)
+    soil_c = soil_temperature_now(fc)
+    lat, lon = cell_center(cell)
+    return {
+        "cell": cell,
+        "cell_centre": {"lat": lat, "lon": lon},
+        "timezone": fc.timezone,
+        "climatology": (
+            {"status": clim["status"], **clim["data"]}
+            if clim and clim["status"] == "ready"
+            else {"status": clim["status"] if clim else "not_requested"}
+        ),
+        "days": _day_list(fc),
+        "risks": risks(fc),
+        "alerts": alerts,
+        "soil_temperature_6cm_c": soil_c,
+        "sowing": sowing(soil_c, crops),
+        "degree_days": [gdd_recent(fc, c) for c in (crops or [None])],
+        "next_48_hours": _next_hours(fc),
+        "attribution": {"text": ATTRIBUTION, "url": ATTRIBUTION_URL},
+        **(await garden_extras(request, cell, fc, crops or [], garden) if garden else {}),
+    }
+
+
+@router.get("/api/gardens/{garden_id}/climate")
+async def garden_climate(request: Request, garden_id: str, key: Key = None) -> dict[str, Any]:
+    garden = await _open(request, garden_id, key)
+    if not garden.cell:
+        raise HTTPException(400, "This garden has no location yet.")
+    plants = await _repo(request).list_plants(garden.id)
+    crops = [c for p in plants if (c := find_crop(p.species, p.common_name))]
+    unique = list({c.key: c for c in crops}.values()) or None  # none: show every crop
+    return await climate_view(request, garden.cell, unique, garden)
+
+
+@router.get("/api/climate")
+async def public_climate(
+    request: Request,
+    lat: Annotated[float, Query(ge=-90, le=90)],
+    lon: Annotated[float, Query(ge=-180, le=180)],
+) -> dict[str, Any]:
+    """The climate engine for any point (the future API and MCP `weather_risk` tool use it)."""
+    request.app.state.climate_limiter.check(_ip(request))
+    return await climate_view(request, grid_cell(lat, lon), None)
+
+
+class PlantLog(BaseModel):
+    kind: Literal["watered", "too_wet", "too_dry", "just_right"]
+    amount_l: float | None = Field(None, gt=0, le=1000)
+    amount_mm: float | None = Field(None, gt=0, le=200)
+
+
+@router.post("/api/gardens/{garden_id}/plants/{plant_id}/log")
+async def log_plant(
+    request: Request, garden_id: str, plant_id: str, body: PlantLog, key: Key = None
+) -> dict:
+    garden = await _open(request, garden_id, key)
+    repo = _repo(request)
+    if await repo.get_plant(garden.id, plant_id) is None:
+        raise HTTPException(404, "No such plant in this garden.")
+    kind = "watered" if body.kind == "watered" else "water_feedback"
+    payload = body.model_dump(exclude_none=True)
+    ctx = REQUEST.get()
+    await repo.log_event(
+        EventIn(
+            garden_id=garden.id,
+            plant_id=plant_id,
+            kind=kind,
+            payload=payload,
+            trace_id=ctx.trace_id if ctx else "",
+        )
+    )
+    return {"logged": body.kind}
+
+
+WATER_LOOKBACK_S = 10 * 86400
+
+
+@router.get("/api/gardens/{garden_id}/plants/{plant_id}/water", response_model=WaterAdvice)
+async def plant_water(
+    request: Request, garden_id: str, plant_id: str, key: Key = None
+) -> WaterAdvice:
+    garden = await _open(request, garden_id, key)
+    repo = _repo(request)
+    plant = await repo.get_plant(garden.id, plant_id)
+    if plant is None:
+        raise HTTPException(404, "No such plant in this garden.")
+    placement = Placement.from_container(plant.container)
+    southern = (garden.lat or 0) < 0
+    if plant.setting == "indoor":
+        events = await repo.plant_events(
+            garden.id, plant.id, ["watered", "water_feedback"], now_s() - 120 * 86400
+        )
+        tz = ZoneInfo(garden.timezone)
+        watered = [e for e in events if e.kind == "watered"]
+        last = datetime.fromtimestamp(watered[0].created_at, tz).date() if watered else None
+        feedback = [str(e.payload.get("kind")) for e in events if e.kind == "water_feedback"]
+        return indoor_advice(placement, datetime.now(tz).date(), southern, last, feedback)
+    if not garden.cell:
+        raise HTTPException(400, "Set the garden's location to plan watering outdoors.")
+    try:
+        fc = await _climate(request).forecast(garden.cell)
+    except WeatherUnavailable as exc:
+        raise HTTPException(503, "The weather service is unavailable. Try again later.") from exc
+    events = await repo.plant_events(garden.id, plant.id, ["watered"], now_s() - WATER_LOOKBACK_S)
+    waterings = [
+        {
+            "date": datetime.fromtimestamp(e.created_at + fc.utc_offset_s, UTC).date().isoformat(),
+            **{k: v for k, v in e.payload.items() if k in ("amount_l", "amount_mm")},
+        }
+        for e in events
+    ]
+    crop = find_crop(plant.species, plant.common_name)
+    return outdoor_advice(crop, plant.stage, placement, fc, waterings)

@@ -19,6 +19,7 @@ Keep it short: newest entries first.
 | Deployed on Cloudflare Containers (every model call goes to Nebius Token Factory) | done | https://leafathon.site; live: health OK, Quick, Auto, lab handoff, share link from R2 |
 | Landing page, organic and pet-safe plans, spray windows, My plants | done | `/`, `/app`, `/plants`; 422 tests |
 | Platform M1: data layer (D1 via Worker bridge), routing table, Nano front door, job queue, meter and spend guard | done | https://leafathon.site on D1; 530 tests; production check below |
+| Platform M2: climate engine (forecast per cell, 1991-2020 climatology, zone, frost dates, NWS, FAO-56 water balance, indoor model, GDD, sowing) | done | `docs/LEAF_PLATFORM.md` M2; 610 tests; five-city zone check |
 | README final, video, Devpost draft | Devpost drafted (`docs/DEVPOST.md`); video todo | `/submission-check` |
 
 ## Next
@@ -35,6 +36,20 @@ Keep it short: newest entries first.
 | 2026-10-13 | 52 tune | Quick 52% / Deep 56% / Auto 58% | 75% / 73% / 73% | lab 6% / 38% / 25% | three verdicts, Auto, fitted thresholds; checklist off (48% with it) |
 
 ## Session log
+- 2026-10-15: **Leaf Platform M2, climate engine** (`backend/climate/`). Details are in `docs/LEAF_PLATFORM.md` M2.
+  - **Sources:** two researchers fetched FAO-56 Tables 12, 19 and 22 and the Chapter 8 equations and Examples 36 and 38, plus the USDA PHZM method, NWS frost and wind criteria, Rutgers heat, the OSU/UC ANR germination tables and the MRCC/USBR degree-day methods. Every value cites one; where none exists, the value is labelled a heuristic.
+  - **Found live:** Open-Meteo's `era5_land` returns no precipitation or ET0, so climatology uses `era5_seamless`. A 5-year archive chunk once took over 30 s, so archive calls now allow 90 s, retry once and cache their chunks.
+  - **Zone check:** 5 US cities were within one half zone of USDA 2023 (none exact; 4 colder, 1 warmer). This is shown as a caveat, with no fitted correction.
+  - **Review fixes:**
+    - Open-Meteo is now limited per hour as well as per day, and deferred builds are staggered.
+    - Litres logged on open ground no longer count as a full refill.
+    - The USBR degree-day method raises Tmin to the base; this changed one old test.
+    - Missing years no longer count as frost-free, and leap years no longer shift dates.
+    - Late-season Kc is on FAO's linear decline, and the 70% rain rule is labelled.
+    - A passing NWS 400 no longer marks a cell non-US, and the public climate endpoint has its own budget.
+    - The older weather client now counts against the same allowance.
+    - Spray windows, the disease-risk rules, the next 48 hours and season degree days are wired into the garden view.
+  - 610 tests.
 - 2026-10-14: **Platform decisions after M1** (recorded in `docs/LEAF_PLATFORM.md`, "Decisions").
   - **Front door eval:** a 65-message eval (`evals/front_door.jsonl`, `make eval-router`) with a gate fixed before the first run.
     - Lightning passed: 0 false refusals, 0/6 harmful missed, 1/7 injections missed, intent 97%, median 0.4 s.

@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 
 from backend import disease_rules as rules
+from backend.climate.openmeteo import OpenMeteo, WeatherUnavailable, units_for
 
 GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
@@ -127,13 +128,25 @@ def _place(r: dict[str, Any]) -> Place:
 
 
 class WeatherClient:
-    def __init__(self, http: httpx.AsyncClient | None = None, now=None):
+    def __init__(
+        self, http: httpx.AsyncClient | None = None, now=None, om: OpenMeteo | None = None
+    ):
         self._http = http
+        self.om = om
         self._now = now or (lambda: datetime.now(UTC))
         self._geo: dict[str, tuple[float, Place | None]] = {}
         self._wx: dict[tuple[float, float, str], tuple[float, dict[str, Any]]] = {}
 
     async def _get(self, url: str, params: dict[str, Any]) -> dict[str, Any]:
+        # Forecast calls count against the platform's Open-Meteo allowance when wired to it
+        # (app.py sets `om`); geocoding is a separate service with its own limits.
+        if self.om is not None and url == FORECAST_URL:
+            try:
+                return await self.om.get(url, params, units_for(params))
+            except WeatherUnavailable as exc:
+                raise ConditionsError(
+                    "The weather service did not answer. Try again later."
+                ) from exc
         try:
             if self._http is not None:
                 r = await self._http.get(url, params=params, timeout=10)

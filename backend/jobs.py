@@ -14,13 +14,17 @@ consumer what to do (cloudflare/src/index.ts):
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
+from backend.climate import Climate, cell_center
+from backend.climate.openmeteo import WeatherUnavailable, climatology_cost
 from backend.config import Settings
 from backend.context import RequestContext, request_scope
 from backend.data.driver import Bridge, DataError
@@ -156,14 +160,80 @@ async def housekeeping(ctx: JobContext, payload: dict[str, Any]) -> dict[str, An
 
 @job("garden_ready")
 async def garden_ready(ctx: JobContext, payload: dict[str, Any]) -> dict[str, Any]:
-    """After a garden is created: note its grid cell. M2 queues its climatology here."""
+    """After a garden is created: register its grid cell and queue the cell's climatology
+    (built once per cell, shared by every garden in it)."""
     garden = await ctx.repo.get_garden(str(payload.get("garden_id", "")))
     if garden is None:
         return {"skipped": "garden deleted"}
+    queued = False
+    if garden.cell:
+        lat, lon = cell_center(garden.cell)
+        await ctx.repo.register_cell(garden.cell, lat, lon)
+        existing = await ctx.repo.get_climatology(garden.cell)
+        if existing is None or existing["status"] != "ready":
+            await ctx.queue.send([climatology_job(garden.cell)])
+            queued = True
     await ctx.repo.log_event(
         EventIn(garden_id=garden.id, kind="garden_ready", payload={"cell": garden.cell})
     )
-    return {"cell": garden.cell}
+    return {"cell": garden.cell, "climatology_queued": queued}
+
+
+CLIMATOLOGY_PER_DAY = 8  # each build is about 780 of Open-Meteo's 10,000 daily units
+STAGGER_SLOTS = 32  # deferred builds spread over 8 hours in 15-minute slots
+
+
+def climatology_job(cell: str, attempt: str = "") -> JobMessage:
+    key = f"climatology:{cell}" + (f":{attempt}" if attempt else "")
+    return JobMessage(kind="climatology", key=key, payload={"cell": cell})
+
+
+def _stagger_s(cell: str) -> int:
+    """A stable 0-8 h offset per cell, so deferred builds do not all start at once."""
+    slot = int(hashlib.sha256(cell.encode()).hexdigest(), 16) % STAGGER_SLOTS
+    return slot * 15 * 60
+
+
+async def _defer(ctx: JobContext, cell: str, until: int, why: str) -> dict[str, Any]:
+    now = now_s()
+    attempt = datetime.fromtimestamp(until, UTC).strftime("%Y%m%dT%H%M")
+    await ctx.queue.send([climatology_job(cell, attempt)], delay_s=max(60, until - now))
+    return {"deferred_until": attempt, "why": why}
+
+
+@job("climatology")
+async def climatology(ctx: JobContext, payload: dict[str, Any]) -> dict[str, Any]:
+    """Build a cell's 1991-2020 climatology once. At most CLIMATOLOGY_PER_DAY new cells a UTC
+    day, and only within Open-Meteo's daily and hourly allowance; otherwise the build waits
+    (next hour, or tomorrow, staggered per cell) instead of failing."""
+    cell = str(payload.get("cell", ""))
+    existing = await ctx.repo.get_climatology(cell)
+    if existing is not None and existing["status"] == "ready":
+        return {"skipped": "already built"}
+    climate: Climate = ctx.extra["climate"]
+    now = now_s()
+    day_start = now - now % 86400
+    tomorrow = day_start + 86400 + _stagger_s(cell)
+    next_hour = now - now % 3600 + 3600 + _stagger_s(cell) % 3600
+    if await ctx.repo.climatologies_built_since(day_start) >= CLIMATOLOGY_PER_DAY:
+        return await _defer(ctx, cell, tomorrow, "daily cell limit")
+    full = await climate.om.can_spend(climatology_cost())
+    if full:
+        return await _defer(
+            ctx, cell, tomorrow if full == "day" else next_hour, f"{full} allowance"
+        )
+    try:
+        data = await climate.build_climatology(cell)
+    except WeatherUnavailable as exc:
+        if "allowance" in str(exc):  # another caller used it up meanwhile: wait, do not fail
+            return await _defer(ctx, cell, next_hour, "allowance")
+        await ctx.repo.put_climatology(cell, "failed", error=str(exc))
+        raise
+    except BaseException as exc:  # including a cancelled run: record it, then let it retry
+        await ctx.repo.put_climatology(cell, "failed", error=f"{type(exc).__name__}: {exc}")
+        raise
+    await ctx.repo.put_climatology(cell, "ready", data, source=data.get("model", ""))
+    return {"cell": cell, "zone": data["hardiness_zone"]["zone"]}
 
 
 class S3Objects:

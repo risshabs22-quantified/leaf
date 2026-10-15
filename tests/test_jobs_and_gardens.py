@@ -103,8 +103,12 @@ async def test_garden_ready_notes_the_cell():
     status, body = await runner.run(
         JobMessage(kind="garden_ready", key="garden_ready:1", payload={"garden_id": garden.id})
     )
-    assert status == 200 and body["result"] == {"cell": "515_-1"}
+    assert status == 200 and body["result"] == {"cell": "515_-1", "climatology_queued": True}
     assert [e.kind for e in await repo.list_events(garden.id)] == ["garden_ready"]
+    # M2: the cell is registered and its climatology queued once for every garden in it.
+    assert (await repo.get_cell("515_-1"))["lat"] == 51.5
+    sent = runner.ctx.queue.sent
+    assert [(m.kind, m.key) for m, _ in sent] == [("climatology", "climatology:515_-1")]
 
 
 async def test_local_queue_runs_jobs_in_the_background():

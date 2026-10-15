@@ -675,3 +675,110 @@ class Repo:
         )
         names = ["model_calls", "cache_stats", "active_daily", "day_salts", "jobs"]
         return {n: r.changes for n, r in zip(names, res, strict=True)}
+
+    # ---------- climate (M2): cells, climatology, free-service usage ----------
+
+    async def register_cell(self, cell: str, lat: float, lon: float) -> None:
+        """Record a cell that holds a garden (its centre, not the garden's location)."""
+        now = now_s()
+        await self.db.batch(
+            [
+                (
+                    "INSERT OR IGNORE INTO cells (cell, lat, lon, created_at) VALUES (?, ?, ?, ?)",
+                    (cell, lat, lon, now),
+                ),
+                (
+                    "INSERT OR IGNORE INTO climatology (cell, status, updated_at) VALUES (?, ?, ?)",
+                    (cell, "queued", now),
+                ),
+            ]
+        )
+
+    async def get_cell(self, cell: str) -> dict[str, Any] | None:
+        rows = await query(self.db, "SELECT * FROM cells WHERE cell = ?", cell)
+        return rows[0] if rows else None
+
+    async def set_cell_us(self, cell: str, us: bool) -> None:
+        await execute(self.db, "UPDATE cells SET us = ? WHERE cell = ?", int(us), cell)
+
+    async def get_climatology(self, cell: str) -> dict[str, Any] | None:
+        rows = await query(self.db, "SELECT * FROM climatology WHERE cell = ?", cell)
+        if not rows:
+            return None
+        return {**rows[0], "data": _load(rows[0].get("data"), {})}
+
+    async def put_climatology(
+        self,
+        cell: str,
+        status: str,
+        data: dict[str, Any] | None = None,
+        source: str = "",
+        error: str = "",
+    ) -> None:
+        now = now_s()
+        await execute(
+            self.db,
+            "INSERT INTO climatology (cell, status, data, source, error, built_at, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (cell) DO UPDATE SET"
+            " status = excluded.status, data = excluded.data, source = excluded.source,"
+            " error = excluded.error,"
+            " built_at = excluded.built_at, updated_at = excluded.updated_at",
+            cell,
+            status,
+            _json(data or {}),
+            source,
+            error[:500],
+            now if status == "ready" else None,
+            now,
+        )
+
+    async def climatologies_built_since(self, since: int) -> int:
+        rows = await query(
+            self.db,
+            "SELECT COUNT(*) AS n FROM climatology WHERE status = 'ready' AND built_at >= ?",
+            since,
+        )
+        return int(rows[0]["n"]) if rows else 0
+
+    async def add_api_usage(self, service: str, units: float, day: str | None = None) -> None:
+        await execute(
+            self.db,
+            "INSERT INTO api_usage (day, service, units, calls) VALUES (?, ?, ?, 1)"
+            " ON CONFLICT (day, service) DO UPDATE SET units = units + excluded.units,"
+            " calls = calls + 1",
+            day or utc_day(),
+            service,
+            float(units),
+        )
+
+    async def api_usage_on(self, service: str, day: str | None = None) -> float:
+        rows = await query(
+            self.db,
+            "SELECT units FROM api_usage WHERE day = ? AND service = ?",
+            day or utc_day(),
+            service,
+        )
+        return float(rows[0]["units"]) if rows else 0.0
+
+    async def plant_events(
+        self, garden_id: str, plant_id: str, kinds: Sequence[str], since: int, limit: int = 50
+    ) -> list[Event]:
+        """A plant's recent events of the given kinds, newest first (watering, feedback)."""
+        marks = ", ".join("?" * len(kinds))
+        rows = await query(
+            self.db,
+            f"SELECT * FROM events WHERE garden_id = ? AND plant_id = ? AND kind IN ({marks})"
+            " AND created_at >= ? ORDER BY created_at DESC, id DESC LIMIT ?",
+            garden_id,
+            plant_id,
+            *kinds,
+            since,
+            limit,
+        )
+        return [Event(**{**r, "payload": _load(r.get("payload"), {})}) for r in rows]
+
+    async def get_plant(self, garden_id: str, plant_id: str) -> Plant | None:
+        rows = await query(
+            self.db, "SELECT * FROM plants WHERE id = ? AND garden_id = ?", plant_id, garden_id
+        )
+        return _plant(rows[0]) if rows else None

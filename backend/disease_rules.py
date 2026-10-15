@@ -176,6 +176,6 @@ def tomcast_day(day: Day) -> int:
 
 
 def gdd(day: Day, base_c: float = 10.0, cap_c: float = 30.0) -> float:
-    """Single average with a horizontal cutoff: ((min(Tmax, cap) + Tmin) / 2) - base, floored
-    at 0. USBR AgriMet: https://www.usbr.gov/pn/agrimet/gdd.html"""
-    return max(0.0, (min(day.tmax, cap_c) + day.tmin) / 2 - base_c)
+    """USBR AgriMet: Tmax capped at the upper threshold, Tmin raised to the base, then
+    ((Tmax + Tmin) / 2) - base, floored at 0. https://www.usbr.gov/pn/agrimet/gdd.html"""
+    return max(0.0, (min(day.tmax, cap_c) + max(day.tmin, base_c)) / 2 - base_c)
