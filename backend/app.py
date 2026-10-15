@@ -428,7 +428,7 @@ async def health(request: Request) -> dict:
         },
         "platform": {
             "data": request.app.state.data.db.name,
-            "schema_pending": list(request.app.state.data.schema_pending),
+            "schema_pending": list(await request.app.state.data.recheck()),
             "guard": request.app.state.meter.snapshot(),
         },
         "search": type(leaf.searcher).__name__,

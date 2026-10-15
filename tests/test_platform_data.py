@@ -411,3 +411,27 @@ async def test_purge_keeps_jobs_that_are_still_queued_or_running(repo: Repo):
     await repo.db.batch([("UPDATE jobs SET updated_at = 0", ())])
     assert (await repo.purge())["jobs"] == 2
     assert (await repo.get_job("running")) is not None
+
+
+async def test_a_failed_startup_schema_check_recovers_once_the_bridge_answers(monkeypatch):
+    from backend.config import Settings
+    from backend.data import UNKNOWN, open_data
+
+    up = {"ok": False}
+
+    def handler(req):
+        if not up["ok"]:
+            return httpx.Response(500, json={"error": "not wired yet"})
+        return httpx.Response(200, json={"results": [{"rows": [{"name": "d1_migrations"}]}]})
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(
+        "backend.data.driver.httpx.AsyncClient",
+        lambda **kw: real(transport=httpx.MockTransport(handler)),
+    )
+    data = await open_data(
+        Settings(nebius_api_key="x", platform_url="http://leaf-platform.internal")
+    )
+    assert data.schema_pending == (UNKNOWN,)
+    up["ok"] = True
+    assert await data.recheck() != (UNKNOWN,)

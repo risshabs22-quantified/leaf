@@ -18,6 +18,9 @@ from backend.data.repo import Repo
 log = logging.getLogger("leaf.data")
 
 
+UNKNOWN = "unknown: bridge unavailable"
+
+
 @dataclass
 class PlatformData:
     db: Driver
@@ -25,6 +28,17 @@ class PlatformData:
     kv: KV
     bridge: Bridge | None = None
     schema_pending: tuple[str, ...] = ()
+
+    async def recheck(self) -> tuple[str, ...]:
+        """Retry a schema check that failed at startup. Right after a deploy the container can
+        start before the Worker has wired the bridge (seen on the M1 deploy), so a failed first
+        check must not stick."""
+        if self.schema_pending == (UNKNOWN,):
+            try:
+                self.schema_pending = tuple(await pending(self.db))
+            except DataError:
+                pass
+        return self.schema_pending
 
 
 async def open_data(settings: Settings) -> PlatformData:
@@ -39,7 +53,7 @@ async def open_data(settings: Settings) -> PlatformData:
             # Never let the data layer stop Leaf starting: diagnosis works without it, and
             # garden endpoints answer 503 until the bridge is back.
             log.error("platform data unavailable at startup: %s", exc)
-            missing = ("unknown: bridge unavailable",)
+            missing = (UNKNOWN,)
         return PlatformData(db, Repo(db), BridgeKV(bridge), bridge, missing)
     path = ":memory:" if settings.platform_db in ("", "memory") else settings.platform_db
     sqlite = SqliteDriver(path)
