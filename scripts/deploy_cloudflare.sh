@@ -51,7 +51,10 @@ PY
 # Platform schema first: the new version's code expects it. Applies only migrations D1 has not
 # recorded (backend/data/migrations); CI=1 answers Wrangler's confirmation prompt.
 echo "==> Applying D1 migrations"
-CI=1 "${WRANGLER[@]}" d1 migrations apply leaf-platform --remote
+# One retry: the D1 API has failed the first call of two deploys in a row (Oct 2026), then
+# succeeded at once.
+CI=1 "${WRANGLER[@]}" d1 migrations apply leaf-platform --remote \
+  || { sleep 5; CI=1 "${WRANGLER[@]}" d1 migrations apply leaf-platform --remote; }
 
 # Secrets ship with the version (--secrets-file). Setting them afterwards is too late: the
 # rollout restarts the container as soon as the version is live, with the env it had then.

@@ -318,7 +318,7 @@ Made by the user on 2026-10-14, after M1.
 - [x] Hourly forecast and grid cache; climatology 1991-2020; USDA zone; frost dates at 10/50/90%; season length; monthly normals
 - [x] NWS alerts; FAO-56 water balance (outdoor), indoor model; GDD; soil-temperature sowing thresholds; coefficient sources
 - [x] Golden tests: zone, frost dates, water balance
-- [ ] Live: a production garden's cell gets its climatology built through the queue into D1
+- [x] Live: a production garden's cell gets its climatology built through the queue into D1 (Minneapolis cell: about 2 minutes, zone 4b, identical to the local build)
 
 **What M2 is, in code (`backend/climate/`).**
 - **Hourly forecast** (Open-Meteo, 19 variables, 7 past and 7 coming days, about 1.9 units) is fetched once per 0.1° cell per hour and shared through KV.

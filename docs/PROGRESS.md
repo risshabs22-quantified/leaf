@@ -49,6 +49,11 @@ Keep it short: newest entries first.
     - A passing NWS 400 no longer marks a cell non-US, and the public climate endpoint has its own budget.
     - The older weather client now counts against the same allowance.
     - Spray windows, the disease-risk rules, the next 48 hours and season degree days are wired into the garden view.
+  - **Production check** (one browser session, after deploy):
+    - The garden view returned forecast, risks, NWS (covered; London correctly not covered), soil 12.4 C, tomato sowing "possible", 1,792 degree days since Jan 1, a spray window, tomato disease risk and the next 48 hours.
+    - The FAO-56 advice was "skip, next on Oct 18".
+    - The cell's climatology was built through the real queue in about 2 minutes (zone 4b, identical to the local build). Two gardens in the cell queued it and it was built once. Open-Meteo use that day: 806.5 units. Test gardens deleted.
+  - The deploy script now retries the D1 migration step once (the D1 API failed the first call of two deploys in a row).
   - 610 tests.
 - 2026-10-14: **Platform decisions after M1** (recorded in `docs/LEAF_PLATFORM.md`, "Decisions").
   - **Front door eval:** a 65-message eval (`evals/front_door.jsonl`, `make eval-router`) with a gate fixed before the first run.
