@@ -106,6 +106,8 @@ fetch("/api/health").then((r) => r.json()).then((h) => {
 
 function formData() {
   const fd = new FormData();
+  if ($("organic").checked) fd.append("organic", "true");
+  if ($("pets").checked) fd.append("pets", "true");
   const chosen = photoFiles.map((f, i) => [f, slots[i].dataset.label]).filter(([f]) => f);
   return { fd, chosen };
 }
@@ -307,7 +309,11 @@ function render(d) {
     const base = `${location.origin}/c/${encodeURIComponent(d.case_id)}`;
     $("share-link").href = d.owner_token ? `${base}#k=${encodeURIComponent(d.owner_token)}` : base;
     $("share-link").dataset.readonly = base;
-    try { if (d.owner_token) localStorage.setItem(`leaf-owner-${d.case_id}`, d.owner_token); } catch { /* private mode */ }
+    const name = top ? top.name : "Your plant";
+    LeafRemind.remember({
+      id: d.case_id, token: d.owner_token, title: name, verdict: d.verdict, created: Date.now(),
+      checkin_days: d.plan.check_in_days, plant: (d.observation && d.observation.plant_guess) || "",
+    });
   }
   $("summary").textContent = d.summary || d.diagnosis.reasoning_summary;
   const byId = Object.fromEntries((d.evidence || []).map((e) => [e.id, e]));
@@ -392,11 +398,33 @@ function renderConfidence(d) {
   $("confidence-parts").innerHTML = parts.map((p) => `<li>${esc(p)}</li>`).join("");
 }
 
+const PET = { low: "Low risk to pets", caution: "Keep pets off until dry", high: "Dangerous to pets" };
+
+function stepTags(s) {
+  const tags = [];
+  if (s.organic === true) tags.push(["ok", "Organic"]);
+  if (s.organic === false) tags.push(["", "Not organic"]);
+  if (s.pet_risk) tags.push([s.pet_risk === "high" ? "bad" : s.pet_risk === "caution" ? "warn" : "ok", PET[s.pet_risk]]);
+  if (s.bee_risk) tags.push(["warn", "Harms bees: spray at dusk"]);
+  if (!tags.length) return "";
+  const names = (s.actives || []).length ? `<span class="tag plain">${esc(s.actives.join(", "))}</span>` : "";
+  return `<span class="tags">${names}${tags.map(([c, t]) => `<span class="tag ${c}">${esc(t)}</span>`).join("")}</span>`;
+}
+
 function renderPlan(d) {
   $("plan-summary").textContent = d.plan.summary;
   $("steps").innerHTML = d.plan.steps.map((s) => `
     <li>${esc(s.action)}${s.source_ids.map((id) => `<a class="cite" href="#src${id}">[${id}]</a>`).join("")}
-    ${s.why ? `<span class="why">${esc(s.why)}</span>` : ""}${s.flag ? `<span class="step-flag">Only partly supported: ${esc(s.flag)}</span>` : ""}</li>`).join("");
+    ${s.why ? `<span class="why">${esc(s.why)}</span>` : ""}${s.flag ? `<span class="step-flag">Only partly supported: ${esc(s.flag)}</span>` : ""}
+    ${stepTags(s)}${(s.precautions || []).map((p) => `<span class="why caution-line">${esc(p)}</span>`).join("")}</li>`).join("");
+  const cautions = d.plan.cautions || [];
+  $("cautions").hidden = !cautions.length;
+  $("cautions").innerHTML = cautions.map((c) => `<li>${esc(c)}</li>`).join("");
+  const removed = d.plan.removed || [];
+  $("removed").hidden = !removed.length;
+  const why = d.garden && d.garden.organic && d.garden.pets ? "organic, pet-safe" : d.garden && d.garden.organic ? "organic" : "pet-safe";
+  $("removed-sum").textContent = `Leaf removed ${removed.length} step${removed.length === 1 ? "" : "s"} to keep your plan ${why}`;
+  $("removed-list").innerHTML = removed.map((r) => `<li>${esc(r)}</li>`).join("");
   const dropped = (d.claim_flags || []).filter((f) => f.verdict === "dropped");
   $("claims").hidden = !dropped.length;
   $("claims").textContent = dropped.length ? `Leaf removed ${dropped.length} step${dropped.length === 1 ? "" : "s"} its sources did not support.` : "";
@@ -404,8 +432,122 @@ function renderPlan(d) {
   $("watch").hidden = d.verdict === "confident" || d.status === "needs_answers" || (!watch.length && !d.plan.sample_if);
   $("watch-list").innerHTML = watch.map((w) => `<li>${esc(w)}</li>`).join("");
   $("sample-if").textContent = d.plan.sample_if ? `When to send a sample: ${d.plan.sample_if}` : "";
-  const due = new Date(Date.now() + d.plan.check_in_days * 864e5);
-  $("checkin").textContent = d.status === "needs_answers" ? "" : `Check in: send a new photo around ${due.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}.`;
+  const due = LeafRemind.checkInDate(Date.now(), d.plan.check_in_days);
+  const waiting = d.status === "needs_answers";
+  $("checkin").textContent = waiting ? "" : `Check in: send a new photo around ${due.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}.`;
+  const saved = d.case_id && d.owner_token && !waiting;
+  $("checkin-remind").hidden = !saved;
+  if (saved) {
+    const top = (d.differential && d.differential[0]) || d.diagnosis.candidates[0];
+    checkinReminder = {
+      title: `Leaf check-in: ${top ? top.name : "your plant"}`,
+      start: due, end: new Date(due.getTime() + 15 * 60000),
+      details: "Take a new photo of the same leaves and add it to your report. Leaf will compare it with the last one and update the advice.",
+      path: `/c/${encodeURIComponent(d.case_id)}`,
+    };
+    $("checkin-google").href = LeafRemind.google(checkinReminder);
+  }
+  renderSprayOffer(d);
+}
+
+// ------------------------------------------------------------------ reminders and the spray window
+
+let checkinReminder = null;
+let sprayReminder = null;
+
+$("checkin-ics").addEventListener("click", async () => {
+  if (!checkinReminder) return;
+  try { await LeafRemind.ics(checkinReminder); } catch (err) { $("checkin-ics").textContent = err.message; }
+});
+$("spray-ics").addEventListener("click", async () => {
+  if (!sprayReminder) return;
+  try { await LeafRemind.ics(sprayReminder); } catch (err) { $("spray-ics").textContent = err.message; }
+});
+
+function renderSprayOffer(d) {
+  const show = !!(d.plan.spray && d.status !== "needs_answers");
+  $("spray").hidden = !show;
+  $("spray-out").hidden = true;
+  $("spray-status").textContent = "";
+  if (!show) return;
+  const place = $("region").value.trim() || coords;
+  $("spray-ask").hidden = !!place;
+  if (place) findSprayWindow(d);
+}
+
+$("spray-go").addEventListener("click", () => last && findSprayWindow(last));
+$("spray-locate").addEventListener("click", () => { $("locate").click(); });
+
+const fmtTemp = (c) => (navigator.language || "").startsWith("en-US") ? `${Math.round(c * 9 / 5 + 32)}°F` : `${Math.round(c)}°C`;
+const fmtWind = (k) => (navigator.language || "").startsWith("en-US") ? `${Math.round(k / 1.609)} mph` : `${Math.round(k)} km/h`;
+// Window times are the garden's wall-clock time (the forecast's own clock, no zone attached),
+// so a browser in another time zone never shifts them. Calendar entries use the UTC times.
+const localTime = (iso) => new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+const localDay = (iso) => new Date(iso).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+const sentence = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+async function findSprayWindow(d) {
+  const body = { heat_limit_c: d.plan.heat_limit_c || 32, bees: !!d.plan.bee_safe_hours };
+  if (coords) Object.assign(body, coords); else body.region = $("region").value.trim();
+  if (!coords && !body.region) { $("spray-ask").hidden = false; $("spray-status").textContent = "Leaf needs your town or location for the forecast."; return; }
+  $("spray-go").disabled = true;
+  $("spray-status").textContent = "Checking the next five days of forecast…";
+  try {
+    const r = await fetch("/api/spray-window", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const f = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(f.detail || "The forecast is unavailable right now.");
+    renderSpray(f, d);
+    $("spray-status").textContent = "";
+  } catch (err) {
+    $("spray-status").textContent = err.message;
+  } finally {
+    $("spray-go").disabled = false;
+  }
+}
+
+function renderSpray(f, d) {
+  $("spray-out").hidden = false;
+  $("spray-rules").innerHTML = (f.rules || []).map((r) => `<li>${esc(r)}</li>`).join("")
+    + `<li>Heat limit for this plan: ${esc(fmtTemp(f.heat_limit_c))}${f.heat_limit_c < 30 ? " (it uses oil or sulfur, which can burn leaves in heat)" : ""}.</li>`
+    + (f.bee_safe_hours ? "<li>A product in this plan harms bees, so only early morning or evening hours count.</li>" : "");
+  const best = (f.windows || []).find((w) => w.best);
+  $("spray-remind").hidden = !best;
+  if (best) {
+    const dry = best.dry_hours_after >= 48 ? "2 days or more" : `about ${best.dry_hours_after} hours`;
+    $("spray-best").innerHTML = `<strong>${esc(localDay(best.start))}, ${esc(localTime(best.start))} to ${esc(localTime(best.end))}</strong>`
+      + ` <span class="muted">${esc(fmtTemp(best.temp_c[0]))} to ${esc(fmtTemp(best.temp_c[1]))}, wind up to ${esc(fmtWind(best.wind_kmh))}, dry for ${esc(dry)} after.</span>`
+      + (best.notes.length ? ` <span class="muted">${esc(sentence(best.notes.join("; ")))}.</span>` : "");
+    const products = [...new Set(d.plan.steps.flatMap((s) => s.actives || []))].join(", ");
+    sprayReminder = {
+      title: `Spray ${products || "your plants"} (Leaf)`,
+      start: best.start_utc, end: best.end_utc,
+      details: `Leaf's best window for your care plan in ${f.place}. Follow the product label. Check the forecast again on the day.`,
+      path: d.case_id && d.owner_token ? `/c/${encodeURIComponent(d.case_id)}` : "",
+    };
+    $("spray-google").href = LeafRemind.google(sprayReminder);
+  } else {
+    $("spray-best").textContent = f.message;
+  }
+  // Day rows x hour columns, coloured by score; Leaf's pick outlined.
+  const pickDay = best ? best.start.slice(0, 10) : "";
+  const pickFrom = best ? +best.start.slice(11, 13) : -1, pickTo = best ? +best.end.slice(11, 13) : -1;
+  const hours = Array.from({ length: 14 }, (_, i) => i + 6);
+  const head = `<span></span>${hours.map((h) => `<span class="gh">${h % 3 === 0 ? h : ""}</span>`).join("")}`;
+  const rows = (f.days || []).map((day) => {
+    const byHour = Object.fromEntries(day.hours.map((c) => [c.hour, c]));
+    const label = new Date(`${day.date}T12:00`).toLocaleDateString(undefined, { weekday: "short" });
+    return `<span class="gd">${esc(label)}</span>` + hours.map((h) => {
+      const c = byHour[h] || { score: -1, why: "" };
+      const cls = c.score < 0 ? "no" : c.score >= 75 ? "good" : "ok";
+      const pick = day.date === pickDay && h >= pickFrom && h < pickTo ? " pick" : "";
+      const tip = c.score < 0 ? (c.why || "not suitable") : `score ${c.score}`;
+      return `<span class="cell ${cls}${pick}" title="${esc(`${h}:00 ${tip}`)}"></span>`;
+    }).join("");
+  }).join("");
+  $("spray-grid").innerHTML = head + rows;
+  $("spray-grid").setAttribute("aria-label", best ? `Best window ${localDay(best.start)} ${localTime(best.start)}` : "No suitable window");
+  $("spray-others").innerHTML = (f.windows || []).filter((w) => !w.best).slice(0, 4).map((w) =>
+    `<li>${esc(localDay(w.start))}: ${esc(localTime(w.start))} to ${esc(localTime(w.end))} <span class="muted">(score ${w.score})</span></li>`).join("");
 }
 
 function renderEvidence(d) {

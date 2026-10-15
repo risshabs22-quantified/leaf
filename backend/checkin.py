@@ -163,6 +163,8 @@ async def check_in(
         change=sanitize(progress.change, 400),
         advice=sanitize(advice.advice, 500),
         steps=advice.steps[:4],
+        removed=checked.removed,
+        cautions=checked.cautions,
         escalate=spreading,
         escalate_reason=SPREADING_REASON if spreading else "",
         photo=now_thumb,

@@ -31,6 +31,12 @@ There are three modes. **Auto** (the default) takes a quick look first and inves
 
 Every report gets a private share link for 30 days, and you can come back with a new photo to check in: Leaf compares it with the last one and updates the advice.
 
+After the diagnosis, three tools help you act on it:
+
+- **Organic and pet-safe plans.** Tick "organic only" or "pets or children use this garden" and every step is checked in code against a table of 33 active ingredients; steps that break the choice are removed, with the reason. Each product is labelled for organic status, pets and bees, with warnings such as oil and sulfur burning leaves together.
+- **The best time to spray.** Leaf scores every daylight hour of the next five days of forecast (dry leaves, 6+ dry hours after, low wind, a heat limit that drops for oils and sulfur, bee-safe hours when needed) and suggests the best 3-hour window.
+- **My plants and reminders.** Saved plants are listed with the date to check on them next; check-ins and spray windows go to Google Calendar, Apple Calendar or Outlook. A private link moves the list to another device, with no account.
+
 ## How we built it
 
 **Models, all on Nebius Token Factory** (every call goes through one client, `backend/models.py`):
@@ -46,9 +52,11 @@ Every report gets a private share link for 30 days, and you can come back with a
 
 **Decisions in code, not prompts:** the verdict, the high-stakes rule, probability caps, the final confidence (investigation, second opinion, photo quality and evidence coverage combined), and the claim check that removes plan steps no source supports.
 
+**Integrations decided in code:** the spray window is scored from Open-Meteo's hourly forecast by fixed rules (`backend/spray.py`); organic and pet safety come from an ingredient table checked on every plan and check-in (`backend/actives.py`); calendar reminders are standard `.ics` files and Google Calendar add-event links.
+
 **Hosting:** FastAPI and a static frontend in one container on Cloudflare Containers behind a small Worker, with reports in a Cloudflare R2 bucket. The container sleeps when idle; a visitor sees a "Leaf is waking up" page for a few seconds instead of a blank screen.
 
-**Testing:** 398 offline tests with fake models and search, and an evaluation harness that scores top-1 and top-3 accuracy, each verdict, lab referrals, calibration (Brier score), cost and time per case.
+**Testing:** 422 offline tests with fake models and search, and an evaluation harness that scores top-1 and top-3 accuracy, each verdict, lab referrals, calibration (Brier score), cost and time per case.
 
 ## Challenges we ran into
 
@@ -86,6 +94,7 @@ On 52 licensed photos (31 diseases, 15 abiotic problems, 6 pests), one run per m
 
 - Finish the held-out test set of our own phone photos and report it without tuning on it.
 - Switch the vision step to an NVIDIA vision model as soon as Token Factory serves one.
+- Spray windows that also respect a product's pre-harvest interval, read from its label.
 - A targeted close-up question for late blight's tell-tale signs (water-soaked margins, white growth on the underside) to fix its most common miss.
 
 ## Built with

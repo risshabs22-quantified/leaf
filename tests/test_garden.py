@@ -12,6 +12,7 @@ from backend.actives import (
     OIL_HEAT_LIMIT_C,
     POISON_LINE,
     apply_garden,
+    clear_code_fields,
     find_actives,
     garden_prompt,
 )
@@ -88,7 +89,7 @@ def test_values_the_model_wrote_into_code_owned_fields_are_discarded():
         cautions=["invented"],
         spray=False,
     )
-    apply_garden(p, Garden())
+    apply_garden(clear_code_fields(p), Garden())
     s = p.steps[0]
     assert s.organic is False and s.pet_risk == "caution" and s.bee_risk
     assert p.removed == [] and "invented" not in p.cautions and p.spray
@@ -181,3 +182,45 @@ def test_check_in_advice_keeps_to_the_same_preferences(settings):
     assert r.status_code == 200, r.text
     steps = [s["action"] for s in r.json()["checkins"][0]["steps"]]
     assert steps == ["Remove newly spotted leaves"]
+    assert "mancozeb" in r.json()["checkins"][0]["removed"][0]
+
+
+def test_a_product_the_step_advises_against_is_not_one_it_uses():
+    names = lambda t: [a.name for a in find_actives(t)]  # noqa: E731
+    assert names("Do not use metaldehyde slug bait; use iron phosphate instead") == [
+        "iron phosphate"
+    ]
+    assert names("Avoid chlorothalonil; spray copper instead") == ["copper"]
+    assert names("Use iron phosphate bait instead of metaldehyde") == ["iron phosphate"]
+    assert names("Do not overapply copper") == ["copper"]  # still uses copper
+    p = plan("Do not use metaldehyde slug bait; scatter iron phosphate pellets")
+    apply_garden(p, Garden(pets=True))
+    assert len(p.steps) == 1 and not p.removed
+
+
+def test_spray_box_only_for_plans_that_apply_a_product():
+    p = plan("Apply a layer of mulch around the base", "Water at the base")
+    apply_garden(p, Garden())
+    assert not p.spray
+    p = plan("Spray a fungicide labelled for powdery mildew")
+    apply_garden(p, Garden())
+    assert p.spray
+
+
+def test_running_the_rules_twice_keeps_what_was_removed():
+    p = plan("Spray chlorothalonil weekly", "Spray copper fungicide")
+    apply_garden(p, Garden(organic=True))
+    apply_garden(p, Garden(organic=True))
+    assert len(p.removed) == 1 and [s.action for s in p.steps] == ["Spray copper fungicide"]
+
+
+def test_quick_is_never_confident_when_the_preferences_remove_every_step(settings):
+    only_synthetic = {
+        **PLAN,
+        "steps": [{"action": "Spray mancozeb weekly", "why": "Protects", "source_ids": [1]}],
+        "removed": ["model text"],
+    }
+    with api(settings, only_synthetic) as (c, _):
+        body = c.post("/api/diagnose", data={"notes": "spots", "organic": "true"}).json()
+    assert body["plan"]["steps"] == [] and body["verdict"] != "confident"
+    assert body["plan"]["removed"] and "model text" not in body["plan"]["removed"]

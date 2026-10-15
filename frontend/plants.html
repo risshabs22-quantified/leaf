@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My plants · Leaf</title>
+<meta name="description" content="Every plant you have diagnosed with Leaf, when to check on it next, and reminders for your calendar.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M6 26C6 14 13 7 26 6c0 13-7 20-18 20z' fill='none' stroke='%2318793a' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M6 26C12 19 17 14 22 10' fill='none' stroke='%2318793a' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="site">
+  <a href="/" class="brand" aria-label="Leaf home">
+    <svg class="mark" viewBox="0 0 48 64" aria-hidden="true"><path d="M9 57C5 33 17 12 41 6c3 25-8 45-30 51" /><path d="M9 57C17 41 26 27 37 14" /></svg>
+    <span class="word">Leaf</span>
+  </a>
+  <nav class="nav" aria-label="Main">
+    <a class="wide" href="/#how">How it works</a>
+    <a class="wide" href="/#features">Features</a>
+    <a href="/plants" aria-current="page">My plants</a>
+    <a class="nav-cta" href="/app">Diagnose a plant</a>
+  </nav>
+</header>
+
+<main class="page plants-page">
+  <div class="intro">
+    <h1 class="page-title">My plants</h1>
+    <p>Every plant you diagnose on this device is kept here for 30 days, with when to check on it next. Check-ins compare a new photo with the last one and update the advice. Nothing here needs an account: the list lives in this browser.</p>
+  </div>
+
+  <p id="plants-status" class="status" role="status" aria-live="polite"></p>
+  <ol id="plants" class="plants"></ol>
+
+  <section id="plants-empty" class="block" hidden>
+    <h2>No plants yet</h2>
+    <p>Diagnose a plant and Leaf saves the report here, with a reminder date for your next check-in.</p>
+    <a class="cta" href="/app"><span class="cta-text">Diagnose a plant</span><svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></a>
+  </section>
+
+  <section id="move" class="block" hidden>
+    <h2>Use your plants on another device</h2>
+    <p class="small">Open this link on your phone or another browser and your plants appear there too. Anyone with the link can see these reports and add check-ins, so only send it to yourself.</p>
+    <button type="button" id="move-copy" class="textbtn">Copy the link</button>
+  </section>
+</main>
+
+<footer class="foot">
+  <span>Open source, MIT license. <a href="https://github.com/risshabs22-quantified/leaf">Code on GitHub</a></span>
+  <span>Leaf gives guidance, not certainty. For food crops and any chemical, follow the product label.</span>
+</footer>
+<script src="/static/remind.js"></script>
+<script src="/static/plants.js"></script>
+</body>
+</html>

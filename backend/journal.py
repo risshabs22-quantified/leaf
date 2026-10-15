@@ -35,6 +35,8 @@ class CheckIn(BaseModel):
     change: str = ""
     advice: str = ""
     steps: list[PlanStep] = Field(default_factory=list)
+    removed: list[str] = Field(default_factory=list)  # steps dropped for the garden's preferences
+    cautions: list[str] = Field(default_factory=list)
     escalate: bool = False
     escalate_reason: str = ""
     photo: str = ""  # thumbnail of the check-in photo

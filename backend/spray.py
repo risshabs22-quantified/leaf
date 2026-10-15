@@ -23,6 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, Field
 
@@ -34,6 +35,7 @@ DRY_AFTER_H, GOOD_DRY_H = 6, 24
 BEE_EARLY, BEE_LATE = 8, 18  # bee-safe: start before 8:00 or from 18:00
 DAYS = 5
 SOONER_MARGIN = 5  # prefer an earlier window when it scores within this of the best
+WINDOW_H = 3  # the longest window Leaf suggests
 
 RULES = [
     "Daylight only (6:00 to 20:00).",
@@ -99,6 +101,13 @@ class SprayForecast(BaseModel):
     rules: list[str] = Field(default_factory=lambda: list(RULES))
     message: str = ""  # shown when there is no good window
     attribution: str = "Weather data by Open-Meteo.com"
+
+
+def _zone(name: str) -> ZoneInfo | None:
+    try:
+        return ZoneInfo(name) if name and name != "GMT" else None
+    except (ZoneInfoNotFoundError, ValueError):
+        return None
 
 
 def parse_forecast(data: dict[str, Any]) -> tuple[list[FHour], timedelta]:
@@ -191,10 +200,23 @@ def plan_spray(
     place: str = "",
 ) -> SprayForecast:
     hours, offset = parse_forecast(data)
-    if now_local is None:
+    zone = _zone(str(data.get("timezone", "")))
+
+    def to_utc(local: datetime) -> str:
+        # The zone, not one fixed offset: a five-day forecast can cross a clock change.
+        t = local.replace(tzinfo=zone).astimezone(UTC) if zone else local - offset
+        return t.replace(tzinfo=None).isoformat(timespec="minutes") + "Z"
+
+    if now_local is None:  # Open-Meteo times are naive wall-clock times at the place
         now_local = (
-            datetime.now(UTC).replace(tzinfo=None) + offset
-        )  # Open-Meteo times are naive local
+            datetime.now(zone).replace(tzinfo=None)
+            if zone
+            else datetime.now(UTC).replace(tzinfo=None) + offset
+        )
+    # The hour already under way is gone: the earliest start is the next full hour.
+    cutoff = now_local.replace(minute=0, second=0, microsecond=0)
+    if now_local > cutoff:
+        cutoff += timedelta(hours=1)
     out = SprayForecast(
         place=place,
         timezone=str(data.get("timezone", "")),
@@ -209,7 +231,7 @@ def plan_spray(
         for s in scored:
             if s.hour.time.date() != day or not FIRST_HOUR <= s.hour.time.hour <= LAST_HOUR:
                 continue
-            past = s.hour.time < now_local.replace(minute=0, second=0, microsecond=0)
+            past = s.hour.time < cutoff
             cells.append(
                 {
                     "hour": s.hour.time.hour,
@@ -225,11 +247,7 @@ def plan_spray(
         run: list[Scored] = []
         for s in scored:
             t = s.hour.time
-            usable = (
-                t.date() == day
-                and s.ok
-                and t >= now_local.replace(minute=0, second=0, microsecond=0)
-            )
+            usable = t.date() == day and s.ok and t >= cutoff
             if usable:
                 run.append(s)
             elif run:
@@ -239,8 +257,12 @@ def plan_spray(
             runs.append(run)
         if not runs:
             continue
+        # Every stretch of up to WINDOW_H consecutive good hours that day; the best mean wins,
+        # earliest on a tie. A spray takes under an hour, so a few hours give slack without
+        # turning "the best time" into "any time today".
+        slots = [r[i : i + WINDOW_H] for r in runs for i in range(max(1, len(r) - WINDOW_H + 1))]
         best = max(
-            runs, key=lambda r: (sum(x.score for x in r) / len(r), -r[0].hour.time.timestamp())
+            slots, key=lambda r: (sum(x.score for x in r) / len(r), -r[0].hour.time.timestamp())
         )
         start, end = best[0].hour.time, best[-1].hour.time + timedelta(hours=1)
         notes = [n for x in best for n in x.notes]
@@ -252,8 +274,8 @@ def plan_spray(
             Window(
                 start=start.isoformat(timespec="minutes"),
                 end=end.isoformat(timespec="minutes"),
-                start_utc=(start - offset).isoformat(timespec="minutes") + "Z",
-                end_utc=(end - offset).isoformat(timespec="minutes") + "Z",
+                start_utc=to_utc(start),
+                end_utc=to_utc(end),
                 score=mean,
                 dry_hours_after=dry,
                 temp_c=(min(x.hour.temp_c for x in best), max(x.hour.temp_c for x in best)),

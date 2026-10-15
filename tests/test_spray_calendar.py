@@ -134,7 +134,7 @@ def test_reminders_refuse_links_to_other_sites_and_times_without_a_zone():
     import pytest
 
     start = datetime(2026, 10, 20, 9, tzinfo=UTC)
-    for bad in ("https://evil.example/x", "//evil.example", "c/abc"):
+    for bad in ("https://evil.example/x", "//evil.example", "c/abc", "/c/x\r\nATTACH:https://e.x"):
         with pytest.raises(pydantic.ValidationError):
             Reminder(title="t", start=start, end=start, path=bad)
     with pytest.raises(pydantic.ValidationError):
@@ -206,3 +206,25 @@ def test_calendar_endpoint_returns_an_ics_file(settings):
     assert "attachment" in r.headers["content-disposition"]
     assert "DTSTART:20261020T130000Z" in r.text and "/c/abc" in r.text
     assert bad.status_code == 422
+
+
+def test_a_long_good_day_suggests_its_best_three_hours_not_the_whole_day():
+    # Too cool to be ideal before 9:00, ideal all afternoon: the earliest ideal 3 hours win.
+    temps = {i: {"temperature_2m": 8.0 + 2 * max(0, min(i % 24, 12) - 6)} for i in range(144)}
+    w = plan_spray(forecast(temps), NOW).windows[0]
+    assert w.start == "2026-10-15T09:00" and w.end == "2026-10-15T12:00"
+
+
+def test_utc_times_follow_the_clock_change():
+    # New York leaves daylight time on Sunday 1 November 2026: 6:00 is 10:00 UTC before
+    # and 11:00 UTC after, although the forecast reports one offset (-4 h) for all of it.
+    start = datetime(2026, 10, 30)
+    out = plan_spray(forecast(start=start), datetime(2026, 10, 30, 5, 0))
+    by_day = {w.start[:10]: w for w in out.windows}
+    assert by_day["2026-10-30"].start_utc == by_day["2026-10-30"].start[:11] + "10:00Z"
+    assert by_day["2026-11-02"].start_utc == "2026-11-02T11:00Z"
+
+
+def test_the_hour_already_under_way_is_not_offered():
+    out = plan_spray(forecast(), datetime(2026, 10, 15, 14, 50))
+    assert out.windows[0].start == "2026-10-15T15:00"

@@ -4,209 +4,322 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Leaf · plant doctor</title>
-<meta name="description" content="Snap a sick leaf, get a cited care plan. Powered by NVIDIA Nemotron on Nebius Token Factory.">
+<meta name="description" content="Show Leaf a sick leaf. It works the case like a plant clinic: ranks the likely causes, checks your weather, reads extension guides, and writes a care plan that cites its sources, or tells you to send a sample to a lab.">
 <meta name="color-scheme" content="light dark">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M6 26C6 14 13 7 26 6c0 13-7 20-18 20z' fill='none' stroke='%232f6b3a' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M6 26C12 19 17 14 22 10' fill='none' stroke='%232f6b3a' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M6 26C6 14 13 7 26 6c0 13-7 20-18 20z' fill='none' stroke='%2318793a' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M6 26C12 19 17 14 22 10' fill='none' stroke='%2318793a' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/landing.css">
 </head>
-<body>
-<a class="skip" href="#intake-h">Skip to the diagnosis form</a>
+<body class="landing">
+<a class="skip" href="#main">Skip to the content</a>
 
-<header class="top">
-  <a href="#top" class="brand" aria-label="Leaf">
-    <svg class="mark" viewBox="0 0 48 64" role="img" aria-label="Leaf">
-      <path d="M9 57C5 33 17 12 41 6c3 25-8 45-30 51" />
-      <path d="M9 57C17 41 26 27 37 14" />
-      <path d="M17 44l-7-3M22 36l-8-2M27 28l-8-1M23 40l9-1M29 31l9-2" />
-    </svg>
+<header class="site">
+  <a href="/" class="brand" aria-label="Leaf home">
+    <svg class="mark" viewBox="0 0 48 64" aria-hidden="true"><path d="M9 57C5 33 17 12 41 6c3 25-8 45-30 51" /><path d="M9 57C17 41 26 27 37 14" /></svg>
+    <span class="word">Leaf</span>
   </a>
+  <nav class="nav" aria-label="Main">
+    <a class="wide" href="#how">How it works</a>
+    <a class="wide" href="#features">Features</a>
+    <a class="wide" href="#accuracy">Accuracy</a>
+    <a href="/plants">My plants</a>
+    <a class="nav-cta" href="/app">Diagnose a plant</a>
+  </nav>
 </header>
 
-<main id="top" class="page">
-  <div class="intro">
-    <p class="lede">Leaf is a plant doctor. Show it a sick leaf and it weighs the likely causes, searches extension-office guides, and writes you a care plan that cites its sources.</p>
-    <p>It can tell <a href="#intake-h" class="try" data-try="Brown ringed spots on my tomato leaves, mostly the lower ones, after a week of rain.">early blight from a nutrient problem</a>, work out <a href="#intake-h" class="try" data-try="The lower leaves on my pepper plants are turning yellow and dropping.">why pepper leaves turn yellow</a>, or look into <a href="#intake-h" class="try" data-try="White powdery coating on my squash leaves.">a white powder on squash</a>. When it isn't sure, it says so.</p>
+<main id="main">
+
+<!-- ============================================================== hero -->
+<section class="hero wrap">
+  <div class="hero-copy">
+    <h1>Show Leaf a sick leaf. It works the case like a plant clinic.</h1>
+    <p class="hero-sub">Leaf ranks the likely causes, checks your recent weather, reads extension-service guides, and writes a care plan where every step cites what it read. When it isn't sure, it says so and helps you send a sample to a lab.</p>
+    <p class="hero-actions">
+      <a class="btn" href="/app">Diagnose a plant</a>
+      <a class="btn-quiet" href="#how">See how it works</a>
+    </p>
+    <p class="hero-facts">Free to use. No account. About 15 seconds for a quick look, about a minute for a full investigation.</p>
   </div>
 
-  <section class="intake" aria-labelledby="intake-h">
-    <h1 id="intake-h" class="sr-only">Diagnose a plant</h1>
+  <figure class="specimen" aria-labelledby="specimen-cap">
+    <svg class="leaf-art" viewBox="0 0 560 470" role="img" aria-label="An example case: a tomato leaf with ringed brown spots being examined">
+      <defs>
+        <linearGradient id="scanfade" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0" stop-color="var(--leaf)" stop-opacity="0" />
+          <stop offset="1" stop-color="var(--leaf)" stop-opacity=".35" />
+        </linearGradient>
+        <clipPath id="leafclip"><path d="M110 430C78 300 168 132 478 62c-14 196-140 338-368 368z" /></clipPath>
+      </defs>
+      <path class="leaf-body" d="M110 430C78 300 168 132 478 62c-14 196-140 338-368 368z" />
+      <path class="leaf-rib" d="M110 430C214 330 330 206 478 62" />
+      <g class="leaf-veins">
+        <path d="M168 372c-20-38-22-80-10-118" /><path d="M214 330c-6-50 4-102 34-140" /><path d="M262 286c8-52 34-98 76-130" /><path d="M314 236c20-44 54-80 98-104" />
+        <path d="M168 372c40 4 82-6 116-28" /><path d="M214 330c46 10 94 2 136-24" /><path d="M262 286c48 10 96 4 140-20" /><path d="M314 236c38 6 74 0 108-18" />
+      </g>
+      <g class="lesions" clip-path="url(#leafclip)">
+        <g class="lesion" transform="translate(236 300)"><circle class="halo" r="27" /><circle class="spot" r="18" /><circle class="ring" r="12" /><circle class="ring" r="6" /></g>
+        <g class="lesion" transform="translate(318 238)"><circle class="halo" r="21" /><circle class="spot" r="13" /><circle class="ring" r="8" /><circle class="ring" r="3.5" /></g>
+        <g class="lesion" transform="translate(186 360)"><circle class="halo" r="17" /><circle class="spot" r="10" /><circle class="ring" r="5" /></g>
+      </g>
+      <g class="scan" clip-path="url(#leafclip)"><rect x="60" y="-40" width="440" height="40" fill="url(#scanfade)" /><rect x="60" y="0" width="440" height="2" class="scanline" /></g>
+      <g class="callouts">
+        <g class="callout c1"><circle cx="236" cy="300" r="34" /><path d="M210 278L170 236" /><text x="22" y="228">rings like a target</text></g>
+        <g class="callout c2"><circle cx="318" cy="238" r="27" /><path d="M342 224L400 196" /><text x="408" y="200">yellow halo</text></g>
+        <g class="callout c3"><circle cx="186" cy="360" r="22" /><path d="M166 374L60 360" /><text x="0" y="352">lower leaves first</text></g>
+      </g>
+    </svg>
 
-    <fieldset class="mode">
-      <legend class="field-label">How should Leaf work?</legend>
-      <label class="mode-opt"><input type="radio" name="mode" value="auto" checked> <span><span class="mode-name">Auto</span> <span class="mode-note">A quick look first. If Leaf isn't sure, it investigates further and tells you why. 15 seconds to about a minute.</span></span></label>
-      <label class="mode-opt"><input type="radio" name="mode" value="quick"> <span><span class="mode-name">Quick</span> <span class="mode-note">One careful look, about 15 seconds.</span></span></label>
-      <label class="mode-opt"><input type="radio" name="mode" value="deep"> <span><span class="mode-name">Deep</span> <span class="mode-note">Works the case like a plant clinic: looks closer, checks your weather, reads sources and gets a second opinion. About a minute.</span></span></label>
-      <p id="deep-left" class="small muted" hidden></p>
-    </fieldset>
+    <div class="case-card" aria-hidden="true">
+      <p class="cc-label">What it could be</p>
+      <ol class="cc-diff" id="cc-diff"></ol>
+      <ol class="cc-log" id="cc-log"></ol>
+      <p class="cc-verdict" id="cc-verdict">Likely: early blight <span>Check in again Thursday</span></p>
+    </div>
+    <figcaption id="specimen-cap" class="cap">An example case, sped up. Real cases show this live.</figcaption>
+  </figure>
+</section>
 
-    <div class="photos" role="group" aria-labelledby="photos-h">
-      <p id="photos-h" class="field-label">Photos <span class="opt">Up to three; a quick look uses the first</span></p>
-      <div class="slots">
-        <label class="slot drop" data-label="close-up">
-          <input type="file" accept="image/*" class="photo-input">
-          <img alt="" hidden>
-          <span class="slot-text"><span class="link">Close-up</span> of a damaged leaf</span>
-        </label>
-        <label class="slot drop" data-label="whole plant">
-          <input type="file" accept="image/*" class="photo-input">
-          <img alt="" hidden>
-          <span class="slot-text"><span class="link">Whole plant</span></span>
-        </label>
-        <label class="slot drop" data-label="underside">
-          <input type="file" accept="image/*" class="photo-input">
-          <img alt="" hidden>
-          <span class="slot-text"><span class="link">Underside</span> of a leaf</span>
-        </label>
+<section class="built wrap" aria-label="What Leaf is built on">
+  <p>Built on</p>
+  <ul>
+    <li>NVIDIA Nemotron 3 Ultra, Super and 3.5 Lightning</li>
+    <li>Nebius Token Factory</li>
+    <li>Tavily search</li>
+    <li>Open-Meteo weather</li>
+    <li>Cloudflare Containers</li>
+  </ul>
+</section>
+
+<!-- ============================================================== why -->
+<section class="why wrap" aria-labelledby="why-h">
+  <h2 id="why-h" class="section-h">Early plant problems look alike.</h2>
+  <div class="why-cols">
+    <p>A fungal leaf spot, a nutrient shortage and sun scorch can all begin as brown patches. Search results are generic and forums disagree, so gardeners guess, spray the wrong thing, and lose the plant.</p>
+    <p>A plant diagnostic clinic works differently. It takes a history, looks closely, checks the weather, lists the possible causes, tests each one against evidence, and only then advises, or asks for a sample. Leaf follows that workflow and shows you every step, including when the answer is "send it to a lab".</p>
+  </div>
+</section>
+
+<!-- ============================================================== how it works -->
+<section id="how" class="how wrap" aria-labelledby="how-h">
+  <div class="how-head">
+    <h2 id="how-h" class="section-h">How Leaf works a case</h2>
+    <p>Seven steps, the same order a plant clinic uses. Models do the looking, reasoning and writing. Code decides the verdict, enforces the safety rules and checks every citation.</p>
+  </div>
+  <ol class="steps-line" id="steps-line">
+    <li><h3>Look at each photo</h3><p>The vision model describes the plant, the symptoms and where they are, and rates the photo's quality. Up to three photos: a close-up, the whole plant, the underside.</p><p class="who">Kimi K2.6 on Token Factory, because Token Factory has no NVIDIA vision model yet. Leaf switches when one appears.</p></li>
+    <li><h3>List the possible causes</h3><p>A first differential: every plausible cause with a probability, and the evidence for and against each. Probabilities are capped at 90%, because a photo is never proof.</p><p class="who">NVIDIA Nemotron 3 Ultra, with reasoning on</p></li>
+    <li><h3>Investigate</h3><p>In a full investigation, Nemotron Ultra calls tools: it crops a photo to look closer, checks 14 days of your weather against published disease-risk rules (TOMCAST for tomato; Hutton, Smith and Wallin for potato), searches and reads sources, checks recent outbreak news, and can ask you up to three questions. The differential re-ranks as evidence arrives.</p><p class="who">Up to 8 tool calls, a dollar budget and a 90-second clock, all enforced in code</p></li>
+    <li><h3>Read trusted sources</h3><p>Tavily search ranks extension services, .edu and .gov first and marks open-web pages as untrusted. Leaf reads only pages its own searches returned, never a link a model made up.</p><p class="who">Tavily search, extract and news</p></li>
+    <li><h3>Get a second opinion</h3><p>A different model sees only the evidence, not Leaf's answer, and argues for the strongest alternative. If it disagrees strongly, Leaf's confidence drops.</p><p class="who">NVIDIA Nemotron 3 Super</p></li>
+    <li><h3>Write the plan, then check it</h3><p>The care plan may cite only passages Leaf read. A claim check then removes any step its source does not support, and any dose the source never states. Every product is checked against Leaf's table of active ingredients for organic status, pets and bees.</p><p class="who">NVIDIA Nemotron 3.5 Lightning, then rules in code</p></li>
+    <li><h3>Decide, in code</h3><p>The verdict comes from the numbers, not from the model's wording: how far the leading cause is ahead, the photo quality, the second opinion, and whether a serious disease is in play.</p><p class="who"><code>backend/verdict.py</code></p></li>
+  </ol>
+</section>
+
+<!-- ============================================================== modes and verdicts -->
+<section class="modes wrap" aria-labelledby="modes-h">
+  <h2 id="modes-h" class="section-h">Three ways to run a case</h2>
+  <div class="mode-rows">
+    <div class="mode-row lead"><h3>Auto <span class="note">the default</span></h3><p>A quick look first. Only when Leaf isn't confident does it open a full investigation, starting from what the quick look already found, and it tells you why it decided to look further.</p><p class="nums">15 s to about a minute, about 4 cents</p></div>
+    <div class="mode-row"><h3>Quick</h3><p>One careful look at the photo, a ranked diagnosis, a search, and a cited care plan.</p><p class="nums">About 15 s, under 1 cent</p></div>
+    <div class="mode-row"><h3>Deep</h3><p>The full investigation every time, streamed live: each tool call, the re-ranking differential, the weather and the second opinion.</p><p class="nums">About 40 s, about 5 cents</p></div>
+  </div>
+  <p class="small muted">Costs are Leaf's model and search spend per case, paid by the project. You pay nothing.</p>
+</section>
+
+<section class="verdicts wrap" aria-labelledby="verdicts-h">
+  <h2 id="verdicts-h" class="section-h">Every answer ends in one of three verdicts</h2>
+  <div class="scale" aria-hidden="true"><span class="s1"></span><span class="s2"></span><span class="s3"></span></div>
+  <div class="verdict-cols">
+    <div><h3 class="v-ok">Confident</h3><p>The leading cause is well ahead, the photo is clear, and nothing serious is in play. You get a cited care plan and a check-in date.</p></div>
+    <div><h3 class="v-mid">Likely</h3><p>A clear favourite, but a close second or a doubtful second opinion. You get the plan, plus what to watch for that would change the diagnosis, and when to send a sample.</p></div>
+    <div><h3 class="v-lab">Send a sample to a lab</h3><p>The causes are spread out, the photo is too poor, or a serious disease is possible. You get a printable case summary and your state's plant diagnostic lab.</p></div>
+  </div>
+  <p class="highstakes">Serious diseases go to a lab when they are among the top two causes (at 15% or more) or reach 20% anywhere in the list, second opinion included, because a wrong guess hurts more than one garden: late blight, tomato brown rugose fruit virus, sudden oak death, citrus greening, Ralstonia race 3 biovar 2, boxwood blight, spotted lanternfly and box tree moth.</p>
+</section>
+
+<!-- ============================================================== features -->
+<section id="features" class="features wrap" aria-labelledby="features-h">
+  <h2 id="features-h" class="section-h">After the diagnosis</h2>
+  <p class="section-sub">The diagnosis is the start. These are the parts that help you actually save the plant.</p>
+
+  <article class="feature">
+    <div class="f-copy">
+      <h3>The best time to spray</h3>
+      <p>A spray that washes off, drifts or burns the leaves is wasted. When your plan applies a product, Leaf scores every daylight hour of the next five days of forecast and picks the best window, then adds it to your calendar.</p>
+      <ul class="f-points">
+        <li>Leaves dry, and at least 6 dry hours after spraying (24 is best)</li>
+        <li>Wind under 10 mph with gusts under 15, so it lands where you aim</li>
+        <li>Not too cold to work, not so hot it burns: the limit drops to 85&nbsp;°F when the plan uses oil or sulfur</li>
+        <li>If a product harms bees, only early morning or evening</li>
+      </ul>
+      <p class="small muted">Scored by fixed rules in code from Open-Meteo's hourly forecast. The product label always wins.</p>
+    </div>
+    <div class="f-demo" aria-hidden="true">
+      <div class="demo-card">
+        <p class="dc-title">Thursday, 7:00 to 10:00 AM</p>
+        <p class="dc-sub">61 to 68 °F, wind up to 6 mph, dry for 31 hours after</p>
+        <div class="demo-grid" id="demo-grid"></div>
+        <p class="dc-legend"><span class="sw good"></span> good <span class="sw ok"></span> possible <span class="sw no"></span> rain, wind or heat <span class="sw pick"></span> Leaf's pick</p>
       </div>
     </div>
+  </article>
 
-    <label class="field">
-      <span class="field-label">What have you noticed? <span class="opt">Optional</span></span>
-      <textarea id="notes" rows="3" maxlength="2000" placeholder="Brown spots started on the bottom leaves a week ago, after lots of rain"></textarea>
-    </label>
-
-    <div class="field">
-      <label for="region" class="field-label">Where are you? <span class="opt">City and state; used for your local weather</span></label>
-      <input id="region" maxlength="100" placeholder="Columbus, Ohio" autocomplete="address-level2">
-      <button type="button" id="locate" class="textbtn">Use my location instead</button>
-      <span id="locate-status" class="small muted" role="status" aria-live="polite"></span>
+  <article class="feature flip">
+    <div class="f-copy">
+      <h3>Organic and pet-safe plans, enforced</h3>
+      <p>Tick "organic only" or "pets or children use this garden" and the plan writer is told. Prompts are not guarantees, so Leaf also checks every step in code against a table of 33 active ingredients, removes any step that breaks your choice, and tells you what it removed and why.</p>
+      <ul class="f-points">
+        <li>Each product labelled: organic or not, risk to pets, harmful to bees</li>
+        <li>Warnings that span steps, such as oil and sulfur burning leaves together</li>
+        <li>How long to keep pets off, and what to do if one eats a treated plant</li>
+      </ul>
     </div>
-
-    <button id="go" class="cta" type="button"><span class="cta-text">Diagnose</span><svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
-    <p id="status" class="status" role="status" aria-live="polite"></p>
-
-    <figure class="run" id="run" hidden>
-      <figcaption class="sr-only">Progress</figcaption>
-      <span id="graph-state" class="run-state" role="status" aria-live="polite">Idle</span>
-      <ol class="nodes" id="nodes">
-        <li class="node" data-node="vision"><span class="dot" aria-hidden="true"></span><span class="node-name">Look at the photo</span><span class="node-model" data-model="vision">Vision model</span><span class="node-time" data-time="vision"></span></li>
-        <li class="node" data-node="diagnose"><span class="dot" aria-hidden="true"></span><span class="node-name">Weigh the causes</span><span class="node-model" data-model="diagnose">Nemotron Ultra</span><span class="node-time" data-time="diagnose"></span></li>
-        <li class="node" data-node="search"><span class="dot" aria-hidden="true"></span><span class="node-name">Search extension guides</span><span class="node-model" data-model="search">Tavily search</span><span class="node-time" data-time="search"></span></li>
-        <li class="node" data-node="plan"><span class="dot" aria-hidden="true"></span><span class="node-name">Write the care plan</span><span class="node-model" data-model="plan">Nemotron Lightning</span><span class="node-time" data-time="plan"></span></li>
-      </ol>
-    </figure>
-
-    <section id="live" class="live" hidden aria-labelledby="live-h">
-      <h2 id="live-h" class="sr-only">What Leaf is doing</h2>
-      <div class="live-chart">
-        <p class="field-label">What it could be</p>
-        <ol id="differential" class="differential" aria-live="polite"></ol>
+    <div class="f-demo">
+      <div class="demo-card plan-demo" id="plan-demo">
+        <label class="demo-toggle"><input type="checkbox" id="demo-organic"> Organic only</label>
+        <ol>
+          <li>Remove the spotted lower leaves and bin them <span class="t">no product</span></li>
+          <li class="synthetic"><span class="act">Spray chlorothalonil every 7 days</span> <span class="t">not organic</span><span class="gone">Removed: chlorothalonil is not allowed in organic growing</span></li>
+          <li>Spray a copper fungicide in the evening <span class="t ok">organic</span> <span class="t warn">keep pets off until dry</span></li>
+        </ol>
       </div>
-      <ol id="log" class="log" aria-live="polite"></ol>
-    </section>
-  </section>
-
-  <section id="results" class="results" hidden aria-live="polite">
-    <div id="verdict" class="verdict">
-      <p id="verdict-word" class="verdict-word"></p>
-      <p id="banner" class="banner"></p>
-      <p id="notice" class="banner warn" hidden></p>
-      <p id="lab-link" hidden><a href="https://www.npdn.org/lab_directory" target="_blank" rel="noopener">Find your state's plant diagnostic lab</a> <span class="muted small">(National Plant Diagnostic Network)</span></p>
-      <p id="auto-why" class="small muted" hidden></p>
     </div>
-    <p id="share" class="small muted" hidden>Saved for 30 days. <a id="share-link" href="#">Open your report</a>; keep that link, it lets you add check-ins with new photos. <button type="button" id="copy" class="textbtn">Copy a read-only link to share</button></p>
-    <p id="confidence" class="confidence" hidden></p>
-    <details id="confidence-why" class="why-box" hidden>
-      <summary>How Leaf worked out its confidence</summary>
-      <ul id="confidence-parts" class="small"></ul>
-    </details>
+  </article>
 
-    <section id="handoff" class="block handoff" hidden aria-labelledby="handoff-h">
-      <h2 id="handoff-h">Take this to a plant clinic</h2>
-      <p id="handoff-reason"></p>
-      <p><a id="handoff-lab" href="https://www.npdn.org/lab_directory" target="_blank" rel="noopener">Find your state's plant diagnostic lab</a> <span class="muted small">(National Plant Diagnostic Network)</span></p>
-      <p id="handoff-notice" class="small muted"></p>
-      <p class="field-label">How to collect and send a sample</p>
-      <ol id="handoff-steps" class="steps small"></ol>
-      <p class="small muted">From <span id="handoff-sources"></span>.</p>
-      <div id="handoff-print" class="print-only">
-        <p class="field-label">Case summary for the lab</p>
-        <div id="handoff-photos" class="print-photos"></div>
-        <dl id="handoff-facts" class="facts"></dl>
+  <article class="feature">
+    <div class="f-copy">
+      <h3>My plants, with reminders</h3>
+      <p>Every plant you diagnose is kept on your device for 30 days with the date to check on it next. Add the check-in to Google Calendar, Apple Calendar or Outlook in one tap. Move the list to your phone with a private link; no account needed.</p>
+    </div>
+    <div class="f-demo" aria-hidden="true">
+      <div class="demo-card plants-demo">
+        <div class="pd-row due"><span class="pd-dot"></span><span><strong>Tomato, early blight</strong><br><span class="pd-sub">Check in today</span></span></div>
+        <div class="pd-row"><span class="pd-dot off"></span><span><strong>Rose, black spot</strong><br><span class="pd-sub">Check in Saturday (in 3 days)</span></span></div>
+        <div class="pd-row"><span class="pd-dot off"></span><span><strong>Squash, powdery mildew</strong><br><span class="pd-sub">Last check-in: recovering</span></span></div>
+        <div class="cal" id="demo-cal"><span class="cal-m">Fri</span><span class="cal-d">16</span><span class="cal-t">Leaf check-in, 9:00</span></div>
       </div>
-      <button type="button" id="print" class="cta cta-small"><span class="cta-text">Print this for the lab</span><svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
-    </section>
+    </div>
+  </article>
 
-    <section class="block">
-      <h2>Likely causes</h2>
-      <p id="summary" class="muted"></p>
-      <ol id="candidates" class="candidates"></ol>
-    </section>
-
-    <section id="second" class="block" hidden>
-      <h2>Second opinion</h2>
-      <p id="second-text"></p>
-    </section>
-
-    <section id="followups" class="block" hidden>
-      <h2>A few quick questions</h2>
-      <p class="muted">Your answers help Leaf tell similar problems apart.</p>
-      <div id="questions"></div>
-      <button id="rerun" class="cta cta-small" type="button"><span class="cta-text">Send answers</span><svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
-    </section>
-
-    <section id="weather" class="block" hidden>
-      <h2>Your last two weeks of weather</h2>
-      <p id="weather-line"></p>
-      <div id="weather-strip" class="weather-strip" role="img"></div>
-      <ul id="weather-indices" class="indices small"></ul>
-      <p class="small muted"><span id="weather-caveat"></span> <a href="https://open-meteo.com/" target="_blank" rel="noopener">Weather data by Open-Meteo.com</a></p>
-    </section>
-
-    <section class="block">
-      <h2>Your care plan</h2>
-      <p id="plan-summary"></p>
-      <ol id="steps" class="steps"></ol>
-      <p id="claims" class="small muted" hidden></p>
-      <div id="watch" class="watch" hidden>
-        <p class="field-label">What to watch for</p>
-        <ul id="watch-list" class="small"></ul>
-        <p id="sample-if" class="small"></p>
+  <article class="feature flip">
+    <div class="f-copy">
+      <h3>Check-ins that compare photos</h3>
+      <p>Come back with a new photo of the same leaves. Leaf compares it with the last one and says whether the problem is spreading, stable or recovering, updates the advice, and escalates anything still spreading. Only small thumbnails are kept.</p>
+    </div>
+    <div class="f-demo" aria-hidden="true">
+      <div class="demo-card then-now">
+        <figure><svg viewBox="0 0 100 100"><path class="tn-leaf" d="M18 88C10 56 30 22 88 10c-2 42-28 70-70 78z"/><circle class="tn-spot" cx="44" cy="62" r="7"/><circle class="tn-spot" cx="58" cy="46" r="5"/><circle class="tn-spot" cx="34" cy="74" r="4"/><circle class="tn-spot" cx="66" cy="34" r="4"/></svg><figcaption>Saturday</figcaption></figure>
+        <span class="tn-arrow">→</span>
+        <figure><svg viewBox="0 0 100 100"><path class="tn-leaf" d="M18 88C10 56 30 22 88 10c-2 42-28 70-70 78z"/><circle class="tn-spot dry" cx="44" cy="62" r="7"/><circle class="tn-spot dry" cx="58" cy="46" r="5"/></svg><figcaption>Thursday</figcaption></figure>
+        <p class="tn-status">Recovering: no new spots on the upper leaves.</p>
       </div>
-      <p id="checkin" class="checkin"></p>
-    </section>
+    </div>
+  </article>
 
-    <section id="evidence-block" class="block" hidden>
-      <h2>Evidence</h2>
-      <ol id="evidence" class="evidence-list small"></ol>
-    </section>
-
-    <section class="block">
-      <h2>Sources</h2>
-      <ol id="sources" class="sources"></ol>
-    </section>
-
-    <section class="block chat">
-      <h2>Ask a follow-up</h2>
-      <div id="chatlog" class="chatlog"></div>
-      <form id="chatform" class="chatform">
-        <input id="chatin" maxlength="2000" placeholder="Can I still eat the tomatoes?" aria-label="Your question">
-        <button class="cta cta-small" type="submit"><span class="cta-text">Ask</span><svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
-      </form>
-    </section>
-
-    <details class="trace block">
-      <summary>How Leaf thought</summary>
-      <p class="muted">Every model call runs on Nebius Token Factory. NVIDIA Nemotron does the reasoning and writing.</p>
-      <p id="cost" class="small muted"></p>
-      <div class="table-wrap">
-        <table><thead><tr><th scope="col">Step</th><th scope="col">Model</th><th scope="col">Time</th><th scope="col">Tokens in / out</th></tr></thead><tbody id="tracebody"></tbody></table>
+  <article class="feature">
+    <div class="f-copy">
+      <h3>A lab handoff, ready to print</h3>
+      <p>When the verdict is "send a sample", Leaf finds your state's plant diagnostic lab, lists how to collect and ship a sample (from extension sources), and prints a case summary: photos, notes, the differential, the second opinion and your weather.</p>
+    </div>
+    <div class="f-demo" aria-hidden="true">
+      <div class="demo-card sheet">
+        <p class="sh-title">Case summary for the lab</p>
+        <dl><dt>Plant</dt><dd>potato</dd><dt>Differential</dt><dd>late blight 52%, early blight 24%</dd><dt>Second opinion</dt><dd>agrees</dd><dt>Weather</dt><dd>41 mm rain on 6 days</dd></dl>
+        <span class="sh-lines"><i></i><i></i><i></i></span>
       </div>
-      <p id="obs" class="muted small"></p>
-    </details>
-  </section>
+    </div>
+  </article>
+</section>
 
-  <p id="trust" class="trust">Leaf gives guidance, not certainty. When it isn't confident, it will say so and point you to your local extension office. For food crops and any chemical, follow the product label.</p>
+<!-- ============================================================== safety -->
+<section class="safety wrap" aria-labelledby="safety-h">
+  <h2 id="safety-h" class="section-h">Rules Leaf keeps in code, not in a prompt</h2>
+  <ul class="rules">
+    <li><strong>Every step cites a passage Leaf read.</strong> Steps without support are removed before you see them.</li>
+    <li><strong>No invented doses.</strong> A rate or mixing ratio appears only if the cited source states it.</li>
+    <li><strong>Serious diseases go to a lab</strong> when they are in the top two or reach 20% anywhere, whatever is on top.</li>
+    <li><strong>Untrusted text stays data.</strong> Web pages and model output never become instructions or links Leaf follows.</li>
+    <li><strong>Hard limits</strong> on tool calls, time and money for every case, with a fall back to a quick diagnosis if anything fails.</li>
+    <li><strong>Your preferences hold:</strong> organic only and pet-safe are checked against the ingredient table on every plan and check-in.</li>
+  </ul>
+</section>
+
+<!-- ============================================================== accuracy -->
+<section id="accuracy" class="accuracy wrap" aria-labelledby="acc-h">
+  <h2 id="acc-h" class="section-h">How often it is right</h2>
+  <p class="section-sub">Measured on 52 licensed photos: 31 diseases, 15 abiotic problems (nutrients, water, sun) and 6 pests, one run per mode. The same photos were used for tuning, so these numbers are optimistic; a held-out set of our own photos is still being collected.</p>
+  <div class="acc-grid">
+    <div class="acc-bars" id="acc-bars">
+      <p class="acc-k">Right on the first answer</p>
+      <div class="ab"><span class="ab-n">Quick</span><span class="ab-bar"><span style="--v:52"></span></span><span class="ab-v">52%</span></div>
+      <div class="ab"><span class="ab-n">Deep</span><span class="ab-bar"><span style="--v:56"></span></span><span class="ab-v">56%</span></div>
+      <div class="ab lead"><span class="ab-n">Auto</span><span class="ab-bar"><span style="--v:58"></span></span><span class="ab-v">58%</span></div>
+      <p class="acc-k">Right answer in the top three</p>
+      <div class="ab"><span class="ab-n">Quick</span><span class="ab-bar"><span style="--v:75"></span></span><span class="ab-v">75%</span></div>
+      <div class="ab"><span class="ab-n">Deep</span><span class="ab-bar"><span style="--v:73"></span></span><span class="ab-v">73%</span></div>
+      <div class="ab lead"><span class="ab-n">Auto</span><span class="ab-bar"><span style="--v:73"></span></span><span class="ab-v">73%</span></div>
+    </div>
+    <div class="acc-notes">
+      <p class="big-stat"><span>14 of 16</span> times Auto said "Confident", it was right.</p>
+      <ul>
+        <li>"Likely" is where the misses are, which is why it comes with what to watch for and when to send a sample.</li>
+        <li>9 of Auto's 13 lab referrals were warranted: the top answer was wrong, or the disease was late blight.</li>
+        <li>Late blight is Leaf's most common miss: the vision model sometimes reports a white coating that isn't there.</li>
+        <li>On 52 photos one case is about 2 points, and repeat runs vary by several, so read small differences as noise.</li>
+      </ul>
+      <p class="small"><a href="https://github.com/risshabs22-quantified/leaf#quick-deep-and-auto-measured">Every run and the method</a></p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================== built with -->
+<section class="stack wrap" aria-labelledby="stack-h">
+  <h2 id="stack-h" class="section-h">What does what</h2>
+  <div class="table-wrap">
+    <table class="stack-table">
+      <thead><tr><th scope="col">Part</th><th scope="col">Job in Leaf</th></tr></thead>
+      <tbody>
+        <tr><td>NVIDIA Nemotron 3 Ultra</td><td>The first differential and the investigator, with reasoning and native tool calling</td></tr>
+        <tr><td>NVIDIA Nemotron 3 Super</td><td>The second opinion, and the fallback for every reasoning step</td></tr>
+        <tr><td>NVIDIA Nemotron 3.5 Lightning</td><td>The care plan, the claim check, check-in advice and follow-up chat</td></tr>
+        <tr><td>Kimi K2.6</td><td>Reading photos, until Token Factory serves an NVIDIA vision model</td></tr>
+        <tr><td>Nebius Token Factory</td><td>Runs every model call, with live per-token prices for the cost shown on each case</td></tr>
+        <tr><td>Tavily</td><td>Search, page extraction and outbreak news, with a daily credit cap</td></tr>
+        <tr><td>Open-Meteo</td><td>14 days of weather for disease-risk rules, and the 5-day forecast for spray windows</td></tr>
+        <tr><td>Cloudflare</td><td>Hosts the app in a container that sleeps when idle; reports stored in R2</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================== faq -->
+<section class="faq wrap" aria-labelledby="faq-h">
+  <h2 id="faq-h" class="section-h">Questions</h2>
+  <details><summary>Does it replace my extension office?</summary><p>No. Leaf gives guidance, not certainty. It is built to tell you when you need an expert, and to make that visit faster with a printable case summary.</p></details>
+  <details><summary>What happens to my photos and location?</summary><p>Photos are used for the diagnosis and only small thumbnails are kept, for 30 days, under a private link. A location from your browser is rounded to about 10 km before it leaves the page. Your notes are never shown on a shared link.</p></details>
+  <details><summary>Which plants does it know?</summary><p>Common vegetables, fruit, roses and ornamentals in home gardens. The weather-based disease rules cover tomato and potato. For anything unusual, expect "Likely" or a lab referral rather than a confident answer.</p></details>
+  <details><summary>Why did it say "send a sample" when it named a disease?</summary><p>Because the evidence was not strong enough, the photo was poor, the second opinion disagreed, or the disease is one where a wrong guess spreads to other gardens. That is the point of the third verdict.</p></details>
+  <details><summary>Is it free?</summary><p>Yes, for you. The project pays for model and search calls, so there is a daily limit on the public demo. It is open source under the MIT license.</p></details>
+  <details><summary>Can I trust the spray window?</summary><p>It is the best hour by the rules shown, using a free hourly forecast. Forecasts change, so check again on the day, and the product label always wins.</p></details>
+</section>
+
+<section class="closing wrap">
+  <h2>Got a plant that looks wrong?</h2>
+  <p class="hero-actions"><a class="btn" href="/app">Diagnose a plant</a> <a class="btn-quiet" href="/plants">My plants</a></p>
+</section>
+
 </main>
 
 <footer class="foot">
-  <span>Open source, MIT license</span>
-  <span>Built with NVIDIA Nemotron on Nebius Token Factory and Tavily search</span>
+  <span>Open source, MIT license. <a href="https://github.com/risshabs22-quantified/leaf">Code on GitHub</a></span>
+  <span>Built for the Nebius x NVIDIA Global AI Hackathon</span>
   <span><a href="https://open-meteo.com/" target="_blank" rel="noopener">Weather data by Open-Meteo.com</a></span>
+  <span>Leaf gives guidance, not certainty. For food crops and any chemical, follow the product label.</span>
 </footer>
-<script src="/static/app.js"></script>
+<script src="/static/landing.js"></script>
 </body>
 </html>

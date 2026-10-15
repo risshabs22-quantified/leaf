@@ -16,6 +16,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from backend.actives import apply_garden
 from backend.agent import AgentError, AgentResult, Investigator
 from backend.case import Case, Evidence, Hypothesis, Photo, StepRecord, normalise_differential
 from backend.claims import (
@@ -521,6 +522,7 @@ class DeepLeaf:
             case.add_trace(call)
         sources_text = " ".join(" ".join(s.passages) for s in case.sources)
         flags += check_summary(plan, sources_text)
+        apply_garden(plan, case.garden)  # before the verdict, so an emptied plan is not Confident
         decision = deep_decision(case, confidence, critic)
         if plan_failed:  # as in Quick: no plan at all, so a lab or extension office decides
             decision = Decision(

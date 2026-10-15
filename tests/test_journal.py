@@ -390,3 +390,13 @@ async def test_the_bucket_purge_removes_expired_entries_and_keeps_pinned_ones():
 async def test_a_missing_report_is_not_found_even_when_the_bucket_denies_listing():
     store = S3Journal("leaf-journal", client=FakeS3(deny_missing=True))
     assert await store.get("does-not-exist") is None
+
+
+def test_landing_app_and_plants_pages_are_served(settings):
+    with api(settings) as (c, _):
+        home, diag, plants = c.get("/"), c.get("/app"), c.get("/plants")
+        js = [c.get(f"/static/{f}") for f in ("landing.js", "remind.js", "plants.js", "app.js")]
+    assert all(r.status_code == 200 for r in (home, diag, plants, *js))
+    assert 'href="/app"' in home.text and 'id="organic"' in diag.text and 'id="spray"' in diag.text
+    assert 'id="plants"' in plants.text
+    assert all(r.headers["cache-control"] == "no-cache" for r in (home, diag, plants))

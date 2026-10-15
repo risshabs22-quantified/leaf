@@ -113,13 +113,23 @@ What the investigation adds whatever the accuracy: a ranked differential tied to
 
 Every finished report is saved for 30 days under an unguessable link (`/c/<id>`) you can share. Come back with a new photo to check in: Leaf compares it with the last one (spreading, stable or recovering), updates the advice, and escalates anything still spreading. Only small thumbnails are kept, never your full uploads. Storage sits behind a small interface: SQLite locally, or an S3-compatible Object Storage bucket in production (`LEAF_JOURNAL_BUCKET`). `scripts/pin_case.py <id> --until 2027-01-31` keeps a demo link alive past the 30 days.
 
+## After the diagnosis
+
+Three tools for actually saving the plant. Each one is decided in code, not by a model.
+
+- **Organic and pet-safe plans.** Tick "Organic methods only" or "Pets or children use this garden". The plan writer is told, and then every step is checked in code against a table of 33 active ingredients (`backend/actives.py`): organic or not (USDA National Organic Program allowed actives), risk to pets, harm to bees. Steps that break your choice are removed and listed with the reason. Plan-wide warnings cover oil with sulfur (leaf burn), bee-harming products (spray at dusk) and what to do if a pet eats a treated plant. The same rules apply to check-in advice.
+- **The best time to spray** (`backend/spray.py`, `POST /api/spray-window`). When a plan applies a product, Leaf scores every daylight hour of the next five days of Open-Meteo forecast: leaves dry, at least 6 dry hours after (24 is best), wind at most 16 km/h (10 mph) with gusts at most 24 km/h, between 7 C and a heat limit that drops from 32 C to 29 C (85 F) when the plan uses oil or sulfur, and only early morning or evening for bee-harming products. It suggests the best 3-hour window, preferring a sooner day when it is nearly as good, and shows the whole five-day grid.
+- **My plants and reminders** (`/plants`). Every report you save is listed on your device with its verdict, last check-in status and the date to check again. Add a check-in or a spray window to Google Calendar (an add-event link) or to Apple Calendar and Outlook (an `.ics` file from `POST /api/calendar.ics`, whose links can only point at Leaf pages). A private link moves the list to another device; there is no account.
+
+Pages: `/` explains Leaf, `/app` diagnoses a plant, `/plants` lists your plants, `/c/<id>` is a saved report.
+
 ## Nebius and NVIDIA usage
 
 - **Nebius Token Factory**: every model call (OpenAI-compatible API, `backend/models.py`), including native tool calling for the investigator and live per-token prices from `/models` for the cost meter.
 - **NVIDIA Nemotron 3 Ultra, Super and 3.5 Lightning**: every reasoning and writing step.
 - **Hosting**: Leaf runs on Cloudflare Containers (`cloudflare/`, `make deploy-cloudflare`), with saved reports in a Cloudflare R2 bucket. Cloudflare only hosts the app: every model call goes to Nebius Token Factory.
 - **Tavily**: search, extract and news at runtime (`backend/search.py`, `backend/tools.py`).
-- **Open-Meteo**: weather for the disease-risk rules. Weather data by [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0).
+- **Open-Meteo**: weather for the disease-risk rules, and the hourly forecast for spray windows. Weather data by [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0).
 
 ## Run it
 

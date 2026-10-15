@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diagnose a plant · Leaf</title>
+<meta name="description" content="Snap a sick leaf, get a cited care plan. Powered by NVIDIA Nemotron on Nebius Token Factory.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M6 26C6 14 13 7 26 6c0 13-7 20-18 20z' fill='none' stroke='%232f6b3a' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M6 26C12 19 17 14 22 10' fill='none' stroke='%232f6b3a' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<a class="skip" href="#intake-h">Skip to the diagnosis form</a>
+
+<header class="site">
+  <a href="/" class="brand" aria-label="Leaf home">
+    <svg class="mark" viewBox="0 0 48 64" aria-hidden="true"><path d="M9 57C5 33 17 12 41 6c3 25-8 45-30 51" /><path d="M9 57C17 41 26 27 37 14" /></svg>
+    <span class="word">Leaf</span>
+  </a>
+  <nav class="nav" aria-label="Main">
+    <a class="wide" href="/#how">How it works</a>
+    <a class="wide" href="/#features">Features</a>
+    <a href="/plants">My plants</a>
+    <a class="nav-cta" href="/app" aria-current="page">Diagnose a plant</a>
+  </nav>
+</header>
+
+<main id="top" class="page">
+  <div class="intro">
+    <p class="lede">Leaf is a plant doctor. Show it a sick leaf and it weighs the likely causes, searches extension-office guides, and writes you a care plan that cites its sources.</p>
+    <p>It can tell <a href="#intake-h" class="try" data-try="Brown ringed spots on my tomato leaves, mostly the lower ones, after a week of rain.">early blight from a nutrient problem</a>, work out <a href="#intake-h" class="try" data-try="The lower leaves on my pepper plants are turning yellow and dropping.">why pepper leaves turn yellow</a>, or look into <a href="#intake-h" class="try" data-try="White powdery coating on my squash leaves.">a white powder on squash</a>. When it isn't sure, it says so.</p>
+  </div>
+
+  <section class="intake" aria-labelledby="intake-h">
+    <h1 id="intake-h" class="sr-only">Diagnose a plant</h1>
+
+    <fieldset class="mode">
+      <legend class="field-label">How should Leaf work?</legend>
+      <label class="mode-opt"><input type="radio" name="mode" value="auto" checked> <span><span class="mode-name">Auto</span> <span class="mode-note">A quick look first. If Leaf isn't sure, it investigates further and tells you why. 15 seconds to about a minute.</span></span></label>
+      <label class="mode-opt"><input type="radio" name="mode" value="quick"> <span><span class="mode-name">Quick</span> <span class="mode-note">One careful look, about 15 seconds.</span></span></label>
+      <label class="mode-opt"><input type="radio" name="mode" value="deep"> <span><span class="mode-name">Deep</span> <span class="mode-note">Works the case like a plant clinic: looks closer, checks your weather, reads sources and gets a second opinion. About a minute.</span></span></label>
+      <p id="deep-left" class="small muted" hidden></p>
+    </fieldset>
+
+    <div class="photos" role="group" aria-labelledby="photos-h">
+      <p id="photos-h" class="field-label">Photos <span class="opt">Up to three; a quick look uses the first</span></p>
+      <div class="slots">
+        <label class="slot drop" data-label="close-up">
+          <input type="file" accept="image/*" class="photo-input">
+          <img alt="" hidden>
+          <span class="slot-text"><span class="link">Close-up</span> of a damaged leaf</span>
+        </label>
+        <label class="slot drop" data-label="whole plant">
+          <input type="file" accept="image/*" class="photo-input">
+          <img alt="" hidden>
+          <span class="slot-text"><span class="link">Whole plant</span></span>
+        </label>
+        <label class="slot drop" data-label="underside">
+          <input type="file" accept="image/*" class="photo-input">
+          <img alt="" hidden>
+          <span class="slot-text"><span class="link">Underside</span> of a leaf</span>
+        </label>
+      </div>
+    </div>
+
+    <label class="field">
+      <span class="field-label">What have you noticed? <span class="opt">Optional</span></span>
+      <textarea id="notes" rows="3" maxlength="2000" placeholder="Brown spots started on the bottom leaves a week ago, after lots of rain"></textarea>
+    </label>
+
+    <fieldset class="garden">
+      <legend class="field-label">Your garden <span class="opt">Leaf checks every product in the plan against these, in code</span></legend>
+      <label class="check"><input type="checkbox" id="organic"> <span>Organic methods only</span></label>
+      <label class="check"><input type="checkbox" id="pets"> <span>Pets or children use this garden</span></label>
+    </fieldset>
+
+    <div class="field">
+      <label for="region" class="field-label">Where are you? <span class="opt">City and state; used for your local weather</span></label>
+      <input id="region" maxlength="100" placeholder="Columbus, Ohio" autocomplete="address-level2">
+      <button type="button" id="locate" class="textbtn">Use my location instead</button>
+      <span id="locate-status" class="small muted" role="status" aria-live="polite"></span>
+    </div>
+
+    <button id="go" class="cta" type="button"><span class="cta-text">Diagnose</span><svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+
+    <figure class="run" id="run" hidden>
+      <figcaption class="sr-only">Progress</figcaption>
+      <span id="graph-state" class="run-state" role="status" aria-live="polite">Idle</span>
+      <ol class="nodes" id="nodes">
+        <li class="node" data-node="vision"><span class="dot" aria-hidden="true"></span><span class="node-name">Look at the photo</span><span class="node-model" data-model="vision">Vision model</span><span class="node-time" data-time="vision"></span></li>
+        <li class="node" data-node="diagnose"><span class="dot" aria-hidden="true"></span><span class="node-name">Weigh the causes</span><span class="node-model" data-model="diagnose">Nemotron Ultra</span><span class="node-time" data-time="diagnose"></span></li>
+        <li class="node" data-node="search"><span class="dot" aria-hidden="true"></span><span class="node-name">Search extension guides</span><span class="node-model" data-model="search">Tavily search</span><span class="node-time" data-time="search"></span></li>
+        <li class="node" data-node="plan"><span class="dot" aria-hidden="true"></span><span class="node-name">Write the care plan</span><span class="node-model" data-model="plan">Nemotron Lightning</span><span class="node-time" data-time="plan"></span></li>
+      </ol>
+    </figure>
+
+    <section id="live" class="live" hidden aria-labelledby="live-h">
+      <h2 id="live-h" class="sr-only">What Leaf is doing</h2>
+      <div class="live-chart">
+        <p class="field-label">What it could be</p>
+        <ol id="differential" class="differential" aria-live="polite"></ol>
+      </div>
+      <ol id="log" class="log" aria-live="polite"></ol>
+    </section>
+  </section>
+
+  <section id="results" class="results" hidden aria-live="polite">
+    <div id="verdict" class="verdict">
+      <p id="verdict-word" class="verdict-word"></p>
+      <p id="banner" class="banner"></p>
+      <p id="notice" class="banner warn" hidden></p>
+      <p id="lab-link" hidden><a href="https://www.npdn.org/lab_directory" target="_blank" rel="noopener">Find your state's plant diagnostic lab</a> <span class="muted small">(National Plant Diagnostic Network)</span></p>
+      <p id="auto-why" class="small muted" hidden></p>
+    </div>
+    <p id="share" class="small muted" hidden>Saved for 30 days and added to <a href="/plants">My plants</a>. <a id="share-link" href="#">Open your report</a>; keep that link, it lets you add check-ins with new photos. <button type="button" id="copy" class="textbtn">Copy a read-only link to share</button></p>
+    <p id="confidence" class="confidence" hidden></p>
+    <details id="confidence-why" class="why-box" hidden>
+      <summary>How Leaf worked out its confidence</summary>
+      <ul id="confidence-parts" class="small"></ul>
+    </details>
+
+    <section id="handoff" class="block handoff" hidden aria-labelledby="handoff-h">
+      <h2 id="handoff-h">Take this to a plant clinic</h2>
+      <p id="handoff-reason"></p>
+      <p><a id="handoff-lab" href="https://www.npdn.org/lab_directory" target="_blank" rel="noopener">Find your state's plant diagnostic lab</a> <span class="muted small">(National Plant Diagnostic Network)</span></p>
+      <p id="handoff-notice" class="small muted"></p>
+      <p class="field-label">How to collect and send a sample</p>
+      <ol id="handoff-steps" class="steps small"></ol>
+      <p class="small muted">From <span id="handoff-sources"></span>.</p>
+      <div id="handoff-print" class="print-only">
+        <p class="field-label">Case summary for the lab</p>
+        <div id="handoff-photos" class="print-photos"></div>
+        <dl id="handoff-facts" class="facts"></dl>
+      </div>
+      <button type="button" id="print" class="cta cta-small"><span class="cta-text">Print this for the lab</span><svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
+    </section>
+
+    <section class="block">
+      <h2>Likely causes</h2>
+      <p id="summary" class="muted"></p>
+      <ol id="candidates" class="candidates"></ol>
+    </section>
+
+    <section id="second" class="block" hidden>
+      <h2>Second opinion</h2>
+      <p id="second-text"></p>
+    </section>
+
+    <section id="followups" class="block" hidden>
+      <h2>A few quick questions</h2>
+      <p class="muted">Your answers help Leaf tell similar problems apart.</p>
+      <div id="questions"></div>
+      <button id="rerun" class="cta cta-small" type="button"><span class="cta-text">Send answers</span><svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
+    </section>
+
+    <section id="weather" class="block" hidden>
+      <h2>Your last two weeks of weather</h2>
+      <p id="weather-line"></p>
+      <div id="weather-strip" class="weather-strip" role="img"></div>
+      <ul id="weather-indices" class="indices small"></ul>
+      <p class="small muted"><span id="weather-caveat"></span> <a href="https://open-meteo.com/" target="_blank" rel="noopener">Weather data by Open-Meteo.com</a></p>
+    </section>
+
+    <section class="block">
+      <h2>Your care plan</h2>
+      <p id="plan-summary"></p>
+      <ol id="steps" class="steps"></ol>
+      <p id="claims" class="small muted" hidden></p>
+      <ul id="cautions" class="cautions small" hidden></ul>
+      <details id="removed" class="why-box" hidden>
+        <summary id="removed-sum"></summary>
+        <ul id="removed-list" class="small"></ul>
+      </details>
+      <div id="watch" class="watch" hidden>
+        <p class="field-label">What to watch for</p>
+        <ul id="watch-list" class="small"></ul>
+        <p id="sample-if" class="small"></p>
+      </div>
+      <p id="checkin" class="checkin"></p>
+      <p id="checkin-remind" class="remind small" hidden>Remind me: <a id="checkin-google" href="#" target="_blank" rel="noopener">Google Calendar</a> <button type="button" id="checkin-ics" class="textbtn">Apple or Outlook (.ics)</button></p>
+    </section>
+
+    <section id="spray" class="block spray" hidden aria-labelledby="spray-h">
+      <h2 id="spray-h">Best time to spray</h2>
+      <p class="muted small">Your plan applies a product. Leaf checks the next five days of forecast, hour by hour, against the rules below and picks the best window. The product label always wins.</p>
+      <p id="spray-ask" hidden><span class="small">Add your town above, or</span> <button type="button" id="spray-locate" class="textbtn">use my location</button></p>
+      <button type="button" id="spray-go" class="cta cta-small"><span class="cta-text">Find the best time</span><svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
+      <p id="spray-status" class="small muted" role="status" aria-live="polite"></p>
+      <div id="spray-out" hidden>
+        <p id="spray-best" class="spray-best"></p>
+        <p id="spray-remind" class="remind small">Add it to your calendar: <a id="spray-google" href="#" target="_blank" rel="noopener">Google Calendar</a> <button type="button" id="spray-ics" class="textbtn">Apple or Outlook (.ics)</button></p>
+        <div id="spray-grid" class="spray-grid" role="img"></div>
+        <p class="legend small muted"><span class="sw good"></span> good <span class="sw ok"></span> possible <span class="sw no"></span> not suitable <span class="sw pick"></span> Leaf's pick</p>
+        <ul id="spray-others" class="small spray-others"></ul>
+        <details class="why-box"><summary>Leaf's spray rules</summary><ul id="spray-rules" class="small"></ul></details>
+        <p class="small muted"><a href="https://open-meteo.com/" target="_blank" rel="noopener">Weather data by Open-Meteo.com</a></p>
+      </div>
+    </section>
+
+    <section id="evidence-block" class="block" hidden>
+      <h2>Evidence</h2>
+      <ol id="evidence" class="evidence-list small"></ol>
+    </section>
+
+    <section class="block">
+      <h2>Sources</h2>
+      <ol id="sources" class="sources"></ol>
+    </section>
+
+    <section class="block chat">
+      <h2>Ask a follow-up</h2>
+      <div id="chatlog" class="chatlog"></div>
+      <form id="chatform" class="chatform">
+        <input id="chatin" maxlength="2000" placeholder="Can I still eat the tomatoes?" aria-label="Your question">
+        <button class="cta cta-small" type="submit"><span class="cta-text">Ask</span><svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
+      </form>
+    </section>
+
+    <details class="trace block">
+      <summary>How Leaf thought</summary>
+      <p class="muted">Every model call runs on Nebius Token Factory. NVIDIA Nemotron does the reasoning and writing.</p>
+      <p id="cost" class="small muted"></p>
+      <div class="table-wrap">
+        <table><thead><tr><th scope="col">Step</th><th scope="col">Model</th><th scope="col">Time</th><th scope="col">Tokens in / out</th></tr></thead><tbody id="tracebody"></tbody></table>
+      </div>
+      <p id="obs" class="muted small"></p>
+    </details>
+  </section>
+
+  <p id="trust" class="trust">Leaf gives guidance, not certainty. When it isn't confident, it will say so and point you to your local extension office. For food crops and any chemical, follow the product label.</p>
+</main>
+
+<footer class="foot">
+  <span>Open source, MIT license. <a href="https://github.com/risshabs22-quantified/leaf">Code on GitHub</a></span>
+  <span>Built with NVIDIA Nemotron on Nebius Token Factory and Tavily search</span>
+  <span><a href="https://open-meteo.com/" target="_blank" rel="noopener">Weather data by Open-Meteo.com</a></span>
+</footer>
+<script src="/static/remind.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -8,9 +8,12 @@ to another site.
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field, field_validator
+
+LEAF_PATH = re.compile(r"/(?!/)[A-Za-z0-9/_.~%-]*")
 
 
 class Reminder(BaseModel):
@@ -31,7 +34,8 @@ class Reminder(BaseModel):
     @field_validator("path")
     @classmethod
     def _local(cls, v: str) -> str:
-        if v and (not v.startswith("/") or v.startswith("//") or "\\" in v):
+        # A Leaf page and nothing else: no host, no line breaks that could add calendar fields.
+        if v and not LEAF_PATH.fullmatch(v):
             raise ValueError("path must be a Leaf page")
         return v
 

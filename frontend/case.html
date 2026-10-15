@@ -13,10 +13,16 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<header class="top">
+<header class="site">
   <a href="/" class="brand" aria-label="Leaf home">
-    <svg class="mark" viewBox="0 0 48 64" role="img" aria-label="Leaf"><path d="M9 57C5 33 17 12 41 6c3 25-8 45-30 51" /><path d="M9 57C17 41 26 27 37 14" /><path d="M17 44l-7-3M22 36l-8-2M27 28l-8-1M23 40l9-1M29 31l9-2" /></svg>
+    <svg class="mark" viewBox="0 0 48 64" aria-hidden="true"><path d="M9 57C5 33 17 12 41 6c3 25-8 45-30 51" /><path d="M9 57C17 41 26 27 37 14" /></svg>
+    <span class="word">Leaf</span>
   </a>
+  <nav class="nav" aria-label="Main">
+    <a class="wide" href="/#how">How it works</a>
+    <a href="/plants">My plants</a>
+    <a class="nav-cta" href="/app">Diagnose a plant</a>
+  </nav>
 </header>
 <main class="page">
   <p id="loading" class="muted">Loading the report…</p>
@@ -36,6 +42,8 @@
       <h2>Care plan</h2>
       <p id="plan-summary"></p>
       <ol id="steps" class="steps"></ol>
+      <ul id="cautions" class="cautions small" hidden></ul>
+      <details id="removed" class="why-box" hidden></details>
     </section>
 
     <section class="block" id="checkins-block">

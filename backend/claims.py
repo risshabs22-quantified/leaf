@@ -17,7 +17,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from backend.actives import garden_prompt
+from backend.actives import clear_code_fields, garden_prompt
 from backend.case import Case, SourceRef
 from backend.config import Settings
 from backend.models import LLM, ModelError, complete_json
@@ -218,7 +218,7 @@ async def write_plan(
         f"<region>{sanitize(region) or 'unknown'}</region>\n"
         f"<garden>{garden_prompt(case.garden)}</garden>"
     )
-    return await complete_json(
+    plan = await complete_json(
         llm,
         step="plan",
         models=[settings.fast_model, settings.fallback_model],
@@ -233,6 +233,7 @@ async def write_plan(
         temperature=0.6,
         repair_model=settings.fast_model,
     )
+    return clear_code_fields(plan)
 
 
 def code_checks(plan: CarePlan, case: Case) -> list[ClaimFlag]:

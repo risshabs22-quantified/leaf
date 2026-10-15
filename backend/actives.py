@@ -172,8 +172,7 @@ _COMPILED = [(a, re.compile(rf"(?<![\w-])(?:{a.pattern})", re.IGNORECASE)) for a
 
 # Words that mean "apply something to the plant", for the spray-window offer.
 SPRAY_WORDS = re.compile(
-    r"\b(spray|sprays|spraying|apply|application|fungicide|insecticide|miticide|bactericide|"
-    r"drench|dust)\b",
+    r"\b(spray|sprays|spraying|fungicide|insecticide|miticide|bactericide|drench)\b",
     re.IGNORECASE,
 )
 OIL_HEAT_LIMIT_C = 29.0  # about 85 F: oils and sulfur can burn leaves above this
@@ -183,18 +182,40 @@ POISON_LINE = (
 )
 
 
+# "Avoid chlorothalonil", "use iron phosphate instead of metaldehyde": a product the step
+# advises against is not one it uses. Only these phrases count, within three words before the
+# product, so "do not overapply copper" still counts as using copper.
+_AGAINST = re.compile(
+    r"\b(?:avoid|avoiding|instead of|rather than|without|never use|never apply|do not use|"
+    r"don't use|do not apply|don't apply|not use)\s+(?:[\w-]+\s+){0,3}$",
+    re.IGNORECASE,
+)
+
+
 def find_actives(text: str) -> list[Active]:
     seen: list[Active] = []
     for active, rx in _COMPILED:
-        if rx.search(text) and active not in seen:
-            seen.append(active)
+        if active in seen:
+            continue
+        for m in rx.finditer(text):
+            if not _AGAINST.search(text[max(0, m.start() - 60) : m.start()]):
+                seen.append(active)
+                break
     return seen
+
+
+def clear_code_fields(plan: CarePlan) -> CarePlan:
+    """Drop whatever the model wrote into fields only code may set (call right after parsing)."""
+    plan.removed, plan.cautions, plan.spray, plan.bee_safe_hours = [], [], False, False
+    plan.heat_limit_c = HEAT_LIMIT_C
+    return plan
 
 
 def apply_garden(plan: CarePlan, garden: Garden) -> None:
     """Label every step, remove steps that break the gardener's preferences, and add the
-    cautions that apply to the plan as a whole. Every field it sets is overwritten, so
-    anything the model put there is discarded. Call it once per freshly written plan."""
+    cautions that apply to the plan as a whole. Safe to run more than once: labels and
+    cautions are recomputed and removed steps accumulate. Plans straight from the model go
+    through clear_code_fields first, so nothing the model wrote there survives."""
     kept, removed = [], []
     found_all: list[Active] = []
     for step in plan.steps:
@@ -225,7 +246,7 @@ def apply_garden(plan: CarePlan, garden: Garden) -> None:
         kept.append(step)
         found_all += found
     plan.steps = kept
-    plan.removed = list(dict.fromkeys(removed))
+    plan.removed = list(dict.fromkeys(plan.removed + removed))
 
     cautions = []
     if any(a.oil for a in found_all) and any(a.sulfur for a in found_all):
@@ -240,13 +261,13 @@ def apply_garden(plan: CarePlan, garden: Garden) -> None:
         )
     if garden.pets and found_all:
         cautions.append(POISON_LINE)
-    if garden.organic and removed and not any(s.actives for s in kept):
+    if garden.organic and plan.removed and not any(s.actives for s in kept):
         cautions.append(
             "The sources Leaf read only named non-organic products for this problem, so only the "
             "non-spray steps are left. Ask your extension office about an organic option."
         )
     plan.cautions = cautions
-    plan.spray = any(SPRAY_WORDS.search(f"{s.action} {s.why}") or s.actives for s in kept)
+    plan.spray = any(s.actives or SPRAY_WORDS.search(s.action) for s in kept)
     plan.heat_limit_c = (
         OIL_HEAT_LIMIT_C if any(a.oil or a.sulfur for a in found_all) else HEAT_LIMIT_C
     )

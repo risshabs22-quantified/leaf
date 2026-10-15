@@ -20,6 +20,17 @@ async function load() {
   draw(await r.json());
 }
 
+const PET = { low: "Low risk to pets", caution: "Keep pets off until dry", high: "Dangerous to pets" };
+function stepHtml(s) {
+  const tags = [];
+  if (s.organic === true) tags.push(["ok", "Organic"]);
+  if (s.organic === false) tags.push(["", "Not organic"]);
+  if (s.pet_risk) tags.push([s.pet_risk === "high" ? "bad" : s.pet_risk === "caution" ? "warn" : "ok", PET[s.pet_risk]]);
+  if (s.bee_risk) tags.push(["warn", "Harms bees: spray at dusk"]);
+  const tagHtml = tags.length ? `<span class="tags">${(s.actives || []).length ? `<span class="tag plain">${esc(s.actives.join(", "))}</span>` : ""}${tags.map(([c, t]) => `<span class="tag ${c}">${esc(t)}</span>`).join("")}</span>` : "";
+  return `<li>${esc(s.action)}${s.source_ids.map((id) => `<a class="cite" href="#src${id}">[${id}]</a>`).join("")}${s.why ? `<span class="why">${esc(s.why)}</span>` : ""}${tagHtml}${(s.precautions || []).map((p) => `<span class="why caution-line">${esc(p)}</span>`).join("")}</li>`;
+}
+
 function draw(v) {
   const d = v.report;
   $("loading").hidden = true;
@@ -39,15 +50,21 @@ function draw(v) {
   $("summary").textContent = d.summary || d.diagnosis.reasoning_summary || "";
   $("candidates").innerHTML = diff.map((h) => `<li class="cand"><div class="cand-head"><span class="cand-name">${esc(h.name)}</span><span>${pct(h.p)}</span></div><div class="bar"><span style="width:${Math.round(h.p * 100)}%"></span></div></li>`).join("");
   $("plan-summary").textContent = d.plan.summary;
-  $("steps").innerHTML = d.plan.steps.map((s) => `<li>${esc(s.action)}${s.source_ids.map((id) => `<a class="cite" href="#src${id}">[${id}]</a>`).join("")}${s.why ? `<span class="why">${esc(s.why)}</span>` : ""}</li>`).join("");
+  $("steps").innerHTML = d.plan.steps.map(stepHtml).join("");
+  $("cautions").innerHTML = (d.plan.cautions || []).map((c) => `<li>${esc(c)}</li>`).join("");
+  $("cautions").hidden = !(d.plan.cautions || []).length;
+  $("removed").innerHTML = (d.plan.removed || []).length
+    ? `<summary>Leaf removed ${d.plan.removed.length} step${d.plan.removed.length === 1 ? "" : "s"} for this garden's preferences</summary><ul class="small">${d.plan.removed.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : "";
+  $("removed").hidden = !(d.plan.removed || []).length;
   $("sources").innerHTML = d.sources.map((s) => `<li id="src${s.id}"><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)}</a></li>`).join("") || `<li class="muted">No web sources.</li>`;
   $("no-checkins").hidden = v.checkins.length > 0;
   $("checkin-form").hidden = !owner;
   if (!owner) $("no-checkins").textContent = v.checkins.length ? "" : "No check-ins yet. Only the person who created this report can add them.";
   $("checkins").innerHTML = v.checkins.map((c) => {
     const when = new Date(c.at * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-    const steps = c.steps.map((s) => `<li>${esc(s.action)}${s.source_ids.map((id) => `<a class="cite" href="#src${id}">[${id}]</a>`).join("")}</li>`).join("");
-    return `<li class="${c.escalate ? "note" : "done"}"><span class="l-what">${esc(when)}: ${esc(STATUS[c.status] || c.status)}</span><span class="l-got">${esc(c.change)}</span><span class="l-got">${esc(c.advice)}</span>${steps ? `<ol class="steps small">${steps}</ol>` : ""}${c.escalate ? `<span class="step-flag">${esc(c.escalate_reason)}</span>` : ""}</li>`;
+    const steps = c.steps.map(stepHtml).join("");
+    const notes = [...(c.cautions || []), ...(c.removed || []).map((r) => `Removed for this garden: ${r}`)];
+    return `<li class="${c.escalate ? "note" : "done"}"><span class="l-what">${esc(when)}: ${esc(STATUS[c.status] || c.status)}</span><span class="l-got">${esc(c.change)}</span><span class="l-got">${esc(c.advice)}</span>${steps ? `<ol class="steps small">${steps}</ol>` : ""}${notes.map((n) => `<span class="why caution-line">${esc(n)}</span>`).join("")}${c.escalate ? `<span class="step-flag">${esc(c.escalate_reason)}</span>` : ""}</li>`;
   }).join("");
 }
 

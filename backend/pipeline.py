@@ -14,7 +14,7 @@ import json
 import logging
 import re
 
-from backend.actives import garden_prompt
+from backend.actives import apply_garden, clear_code_fields, garden_prompt
 from backend.config import Settings
 from backend.models import LLM, ModelError, complete_json
 from backend.prompts import CHAT_SYSTEM, DIAGNOSE_SYSTEM, PLAN_SYSTEM, sanitize
@@ -151,6 +151,13 @@ class Leaf:
         valid_ids = {src.id for src in sources}
         for step in plan.steps:
             step.source_ids = [i for i in step.source_ids if i in valid_ids]
+        apply_garden(clear_code_fields(plan), garden)  # before the verdict, in code
+        if not plan.steps and decision.verdict == "confident":
+            decision = Decision("likely", decision.reason)
+            plan.sample_if = plan.sample_if or (
+                "No step met your garden's preferences, so ask your local extension office "
+                "what to do."
+            )
         apply_verdict(plan, decision)
 
         return DiagnoseResponse(

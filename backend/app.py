@@ -255,7 +255,9 @@ async def security_headers(request: Request, call_next):
     response.headers.setdefault("Referrer-Policy", "no-referrer")
     if not request.url.path.startswith(("/docs", "/redoc", "/openapi")):
         response.headers.setdefault("Content-Security-Policy", CSP)
-    if request.url.path == "/" or request.url.path.startswith(("/static/", "/c/")):
+    if request.url.path in ("/", "/app", "/plants") or request.url.path.startswith(
+        ("/static/", "/c/")
+    ):
         # Revalidate every time (a cheap 304 via ETag), so a deploy never leaves a returning
         # visitor running last version's script against this version's API.
         response.headers.setdefault("Cache-Control", "no-cache")
@@ -819,7 +821,15 @@ if FRONTEND.exists():
 
     @app.get("/", include_in_schema=False)
     async def index() -> FileResponse:
-        return FileResponse(FRONTEND / "index.html")
+        return FileResponse(FRONTEND / "index.html")  # the landing page
+
+    @app.get("/app", include_in_schema=False)
+    async def app_page() -> FileResponse:
+        return FileResponse(FRONTEND / "app.html")  # diagnose a plant
+
+    @app.get("/plants", include_in_schema=False)
+    async def plants_page() -> FileResponse:
+        return FileResponse(FRONTEND / "plants.html")  # the gardener's saved cases
 
     @app.get("/c/{case_id}", include_in_schema=False)
     async def case_page(case_id: str) -> FileResponse:

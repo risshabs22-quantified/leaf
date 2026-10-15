@@ -1,22 +1,26 @@
 /* Leaf: one quiet column of serif prose. Structure is hairlines and whitespace.
    All colours live in :root; the dark block below swaps them. */
 :root {
-  --paper: #fbfcf9;
-  --ink: #16201a;
-  --muted: #5a675e;
-  --line: #dde4dc;
-  --green: #2f6b3a;          /* links and accents */
-  --marker: #cde8a0;         /* soft highlight behind the one call to action */
+  --paper: #ffffff;
+  --ink: #12391f;            /* text is green on white */
+  --muted: #4e6a57;
+  --line: #dbe8de;
+  --wash: #f3faf4;           /* the faintest green, for panels */
+  --green: #18793a;          /* links, actions */
+  --leaf: #3aa757;           /* strokes in diagrams and animations */
+  --marker: #d3f2b5;         /* soft highlight behind calls to action */
   --amber: #8a5200;
   --amber-line: #d9a84e;
+  --rain: #9fb3a6;
   --serif: Newsreader, "Iowan Old Style", Georgia, serif;
   --sans: "Instrument Sans", "Helvetica Neue", Arial, sans-serif;
-  --gutter: clamp(20px, 3vw, 36px);
+  --gutter: clamp(16px, 3vw, 36px);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #0f1511; --ink: #e8efe6; --muted: #9aa99d; --line: #26312a;
-    --green: #8fcf8f; --marker: #3a5a1c; --amber: #f0b45b; --amber-line: #9a7228;
+    --paper: #0c140f; --ink: #d9f2df; --muted: #93b39c; --line: #22352a; --wash: #102018;
+    --green: #7fd492; --leaf: #5cc477; --marker: #2f5a22; --amber: #f0b45b; --amber-line: #9a7228;
+    --rain: #4b5f53;
   }
 }
 
@@ -37,14 +41,21 @@ h1, h2, h3, p, ol, ul, figure { margin: 0; }
 .skip { position: absolute; left: -999px; top: 8px; background: var(--ink); color: var(--paper); padding: 8px 14px; font: 500 15px var(--sans); z-index: 10; }
 .skip:focus { left: 8px; }
 
-/* header: the mark alone */
-.top { padding: var(--gutter) var(--gutter) 0; }
-.brand { display: inline-block; line-height: 0; }
-.mark { width: 34px; height: 46px; fill: none; stroke: var(--ink); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
-.brand:hover .mark { stroke: var(--green); }
+/* site header, shared by every page */
+.site { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px var(--gutter); border-bottom: 1px solid var(--line); font-family: var(--sans); }
+.brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); line-height: 1; }
+.mark { width: 22px; height: 30px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.word { font: 500 1.35rem/1 var(--serif); letter-spacing: -.01em; }
+.brand:hover { color: var(--green); }
+.nav { display: flex; align-items: center; gap: clamp(12px, 2.4vw, 28px); font-size: 15px; }
+.nav a { color: var(--ink); text-decoration: none; }
+.nav a:hover, .nav a[aria-current="page"] { color: var(--green); text-decoration: underline; text-underline-offset: .3em; text-decoration-thickness: 1px; }
+.nav .nav-cta { padding: 8px 14px; border: 1px solid var(--ink); border-radius: 999px; }
+.nav .nav-cta:hover { background: var(--ink); color: var(--paper); text-decoration: none; }
+@media (max-width: 720px) { .nav .wide { display: none; } }
 
 /* the column */
-.page { flex: 1; width: 100%; max-width: calc(34em + 2 * var(--gutter)); padding: clamp(40px, 8vh, 88px) var(--gutter) 64px; }
+.page { flex: 1; width: 100%; margin: 0 auto; max-width: calc(34em + 2 * var(--gutter)); padding: clamp(40px, 8vh, 88px) var(--gutter) 64px; }
 .page > * + * { margin-top: 2.2em; }
 .intro > * + * { margin-top: 1.1em; }
 .lede { font-weight: 500; }
@@ -164,7 +175,8 @@ textarea:focus, input:focus { outline: none; border-bottom-color: var(--green); 
 
 .trust { font-size: .8em; color: var(--muted); max-width: 32em; }
 
-.foot { display: flex; flex-wrap: wrap; gap: 6px 28px; padding: 0 var(--gutter) var(--gutter); font: 400 13px var(--sans); color: var(--muted); }
+.foot { display: flex; flex-wrap: wrap; gap: 6px 28px; padding: 24px var(--gutter); border-top: 1px solid var(--line); font: 400 13px var(--sans); color: var(--muted); }
+.foot a { color: inherit; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -241,7 +253,7 @@ textarea:focus, input:focus { outline: none; border-bottom-color: var(--green); 
 .step-flag { display: block; font-size: .8em; color: var(--amber); font-style: italic; }
 
 @media print {
-  .top, .intro, .intake, .foot, .trust, .chat, .trace, #followups, #evidence-block, #weather, #second, #print, .skip { display: none !important; }
+  .site, .intro, .intake, .foot, .trust, .chat, .trace, #followups, #evidence-block, #weather, #second, #print, .skip { display: none !important; }
   body { background: #fff; color: #000; font-size: 12pt; }
   .results { border: 0; padding: 0; }
   .handoff { border: 0; padding: 0; }
@@ -254,3 +266,53 @@ textarea:focus, input:focus { outline: none; border-bottom-color: var(--green); 
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: .9em; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; }
+
+/* ---------------------------------------------------------------- garden preferences, safety labels */
+.garden { border: 0; margin: 1.5em 0 0; padding: 0; }
+.check { display: flex; gap: 10px; align-items: baseline; padding: 4px 0; cursor: pointer; font-size: .92em; }
+.check input { width: 16px; height: 16px; margin: 0; accent-color: var(--green); transform: translateY(2px); flex: none; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.tag { font: 500 12px/1.2 var(--sans); padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.tag.ok { color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, transparent); }
+.tag.warn { color: var(--amber); border-color: var(--amber-line); }
+.tag.bad { color: var(--paper); background: var(--amber); border-color: var(--amber); }
+.tag.plain { border-style: dashed; }
+.caution-line { color: var(--amber); }
+.cautions { list-style: none; padding: 0; border-left: 2px solid var(--amber-line); padding-left: 14px; }
+.cautions li + li { margin-top: .4em; }
+.remind { font-family: var(--sans); }
+.remind a { color: var(--green); }
+.remind .textbtn { margin: 0 0 0 10px; }
+
+/* ---------------------------------------------------------------- spray window */
+.spray-best { font-size: .95em; }
+.spray-grid { margin-top: 18px; display: grid; grid-template-columns: 3.2em repeat(14, minmax(0, 1fr)); gap: 3px; max-width: 30em; font: 500 11px var(--sans); color: var(--muted); align-items: center; }
+.spray-grid .gh { text-align: left; }
+.spray-grid .cell { height: 18px; border-radius: 3px; background: var(--line); }
+.spray-grid .cell.good { background: var(--leaf); }
+.spray-grid .cell.ok { background: color-mix(in srgb, var(--leaf) 40%, var(--paper)); }
+.spray-grid .cell.pick { outline: 2px solid var(--ink); outline-offset: 1px; }
+.legend { margin-top: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-family: var(--sans); }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: var(--line); vertical-align: -1px; }
+.sw.good { background: var(--leaf); }
+.sw.ok { background: color-mix(in srgb, var(--leaf) 40%, var(--paper)); }
+.sw.pick { background: transparent; outline: 2px solid var(--ink); outline-offset: -2px; }
+.spray-others { padding-left: 1.2em; margin-top: 12px; }
+.spray-others:empty { display: none; }
+
+/* ---------------------------------------------------------------- My plants */
+.page-title { font: 500 clamp(2rem, 5vw, 2.8rem)/1.1 var(--serif); letter-spacing: -.015em; }
+.plants { list-style: none; padding: 0; }
+.plant { display: grid; grid-template-columns: 96px 1fr; gap: 18px; padding: 18px 0; border-top: 1px solid var(--line); }
+.plant:first-child { border-top: 0; }
+.plant-photo { width: 96px; height: 96px; object-fit: cover; border-radius: 6px; background: var(--wash); display: block; }
+.plant-name { font-size: 1.05em; font-weight: 600; }
+.plant-meta { color: var(--muted); margin-top: 2px; }
+.plant-due { margin-top: 6px; color: var(--green); font-weight: 500; }
+.plant.due .plant-due::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--leaf); margin-right: 8px; vertical-align: 2px; }
+.plant-due.late { color: var(--amber); }
+.plant-actions { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; font-family: var(--sans); align-items: baseline; }
+.plant-actions a { color: var(--green); }
+.plant-actions .textbtn { margin: 0; }
+@media (max-width: 480px) { .plant { grid-template-columns: 72px 1fr; gap: 14px; } .plant-photo { width: 72px; height: 72px; } }
+.plant-actions a, .plant-actions .textbtn, .remind a, .remind .textbtn { font: 500 14px/1.4 var(--sans); }
