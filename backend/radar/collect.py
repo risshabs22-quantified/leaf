@@ -242,6 +242,10 @@ def check_findings(
             page.excerpt, region
         ):
             no("page is about another state")
+        elif regions.other_states_named(f.quote, region) and not regions.names_state(
+            f.quote, region
+        ):
+            no("quote is about another state")  # e.g. "confirmed in four New York counties"
         elif (page.url, key) in seen:
             continue
         elif per_page.get(page.url, 0) >= MAX_REPORTS_PER_PAGE:
@@ -251,8 +255,8 @@ def check_findings(
             per_page[page.url] = per_page.get(page.url, 0) + 1
             on_page = f" {_words(page.excerpt)} "
             place = _plain(f.where, 80)
-            if len(_words(place)) < 3 or f" {_words(place)} " not in on_page:
-                place = ""  # a place the page does not state is dropped, not guessed
+            if len(_words(place)) < 3 or f" {_words(place)} " not in f" {_words(f.quote)} ":
+                place = ""  # a place the quote does not state is dropped, not guessed
             seen_words = {singular(w) for w in on_page.split()}
             hosts = [
                 h

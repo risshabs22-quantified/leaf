@@ -183,7 +183,17 @@ def test_a_page_about_another_state_is_not_this_states_report():
     assert kept == [] and rejected[0][1] == "page is about another state"
     assert len(check(f, page(text), region="IA")[0]) == 1  # the same page is Iowa's
     both = text + " Minnesota growers were not affected, and Minnesota has not reported it."
-    assert len(check(f, page(both))[0]) == 1  # it names Minnesota too
+    kept, rejected = check(f, page(both))
+    assert (
+        kept == [] and rejected[0][1] == "quote is about another state"
+    )  # the sentence itself is Iowa's
+    own = "Posted October 8, 2026. Late blight was confirmed on tomatoes in Dakota County, Minnesota, and in Polk County, Iowa this week."
+    g = FINDING.model_copy(
+        update={
+            "quote": "Late blight was confirmed on tomatoes in Dakota County, Minnesota, and in Polk County, Iowa this week"
+        }
+    )
+    assert len(check(g, page(own))[0]) == 1  # a sentence that names this state too is allowed
 
 
 def test_a_place_the_page_does_not_state_is_dropped_not_guessed():
@@ -969,29 +979,39 @@ def test_plant_matching_ignores_filler_words_and_the_gardeners_symptom_words():
     )  # plural and singular agree
 
 
-async def test_deep_starts_from_quicks_scores_without_the_regional_prior(settings):
+async def test_deep_gets_the_capped_prior_and_its_verdict_cannot_rise(settings):
     from tests.conftest import DIAG_LOW
     from tests.test_agent import finish, search, turn
     from tests.test_auto import auto_for, run_auto
 
-    deep, _ = auto_for(
-        settings, DIAG_LOW, [turn(search()), turn(finish(("Early blight", 0.8, ["E1"])))]
+    def script():
+        return [
+            turn(search()),
+            turn(finish(("Early blight", 0.55, ["E1"]), ("Nitrogen deficiency", 0.3, ["E1"]))),
+        ]
+
+    async def run(reports):
+        deep, _ = auto_for(settings, DIAG_LOW, script())
+        token = REGIONAL.set(RegionalContext("MN", reports) if reports else None)
+        try:
+            return (await run_auto(deep, notes="tomato"))[0]
+        finally:
+            REGIONAL.reset(token)
+
+    plain = await run([])
+    boosted = await run(
+        [report(url="https://extension.umn.edu/1"), report(url="https://extension.umn.edu/2")]
     )
-    token = REGIONAL.set(
-        RegionalContext(
-            "MN",
-            [report(url="https://extension.umn.edu/1"), report(url="https://extension.umn.edu/2")],
-        )
-    )
-    try:
-        res, _ = await run_auto(deep, notes="tomato")
-    finally:
-        REGIONAL.reset(token)
     raw = {c["name"]: c["confidence"] for c in DIAG_LOW["candidates"]}
-    assert res.mode == "deep" and {h.name: h.probability for h in res.first_differential} == raw
-    assert (
-        res.regional is None
-    )  # an investigated case carries no prior, so none can tip its verdict
+    assert plain.mode == boosted.mode == "deep" and plain.regional is None
+    # Quick's scores seed the case unchanged; only the final differential carries the prior.
+    assert {h.name: h.probability for h in boosted.first_differential} == raw
+    top = next(h for h in boosted.differential if h.name == "Early blight")
+    base = next(h for h in plain.differential if h.name == "Early blight")
+    assert top.prior_points == 0.04 and top.probability == pytest.approx(base.probability + 0.04)
+    assert boosted.regional.boosted == [{"name": "Early blight", "points": 0.04}]
+    rank = {"lab": 0, "likely": 1, "confident": 2}
+    assert rank[boosted.verdict] <= rank[plain.verdict]  # the prior never raises a verdict
 
 
 async def test_the_radar_job_skips_when_diagnoses_need_the_search_credits():
@@ -1075,3 +1095,36 @@ async def test_a_failed_region_lookup_is_remembered_for_a_few_minutes():
         regions.region_for_point = orig
     assert calls == [1]  # the second request did not wait on the lookup again
     assert REGIONAL.get() is None
+
+
+def test_a_sentence_about_another_state_is_not_this_states_report_even_on_this_states_page():
+    text = "Pennsylvania late blight updates. Posted September 22, 2026. Late blight has been confirmed in at least four western New York counties this week."
+    f = FINDING.model_copy(
+        update={
+            "quote": "Late blight has been confirmed in at least four western New York counties this week",
+            "where": "Pennsylvania",
+        }
+    )
+    pg = {
+        "P1": Page(
+            "P1",
+            "https://extension.psu.edu/x",
+            "Late blight updates",
+            best_excerpt(text, "Pennsylvania"),
+            date(2026, 9, 22),
+        )
+    }
+    kept, rejected = check_findings([f], pg, "PA", "2026-W42")
+    assert kept == [] and rejected[0][1] == "quote is about another state"
+
+
+def test_a_place_must_be_in_the_quote_itself():
+    text = "Posted October 8, 2026. Late blight was confirmed on tomatoes this week. Dakota County growers were told."
+    f = FINDING.model_copy(
+        update={
+            "quote": "Late blight was confirmed on tomatoes this week",
+            "where": "Dakota County",
+        }
+    )
+    kept, _ = check(f, page(text))
+    assert kept[0]["place"] == ""  # on the page, but not in the sentence that says it

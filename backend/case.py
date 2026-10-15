@@ -49,6 +49,7 @@ class Evidence(BaseModel):
 class Hypothesis(BaseModel):
     name: str
     probability: float = Field(..., ge=0.0, le=1.0)
+    prior_points: float = 0.0  # set in code from Leaf Radar, never by a model
     evidence_for: list[str] = Field(default_factory=list)
     evidence_against: list[str] = Field(default_factory=list)
 
@@ -78,6 +79,7 @@ class Case(BaseModel):
     lat: float | None = None
     lon: float | None = None
     crop: str | None = None
+    regional: Any = None  # the Leaf Radar note for this case, set in code at the end
     photos: list[Photo] = Field(default_factory=list)
     messages: list[dict[str, Any]] = Field(default_factory=list)
     differential: list[Hypothesis] = Field(default_factory=list)

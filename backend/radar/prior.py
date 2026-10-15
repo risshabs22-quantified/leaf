@@ -89,8 +89,12 @@ def apply_prior(
         boosted.append({"name": c.name, "points": points})
         for r in found:
             used.setdefault(r.source_url + r.pest_key, r)
-    if not boosted:
-        return None
+    return _note(ctx, used, boosted) if boosted else None
+
+
+def _note(
+    ctx: RegionalContext, used: dict[str, Any], boosted: list[dict[str, Any]]
+) -> RegionalNote:
     return RegionalNote(
         region=ctx.region,
         region_name=regions.name(ctx.region),
@@ -109,6 +113,26 @@ def apply_prior(
         ],
         boosted=boosted,
     )
+
+
+def apply_prior_to_hypotheses(
+    hyps: list[Any], plant: str, ctx: RegionalContext
+) -> RegionalNote | None:
+    """The same capped prior for Deep's differential (in place, probabilities capped at 1)."""
+    used: dict[str, Any] = {}
+    boosted: list[dict[str, Any]] = []
+    for h in hyps:
+        h.prior_points = 0.0
+        found = [r for r in ctx.reports if matches(h.name, r, plant)]
+        if not found:
+            continue
+        points = round(min(PRIOR_CAP, PER_SOURCE * len({r.source_url for r in found})), 3)
+        h.prior_points = points
+        h.probability = min(1.0, round(h.probability + points, 3))
+        boosted.append({"name": h.name, "points": points})
+        for r in found:
+            used.setdefault(r.source_url + r.pest_key, r)
+    return _note(ctx, used, boosted) if boosted else None
 
 
 async def load_context(repo: Any, region: str, today: date | None = None) -> RegionalContext | None:

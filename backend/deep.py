@@ -41,6 +41,7 @@ from backend.handoff import LabHandoff, build_handoff
 from backend.models import ModelError, complete_json
 from backend.pipeline import Leaf, apply_verdict
 from backend.prompts import DIAGNOSE_SYSTEM, sanitize
+from backend.radar.prior import REGIONAL, apply_prior_to_hypotheses
 from backend.schemas import (
     Candidate,
     CarePlan,
@@ -53,7 +54,7 @@ from backend.schemas import (
 )
 from backend.search import PAUSED_NOTICE, _trust, search_paused
 from backend.store import CaseStore
-from backend.verdict import DEEP, Decision, decide
+from backend.verdict import DEEP, Decision, decide, more_cautious
 from backend.vision import describe
 
 log = logging.getLogger("leaf.deep")
@@ -528,7 +529,9 @@ class DeepLeaf:
         sources_text = " ".join(" ".join(s.passages) for s in case.sources)
         flags += check_summary(plan, sources_text)
         apply_garden(plan, case.garden)  # before the verdict, so an emptied plan is not Confident
-        decision = deep_decision(case, confidence, critic)
+        decision = self._with_regional(
+            case, confidence, critic, deep_decision(case, confidence, critic)
+        )
         if plan_failed:  # as in Quick: no plan at all, so a lab or extension office decides
             decision = Decision(
                 "lab",
@@ -596,6 +599,36 @@ class DeepLeaf:
             reasoning_summary=case.summary,
         )
 
+    def _with_regional(
+        self,
+        case: Case,
+        confidence: Confidence,
+        critic: CriticOpinion | None,
+        raw: Decision,
+    ) -> Decision:
+        """Leaf Radar's capped prior on the final differential (at most 5 points a cause). The
+        combined confidence stays the raw one, and the verdict is the more cautious of the raw
+        and boosted decisions, so the prior can send a case to a lab but never make it
+        Confident."""
+        ctx = REGIONAL.get()
+        guess = next(
+            (
+                p.observation.plant_guess
+                for p in case.photos
+                if p.observation and p.observation.plant_guess.lower() != "unknown"
+            ),
+            "",
+        )
+        for h in case.differential:
+            h.prior_points = 0.0
+        if ctx is None:
+            return raw
+        case.regional = apply_prior_to_hypotheses(case.differential, guess or case.notes, ctx)
+        if case.regional is None:
+            return raw
+        case.differential.sort(key=lambda h: h.probability, reverse=True)
+        return more_cautious(raw, deep_decision(case, confidence, critic))
+
     def _response(
         self,
         case: Case,
@@ -627,6 +660,7 @@ class DeepLeaf:
             status=status,
             garden=case.garden,
             questions=case.questions if status == "needs_answers" else [],
+            regional=case.regional,
             differential=case.differential,
             first_differential=case.first_differential,
             investigator_differential=case.investigator_differential,
