@@ -100,9 +100,11 @@ Every model call goes through `backend/models.py` to Nebius Token Factory. The r
 | Plant identification, 40 licensed photos | 92.5% right with the vision model alone, 95% after the check against sources. Well-lit, well-framed Commons photos likely seen in training, so a ceiling rather than what a phone photo gets |
 | Front-door router, 65 labelled messages (attacks, toxicity questions, real garden questions) | 0 false refusals, 0 of 6 harmful requests missed, 0 to 1 of 7 prompt injections missed, intent 97% (Lightning) |
 | Hardiness zone from 30 years of ERA5-Land, five US cities | Within half a zone of the USDA map in all five, exact in none |
-| Radar, real runs on Oct 15 2026 | One state's pages (Pennsylvania) gave two validated reports; Minnesota's current pages had none; Michigan's site blocks the page reader. Extension sites mostly host evergreen guides, so Radar often finds little, and says so |
+| Radar, real runs on Oct 15 2026 | Most states have little current: Minnesota's pages had no current report, Michigan's site blocks the page reader, and Pennsylvania's final production run kept none (a debugging run found one valid corn earworm report). A first production run stored a wrongly attributed report; the real run found it and the check was tightened. Radar says "nothing current" rather than guess |
 
-**Tests:** 800+ offline tests with scripted fake models and search (`make test`; they never spend credits), a type check of the Worker, lint. CI runs `make check`; while GitHub Actions billing is broken it is run locally before every push.
+**Speed in production** (a real headless browser, after the deploy): the first byte in 73 to 280 ms, each page loaded with its data in 206 to 513 ms at phone width, API calls 63 to 588 ms (Today is the slowest because it plans the garden on demand); a Quick diagnosis through the API took 8 s, an Auto diagnosis of a high-stakes disease 38 s; the first load after a deploy took 8 s while the container started.
+
+**Tests:** 820+ offline tests with scripted fake models and search (`make test`; they never spend credits), a type check of the Worker, lint. CI runs `make check`; while GitHub Actions billing is broken it is run locally before every push.
 
 **Not yet verified live:** the Telegram bot with a real bot token, the MCP server from a real MCP client (it is tested with the raw JSON-RPC calls such a client sends, in both protocol versions), the Home Assistant webhook from a real Home Assistant, and a Web Push notification on a real phone. Each is built, tested offline and, where it could be, checked against the real services.
 

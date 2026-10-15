@@ -24,6 +24,7 @@ Keep it short: newest entries first.
 | Platform M4: Leaf Care (morning planner, Today, notifications service, Web Push PWA, 14:00 frost/heat check, NWS alerts, Nano triage) | done | `docs/LEAF_PLATFORM.md` M4; 703 tests; push accepted by FCM |
 | Platform M5: Season Plan (Ultra outline + monthly chunks, code rules, Super verification, replanning, calendar export, printable page, Doctor wiring) | done | `docs/LEAF_PLATFORM.md` M5; 731 tests; live plan $0.21 |
 | Platform M6: Connect (REST API v1 and OpenAPI, API keys with scopes and per-key limits, MCP server, Home Assistant readings, Telegram bot) | built and checked locally; Telegram waits for a bot token | `docs/LEAF_PLATFORM.md` M6; 765 tests |
+| Platform M7: Leaf Radar, `/ops`, landing page and README as a platform | done | `docs/LEAF_PLATFORM.md` M7; 822 tests; real Tavily and Nemotron runs; production check |
 | README final, video, Devpost draft | Devpost drafted (`docs/DEVPOST.md`); video todo | `/submission-check` |
 
 ## Next
@@ -40,6 +41,13 @@ Keep it short: newest entries first.
 | 2026-10-13 | 52 tune | Quick 52% / Deep 56% / Auto 58% | 75% / 73% / 73% | lab 6% / 38% / 25% | three verdicts, Auto, fitted thresholds; checklist off (48% with it) |
 
 ## Session log
+- 2026-10-15: **Leaf Platform M7, Radar, ops and story** (`backend/radar/`, `/radar`, `/ops`). Details are in `docs/LEAF_PLATFORM.md` M7.
+  - **Radar:** a weekly job per US state with gardens searches that state's extension hosts, reads pages, dates them in code, screens (Nano 3), extracts (Lightning) and checks every report in code: quote on the page, names the pest, says it was seen, not negated, not another year, not another state. A capped regional prior (at most 5 points) reaches Quick and Deep; the verdict is the more cautious of the raw and boosted decisions.
+  - **`/ops`:** counts and sums only. **README and landing page** rewritten as a platform with measured numbers and honest limits.
+  - **Real runs found what the offline tests did not:** Lightning returned nothing on a clear sighting until the prompt had an example; a tracker heading passed as a sighting; and in production a quote about New York counties was stored as Pennsylvania's. All fixed with tests; Pennsylvania's clean re-run stores nothing, and `/radar` says so.
+  - **Review:** one blocker (negated and historical sentences stored as current) and twelve other findings, fixed with tests.
+  - **Speed in production (real browser):** pages shown with data in 206 to 828 ms; API calls 63 to 588 ms; a Quick diagnosis with garden link 8 s; Auto on late blight 38 s.
+  - **Tavily credits** are the scarcest thing (the real cap is about 10 a day this month), so Radar takes at most 8 a day and leaves diagnoses theirs.
 - 2026-10-15: **Leaf Platform M6, Connect** (`backend/connect/`, `/connect`). Details are in `docs/LEAF_PLATFORM.md` M6.
   - **API and keys:** `/api/v1` with OpenAPI; keys with scopes (`read`, `readings`, `tools`), hashed, with per-key limits counted in D1 (hour, day, model budget) and a 30-call daily model budget per garden.
   - **MCP:** `/mcp` serves both protocol eras (the 2025 handshake and the stateless 2026-07-28), written from the spec pages read today. Tools: diagnose, identify, care_plan, season_plan, weather_risk.

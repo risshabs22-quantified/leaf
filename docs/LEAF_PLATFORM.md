@@ -624,4 +624,45 @@ Everything below calls the same functions (`backend/connect/tools.py`), so the w
 - A key is bearer-secret: anyone holding it has its scopes until it is revoked.
 
 ### M7 Radar, ops and story
-- [ ] Radar collection and `/radar`; `/ops` dashboard; landing page and README rewritten as a platform with honest numbers
+- [x] Radar collection and `/radar`: weekly per US state with gardens, quote-checked reports, regional prior in diagnosis (capped, never Confident alone)
+- [x] `/ops` dashboard (public, counts and sums only)
+- [x] Landing page and README rewritten as a platform with measured numbers
+- [x] Live on production (headless Chromium, one test garden, deleted afterwards): the state found by the container, the Radar job through the real queue, every page, a real diagnosis
+
+**How Radar works (`backend/radar/`, job `radar`).** For each US state that has a garden (a cell's state is found once, by the National Weather Service's point lookup, and kept in `cells.region`):
+1. **Search** (Tavily, 2 credits): two queries limited to that state's extension hosts (`regions.py`: 50 states; Louisiana, Michigan and Oklahoma could not be opened by the checker and are marked; D.C. has no extension host). One query carries the month and year, so current posts rank; the other names pests extension services announce when they arrive (spotted lanternfly, emerald ash borer, late blight, boxwood blight, jumping worm). They only steer the search: no pest is recorded without a sentence from a page. Results are kept only if the URL is on an allowed host (and under the extension path, for a host shared with the university).
+2. **Read** (Tavily, 5 pages per credit, at most 10 pages, best search score first; a page read in the last 21 days is not paid for again). A page the reader cannot open falls back to its search excerpt.
+3. **In code:** the page's own date (a date beside "posted", "published" or "updated" wins; otherwise the dates in its opening text must agree; an event date in the future is not a date; a page with none is skipped), a cut to the paragraphs that use words like detected or confirmed, and a refusal of text with instruction-like wording.
+4. **Nano 3** screens each remaining page: a current report, and no instruction aimed at an AI.
+5. **Lightning** writes the reports, one call per run.
+6. **Code checks every report:** the page exists; the quote is on the page word for word and long enough; it names the pest; it contains a verb that says something was seen (detected, confirmed, found, observed, caught, "have reported in"), not just the noun "reports"; no forecast or advice words; no negation ("no late blight has been confirmed"); no year other than the page's; neither the page nor the quote is about another state; plants and places are kept only if they are in the page (places only if in the quote); and the status is read from the quote's own words. The record keeps the page's date, the quote and the link.
+
+**The prior (`prior.py`).** A candidate that names the same pest, on a plant the report names, gains 2 points per distinct source, at most 5. In Quick the verdict is decided twice, from the raw and the boosted scores, and the more cautious stands. In Deep the combined confidence stays raw, only the final differential carries the prior, and the same rule applies. So a prior can send a serious case to a lab but cannot make Leaf confident. A candidate is never added, and a model cannot set the prior. The note ("Reported nearby") shows each report with its sentence and link; it is not on shared links, because it would show the gardener's state.
+
+**Credits.** Tavily's plan is 1,000 credits a month and Leaf spreads what is left over the days left (about 10 a day in late October). Radar takes at most 8 a day (two states at four credits), runs on weekday mornings (the Worker picks up to two states without a run this week, least recently checked first), and skips itself when fewer than 8 of the searcher's daily credits remain, so diagnoses keep theirs. A run that times out is recorded, not retried (a retry would pay for the pages again).
+
+**`/ops` (`/api/ops/usage`, `/api/ops/platform`).** Spend against the cap and the mode, calls, tokens, time and cost per task, cache hit rate, jobs in the last 24 hours, the free services against their allowances, and what Leaf holds. Cost per active user is shown only with at least 20 active user-days; before that the page says it is not meaningful. It lists no states (which would show where a garden is) and no garden ids.
+
+**Found by real runs, not by the offline tests.**
+- Nemotron 3.5 Lightning returned an empty list for a clear sighting ("all detected corn earworm moths") until the prompt carried a worked example; Super found it without one.
+- The first query wordings returned evergreen guides and event pages; naming reportable pests and the month and year found current posts.
+- A tracker page's heading ("Current reports of late blight in Pennsylvania…") passed the first occurrence check because of the noun "reports". The check now needs a sighting verb.
+- Pages were read in query order, so the strongest hit of the second query missed the cut; they are now ranked by score.
+- Michigan's extension site refuses Tavily's reader, so its search excerpts are read instead.
+- **In production**, Pennsylvania's first stored report said "late blight confirmed in Pennsylvania" with a quote about four New York counties: the page named Pennsylvania, so the page-level state check passed. The check now also applies to the quote, and a place must be in the quote. The same run on clean data stores nothing, and `/radar` says so.
+- The adversarial review found a blocker (negated and historical sentences stored as current confirmed reports), plus ambiguous page dates, model-written hosts and places stored unchecked, no host allow-list, a prior reaching Deep unchecked, a cron that skipped Fridays (Cloudflare counts Sunday as 1), and credit starvation of diagnoses. All fixed with tests.
+
+**Yield, honestly.** Extension sites mostly host evergreen guides, so most states have little current. Real runs on Oct 15: Minnesota's current pages had none; Michigan's pages could not be read; one Pennsylvania pest-watch page gave a valid corn earworm report (Sept 23) in a debugging run; the final production run for Pennsylvania kept none. Radar reports what passes and says "nothing current" otherwise.
+
+**Measured in production (2026-10-15, a real headless browser, one pass, after the deploy).**
+- **Pages:** the first byte arrived in 73 to 280 ms, and every page (landing, Radar, Ops, Today, Connect, Season) had loaded and shown its data in 206 to 513 ms at 375 px and 417 to 828 ms at 1280 px. Zero console messages, no horizontal scroll. The first load after a deploy took 7.8 s (cold start of the container).
+- **API calls from those pages:** 63 to 109 ms for the simplest (`/api/connect/status`), 114 to 171 ms for `/api/ops/usage`, 144 to 448 ms for the Radar calls, 216 to 238 ms for the season plan, and 564 to 588 ms for Today, which plans the garden on demand.
+- **Diagnoses:** a Quick diagnosis through the API with a garden plant took 8 s and added 5 tasks to the garden. An Auto diagnosis of late blight took 38 s (Quick, then Deep, because late blight is high-stakes) and ended in a lab referral.
+- **The job path:** a message for the Radar job went through the real queue; the container found the state through NWS, ran the job once (attempts 1) and recorded 17 to 20 pages found, 10 read, 4 credits. The queue consumer's batching added about a minute and a half before the job started.
+- **Not exercised live:** the weekday cron itself (the next one is tomorrow 06:00 UTC); the message was sent to the queue through the Cloudflare API as the cron would.
+
+**Limits.**
+- Radar covers US states only. Alaska, Delaware, Idaho, Massachusetts, North Dakota, Rhode Island, South Carolina, Vermont and Wyoming share a host with the whole university, so only the extension path is read, and some of those paths were taken from the pages the checker saw rather than tested.
+- A report says what an extension page said, in its own words. It is not a map of outbreaks, and most weeks most states have none.
+- The prior's size (2 points a source, at most 5) is a design choice, not fitted to data: there is nothing to fit it on yet.
+
