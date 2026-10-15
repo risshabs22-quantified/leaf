@@ -440,7 +440,7 @@ Dockerfile Makefile pyproject.toml .env.example LICENSE README.md CLAUDE.md
 
 ### 6.7 Deploy to Cloudflare Containers
 
-`make deploy-cloudflare` (`scripts/deploy_cloudflare.sh`, config in `cloudflare/wrangler.jsonc`). Live at https://leaf.risshabs-22.workers.dev.
+`make deploy-cloudflare` (`scripts/deploy_cloudflare.sh`, config in `cloudflare/wrangler.jsonc`). Live at https://leafathon.site.
 
 - **What it does:** builds the image, then `wrangler deploy --secrets-file` ships the Worker, the container and the API keys from `.env` together. Setting secrets after the deploy is too late: the rollout restarts the container with the env it had.
 - **Shape:** one `basic` instance (1/4 vCPU, 1 GiB) behind a Worker. It sleeps after 30 idle minutes; a page visit to a sleeping container gets a "Leaf is waking up" page. Reports live in the R2 bucket `leaf-journal`.

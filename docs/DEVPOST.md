@@ -103,6 +103,6 @@ nvidia-nemotron · nebius-token-factory · tavily · python · fastapi · pydant
 
 ## Links
 
-- Live: https://leaf.risshabs-22.workers.dev
+- Live: https://leafathon.site
 - Code: https://github.com/risshabs22-quantified/leaf
 - Video: _to add_

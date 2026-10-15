@@ -52,8 +52,12 @@ function isPageVisit(request: Request, url: URL): boolean {
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     // One instance holds Leaf's in-memory state (running Deep cases, rate limits, daily caps).
-    const leaf = getContainer(env.LEAF, "leaf");
     const url = new URL(request.url);
+    if (url.hostname === "www.leafathon.site") { // one canonical address
+      url.hostname = "leafathon.site";
+      return Response.redirect(url.toString(), 301);
+    }
+    const leaf = getContainer(env.LEAF, "leaf");
 
     if (url.pathname === "/__leaf/ready") {
       // Waits (up to ~25 s) until Leaf accepts connections, so the waking page polls rarely.

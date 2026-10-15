@@ -6,7 +6,7 @@ Leaf is a plant-doctor agent for home gardeners and small growers. Upload up to 
 
 Built for the [Nebius x NVIDIA Global AI Hackathon](https://nebiusglobalaihackathon.devpost.com/), Best Apps and Agents track, with Tavily at runtime.
 
-**Try it:** https://leaf.risshabs-22.workers.dev · **Video:** _coming soon_
+**Try it:** https://leafathon.site · **Video:** _coming soon_
 
 ## Why
 

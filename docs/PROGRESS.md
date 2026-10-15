@@ -16,7 +16,7 @@ Keep it short: newest entries first.
 | Tavily live | done | `make smoke-all` OK; live `/api/diagnose` returned 6 sources |
 | Eval set | tune split done (52 Commons photos); test split waiting on the user's phone photos | `evals/README.md`, `docs/ACCURACY_AUDIT.md` |
 | Three verdicts and Auto mode (Auto is the default) | done | README "Quick, Deep and Auto (measured)" |
-| Deployed on Cloudflare Containers (every model call goes to Nebius Token Factory) | done | https://leaf.risshabs-22.workers.dev; live: health OK, Quick, Auto, lab handoff, share link from R2 |
+| Deployed on Cloudflare Containers (every model call goes to Nebius Token Factory) | done | https://leafathon.site; live: health OK, Quick, Auto, lab handoff, share link from R2 |
 | Landing page, organic and pet-safe plans, spray windows, My plants | done | `/`, `/app`, `/plants`; 422 tests |
 | README final, video, Devpost draft | Devpost drafted (`docs/DEVPOST.md`); video todo | `/submission-check` |
 
