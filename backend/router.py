@@ -1,11 +1,14 @@
-"""The front door: route each free-text request to an agent and screen it, in one Nano call.
+"""The front door: route each free-text request to an agent and screen it, in one model call.
+
+Live requests use the `front_door` route (Lightning first: it is fast); background screening
+uses the same steps under its own route (`checkin_screen`, later `radar_screen`), Nano first.
 
 Deterministic first:
 1. Code screen: obvious prompt injection and clearly harmful requests are stopped here.
 2. A request whose intent the UI already knows skips the model entirely.
 3. A cached decision for the same text (24 h, shared across users) skips it too.
-4. Nemotron Nano 3 decides (one call returns intent and safety together).
-5. If Nano is unavailable, or the day's budget is in brownout, keyword rules decide.
+4. The route's model decides (one call returns intent and safety together).
+5. If the model is unavailable, or the day's budget is in brownout, keyword rules decide.
 """
 
 from __future__ import annotations
@@ -23,7 +26,6 @@ from backend.schemas import FrontDoorDecision, FrontDoorOut, Intent, ModelCall
 
 log = logging.getLogger("leaf.router")
 
-CACHE_NS = "front_door"
 CACHE_TTL_S = 24 * 3600
 MAX_CHARS = 2000
 
@@ -58,6 +60,9 @@ _INJECTION = re.compile(
     r"guidelines)\b"
     r"|\b(reveal|print|show|repeat|leak)\b.{0,30}\b(system|hidden|developer)\s+"
     r"(prompt|instructions?|message)\b"
+    # Any request about the assistant's own system prompt (both models let "translate your
+    # system prompt into French" through in the first eval run).
+    r"|\b(your|leaf'?s)\s+(system|hidden|developer)\s+(prompt|instructions?)\b"
     r"|\byou\s+are\s+now\s+(a|an|in)\b"
     r"|\b(jailbreak|developer\s+mode|DAN\s+mode)\b",
     re.IGNORECASE | re.DOTALL,
@@ -156,8 +161,10 @@ async def front_door(
     cache: SharedCache | None = None,
     intent: Intent | None = None,
     use_model: bool = True,
+    task: str = "front_door",
 ) -> FrontDoorDecision:
-    """Route and screen one message. Never raises for a model failure: rules take over."""
+    """Route and screen one message under `task` (a ROUTES key). Never raises for a model
+    failure: rules take over."""
     clean = normalize(text)
     trace: list[ModelCall] = []
     blocked = code_screen(clean)
@@ -170,7 +177,7 @@ async def front_door(
 
     key = _cache_key(clean)
     if cache is not None:
-        hit = await cache.get_json(CACHE_NS, key)
+        hit = await cache.get_json(task, key)
         if hit is not None:
             try:
                 return _decision(FrontDoorOut.model_validate(hit), "cache", settings, trace)
@@ -180,8 +187,8 @@ async def front_door(
         try:
             out = await complete_json(
                 llm,
-                step="front_door",
-                models=settings.models("front_door"),
+                step=task,
+                models=settings.models(task),
                 messages=[
                     {"role": "system", "content": FRONT_DOOR_SYSTEM},
                     {"role": "user", "content": f"<message>{sanitize(clean)}</message>"},
@@ -189,7 +196,7 @@ async def front_door(
                 schema=FrontDoorOut,
                 trace=trace,
                 thinking=False,
-                max_tokens=settings.budget("front_door"),
+                max_tokens=settings.budget(task),
                 temperature=0.2,
             )
         except ModelError as exc:  # includes SpendCapReached: brownout or rules-only
@@ -198,6 +205,6 @@ async def front_door(
             if out.risk == "prompt_injection" or out.risk == "harmful":
                 out.safe = False
             if cache is not None:
-                await cache.put_json(CACHE_NS, key, out.model_dump(), CACHE_TTL_S)
+                await cache.put_json(task, key, out.model_dump(), CACHE_TTL_S)
             return _decision(out, "model", settings, trace)
     return _decision(keyword_route(clean), "rules", settings, trace)

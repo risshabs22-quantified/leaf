@@ -182,7 +182,8 @@ def test_usage_endpoint_reports_cost_per_active_user_and_no_personal_data(settin
 def test_health_shows_the_front_door_model_and_platform(settings):
     with api(settings, RESP) as (client, _):
         h = client.get("/api/health").json()
-        assert h["models"]["front_door"] == "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
+        assert h["models"]["front_door"] == "nvidia/Nemotron-3_5-Lightning"
+        assert h["models"]["background_screen"] == "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
         assert h["platform"]["data"] == "sqlite" and h["platform"]["schema_pending"] == []
         assert h["platform"]["guard"]["mode"] == "normal"
 

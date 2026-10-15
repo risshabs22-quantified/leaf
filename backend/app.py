@@ -28,7 +28,7 @@ from backend.cache import SharedCache
 from backend.calendar_file import Reminder, ics
 from backend.checkin import check_in
 from backend.conditions import ConditionsError, WeatherClient
-from backend.config import NANO, ULTRA, Settings, get_settings
+from backend.config import ULTRA, Settings, get_settings
 from backend.context import REQUEST, RequestContext
 from backend.data import open_data
 from backend.data.driver import DataError
@@ -423,7 +423,8 @@ async def health(request: Request) -> dict:
             "reason": s.reason_model,
             "fallback": s.fallback_model,
             "fast": s.fast_model,
-            "front_door": s.role_model(NANO),
+            "front_door": (s.models("front_door") or [""])[0],
+            "background_screen": (s.models("checkin_screen") or [""])[0],
             "orchestrator": s.role_model(ULTRA),
         },
         "platform": {

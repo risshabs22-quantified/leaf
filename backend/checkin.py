@@ -19,8 +19,13 @@ from backend.config import ROUTES, Settings
 from backend.journal import MAX_CHECKINS, CheckIn, JournalEntry, thumbnail
 from backend.models import LLM, ModelError, complete_json
 from backend.prompts import CHECKIN_PLAN_SYSTEM, CHECKIN_VISION_SYSTEM, sanitize
+from backend.router import front_door
 from backend.schemas import CarePlan, Garden, ModelCall, PlanStep, _unit
 
+NOTES_SET_ASIDE = (
+    "Leaf set your note aside: it read like an instruction to Leaf rather than a note about "
+    "the plant. Describe what you see on the plant and it will be used."
+)
 SPREADING_REASON = (
     "The problem is still spreading. A diagnostic lab can confirm the cause before you treat "
     "further; your local extension office can help."
@@ -92,6 +97,14 @@ async def check_in(
         raise ValueError("This case already has the maximum number of check-ins.")
     before = entry.latest_photo()
     now_thumb = await asyncio.to_thread(thumbnail, now_b64)  # image work stays off the loop
+    notes_note = ""
+    if notes.strip():
+        # Background screening with Nano 3 (a check-in is not a chat; a second does not
+        # matter). Notes it stops never reach the vision or plan models.
+        door = await front_door(llm, settings, notes, task="checkin_screen")
+        trace.extend(door.trace)
+        if not door.safe:
+            notes, notes_note = "", NOTES_SET_ASIDE
     if before and vision_model:
         try:
             progress = await compare(llm, vision_model, before, now_thumb, notes, trace)
@@ -154,6 +167,8 @@ async def check_in(
     garden = Garden.model_validate(report.get("garden") or {})
     checked = CarePlan(summary="", steps=kept)
     apply_garden(checked, garden)
+    if notes_note:
+        checked.cautions.append(notes_note)
     advice.steps = checked.steps
     if unsourced_amounts(advice.advice, source_text):
         advice.advice = "Follow the steps below; each one cites its source."

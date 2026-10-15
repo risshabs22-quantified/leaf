@@ -35,6 +35,16 @@ Keep it short: newest entries first.
 | 2026-10-13 | 52 tune | Quick 52% / Deep 56% / Auto 58% | 75% / 73% / 73% | lab 6% / 38% / 25% | three verdicts, Auto, fitted thresholds; checklist off (48% with it) |
 
 ## Session log
+- 2026-10-14: **Platform decisions after M1** (recorded in `docs/LEAF_PLATFORM.md`, "Decisions").
+  - **Front door eval:** a 65-message eval (`evals/front_door.jsonl`, `make eval-router`) with a gate fixed before the first run.
+    - Lightning passed: 0 false refusals, 0/6 harmful missed, 1/7 injections missed, intent 97%, median 0.4 s.
+    - Nano 3 missed 2/7 injections on the first run, with a median of 1.4 s.
+    - A code rule for any mention of the system prompt was added after run 1; both models then passed.
+  - **Routing:** the live front door is now Lightning (Nano as fallback). Nano 3 does background screening; check-in notes are screened now, and notes it flags are set aside with a note to the gardener.
+  - **Jobs:** planning once per populated timezone was approved (about $0.60 a month), and an afternoon frost and heat check at 14:00 local, with a Worker temperature prefilter, was added to the M4 plan.
+  - **Zero console errors:** the edge was injecting the Web Analytics beacon even though the zone's RUM setting was off. A zone configuration rule (`disable_rum`) stops it. The waking page and `/__leaf/ready` answer 200 instead of 503.
+  - **CI:** GitHub Actions has not started since at least Oct 14 (account billing), so `make check` runs before every push.
+  - 535 tests.
 - 2026-10-14: **Leaf Platform M1, Foundation.** `docs/LEAF_PLATFORM.md` written. It covers the architecture, data model, routing table with per-task budgets, job schedules, a cost model (about $0.0057 per active user per day), risks and the cut list, and its limits were verified from Cloudflare, Open-Meteo and NWS pages. What M1 added:
   - Data layer: D1 for gardens (private links, only the key hash stored), plants, tasks, events, notification settings, photos (30 days), jobs and the meter. Migrations are the same SQL files for Wrangler and local SQLite, behind a typed repository (`backend/data/`). The container reaches D1, KV and the job queue through the Worker's outbound interception at `http://leaf-platform.internal`, with no API token involved.
   - `ROUTES` in `config.py` is now the only place model chains and token budgets live; every call site uses it.

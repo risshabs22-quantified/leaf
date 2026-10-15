@@ -186,11 +186,12 @@ export default {
 
     if (url.pathname === "/__leaf/ready") {
       // Waits (up to ~25 s) until Leaf accepts connections, so the waking page polls rarely.
+      // Always 200 (the body says whether Leaf is ready), so a waiting page logs no errors.
       try {
         await leaf.startAndWaitForPorts({ cancellationOptions: { portReadyTimeoutMS: 25_000 } });
         return Response.json({ ready: true }, { headers: NO_STORE });
       } catch {
-        return Response.json({ ready: false }, { status: 503, headers: NO_STORE });
+        return Response.json({ ready: false }, { headers: NO_STORE });
       }
     }
 
@@ -198,9 +199,14 @@ export default {
       const { status } = await leaf.getState();
       if (status !== "running" && status !== "healthy") {
         ctx.waitUntil(leaf.startAndWaitForPorts().catch(() => undefined));
+        // 200, not 503: a 503 document is a console error in every browser, and the page is
+        // a real answer ("waking up, one moment"). noindex keeps it out of search results.
         return new Response(WAKING_HTML, {
-          status: 503,
-          headers: { "content-type": "text/html; charset=utf-8", "retry-after": "10", ...NO_STORE },
+          headers: {
+            "content-type": "text/html; charset=utf-8",
+            "x-robots-tag": "noindex",
+            ...NO_STORE,
+          },
         });
       }
     }

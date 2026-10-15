@@ -34,6 +34,7 @@ Flow: photo → vision model → Nemotron 3 Ultra diagnosis → Tavily sources �
 - Do the work yourself: run scripts, tests, fixes and git commits without asking. Ask only for secrets, anything that costs money beyond test calls (deploys, GPUs, paid plans) or deleting cloud resources. Never force-push.
 - Start of session: read `docs/PROGRESS.md`, run `git log --oneline -5`, run `make check`.
 - Loop: explore → plan (skip for one-line changes) → implement → verify → commit.
+- Run `make check` before every push: GitHub Actions does not start until the account's billing is fixed (Oct 2026), so nothing else gates a push.
 - "Done" means evidence: `make check` is green, and `make smoke` or a real request works for model changes.
 - At each milestone, update `docs/PROGRESS.md` (done / next / blockers) and commit.
 - After two failed attempts at the same fix, stop and propose a new approach.

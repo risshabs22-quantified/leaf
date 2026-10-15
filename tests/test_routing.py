@@ -32,7 +32,10 @@ def test_every_route_has_a_sane_budget_and_known_roles():
 
 def test_the_nvidia_stack_has_the_roles_the_platform_promises():
     s = Settings(nebius_api_key="x")
-    assert s.models("front_door")[0] == NEMOTRON_NANO
+    # Live front door: Lightning (fast); background screening: Nano 3 (docs, "Decisions").
+    assert s.models("front_door") == [NEMOTRON_LIGHTNING, NEMOTRON_NANO]
+    for background in ("checkin_screen", "job_triage", "radar_screen"):
+        assert s.models(background)[0] == NEMOTRON_NANO, background
     assert s.models("diagnose") == [NEMOTRON_ULTRA, NEMOTRON_SUPER, NEMOTRON_LIGHTNING]
     assert s.models("season_plan")[0] == NEMOTRON_ULTRA
     for verifier in ("critic", "plan_verify", "fact_verify", "identify_check"):
@@ -47,7 +50,7 @@ def test_the_nvidia_stack_has_the_roles_the_platform_promises():
 
 def test_env_overrides_a_role_everywhere_and_chains_drop_duplicates():
     s = Settings(nebius_api_key="x", nano_model=NEMOTRON_LIGHTNING)
-    assert s.models("front_door") == [NEMOTRON_LIGHTNING]  # Nano -> Lightning, deduplicated
+    assert s.models("checkin_screen") == [NEMOTRON_LIGHTNING]  # Nano -> Lightning, deduplicated
     assert s.repair_model == NEMOTRON_LIGHTNING
     assert Settings(nebius_api_key="x", vision_model="").models("vision") == []
 

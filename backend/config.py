@@ -80,8 +80,13 @@ class Route:
 # The routing table: every model call names one of these tasks (its trace step). Tasks for
 # later milestones are listed so the plan and the cost model have one source of truth.
 ROUTES: dict[str, Route] = {
-    # Front door: one Nano call routes the request and screens it.
-    "front_door": Route((NANO, LIGHTNING), 300, False, 400, 80, optional=True),
+    # Front door for live requests: one Lightning call routes and screens. Lightning, not Nano:
+    # same accuracy and cost on evals/front_door.jsonl, 0.4 s vs 1.4-1.6 s median (Oct 2026).
+    "front_door": Route((LIGHTNING, NANO), 300, False, 400, 80, optional=True),
+    # Background screening, where speed does not matter: Nano 3 first.
+    "checkin_screen": Route((NANO, LIGHTNING), 300, False, 400, 80),
+    "job_triage": Route((NANO, LIGHTNING), 300, False, 400, 80, optional=True),
+    "radar_screen": Route((NANO, LIGHTNING), 300, False, 1500, 80),
     # Doctor (exists).
     "vision": Route((VISION,), 4000, False, 1500, 600),
     "look_closer": Route((VISION,), 4000, False, 1200, 400),
