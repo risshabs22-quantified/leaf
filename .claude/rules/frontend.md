@@ -9,3 +9,4 @@ paths:
 - Keep the "How Leaf thought" panel: judges use it to see which NVIDIA model did each step.
 - Colours come from the CSS variables in `:root`, with a dark-mode block. Labels on every input.
 - Plain, kind wording for gardeners. Uncertainty is shown, never hidden.
+- Static files are linked as `/static/<file>?v=<stamp>`. When you change a CSS or JS file, bump the stamp in every HTML page so returning visitors never mix old and new files.
