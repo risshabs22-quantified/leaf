@@ -1,15 +1,14 @@
 ---
 name: deploy-nebius
-description: Build Leaf's container and deploy it to a public Nebius Serverless Endpoint, then verify it. User-invoked only because it costs money and creates cloud resources.
+description: Deploy Leaf to Cloudflare Containers with make deploy-cloudflare and verify it once. (Name kept for habit; Leaf is no longer hosted on Nebius.) User-invoked only because it changes production.
 disable-model-invocation: true
 ---
-Deploy Leaf to Nebius AI Cloud. Stop and ask before any step marked (ask).
+Leaf is hosted on Cloudflare Containers. Never try Nebius AI Cloud hosting (billing suspended on this account); model calls still go only to Token Factory.
 
-1. `make check` must pass. Ask the `reviewer` subagent for a verdict; fix any BLOCKER first.
-2. Confirm the user has: the nebius CLI logged in (`nebius profile create`), Docker running, and a card on the Nebius account (minimum first payment $25).
-3. Ask the user for `IMAGE` (Docker Hub `docker.io/<user>/leaf:vN`, or Nebius Container Registry `cr.<region>.nebius.cloud/<registry>/leaf:vN`). The endpoint uses the project's default subnet. Quote the cost first (smallest preset `2vcpu-8gb` on `cpu-d3` at $0.066/h or `cpu-e2` at $0.060/h in eu-north1, plus a 32 GiB disk) and get approval. If the journal bucket is wanted, give the user the bucket steps and env lines from docs/PROGRESS.md before deploying.
-4. `make docker-build`, then `docker run -d --rm --name leaf-local -p 8000:8000 --env-file .env leaf:dev`, confirm `curl -s localhost:8000/api/health` shows `"search": "TavilySearcher"`, then `docker stop leaf-local`.
-5. Run `IMAGE=... DRY_RUN=1 make deploy` (validates the endpoint request, creates nothing). Then (ask) run `IMAGE=... make deploy`: it stores the API keys in SecretStash and creates the endpoint.
-6. Verify once, never in a loop: wait for `nebius ai endpoint get` to report it running, then one request to `<URL>/api/health` (ok, Nemotron models, `"search": "TavilySearcher"`), then one real diagnosis in a headless browser.
-7. Put the public URL in README.md ("Try it") and docs/PROGRESS.md, commit and push.
-8. Remind the user: the endpoint bills while it exists; keep it up until Dec 15 (end of judging), then delete it.
+1. `make check` must pass. Ask the `reviewer` subagent for a verdict on big changes; fix any BLOCKER first.
+2. Confirm Docker is running and `npx --prefix cloudflare wrangler whoami` shows the account. `.env` must hold NEBIUS_API_KEY, TAVILY_API_KEY and the R2 keys (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY); never read or print them.
+3. `DRY_RUN=1 make deploy-cloudflare` to validate, then `make deploy-cloudflare`. Secrets ship with the version (`--secrets-file`).
+4. Wait for `npx --prefix cloudflare wrangler containers list` to show `ready` (poll the platform, never the site). If the image changed, wait for `containers info <ID>` to show the new version.
+5. Check once in a headless browser: the page (or the "Leaf is waking up" page, which reloads itself), `/api/health` (ok, `"search": "TavilySearcher"`), and one real diagnosis.
+6. Update docs/PROGRESS.md, commit and push.
+7. After Dec 15: `npx --prefix cloudflare wrangler delete leaf`.

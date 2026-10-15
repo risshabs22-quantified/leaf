@@ -58,7 +58,7 @@ Facts current as of 2026-10-12. Repo: https://github.com/risshabs22-quantified/l
 
 | Criterion | Leaf's answer |
 | --- | --- |
-| Technological Implementation | Several NVIDIA models routed by difficulty on Token Factory, a fallback chain, JSON repair, a parallel Tavily step, code-enforced safety, a visible trace, tests, CI, and a Nebius Serverless deploy. |
+| Technological Implementation | Several NVIDIA models routed by difficulty on Token Factory, a fallback chain, JSON repair, a parallel Tavily step, code-enforced safety, a visible trace, tests, CI, and a Cloudflare Containers deploy. |
 | Design | One screen: photo in, answer out, follow-ups, chat. Phone camera or library. Dark mode. |
 | Potential Impact | A named audience with a real, frequent, costly problem, and responsible escalation. |
 | Quality of the Idea | Follow-up questions before committing, calibrated confidence, citations, and a check-in loop. |
@@ -84,7 +84,7 @@ Source: the [Official Rules](https://nebiusglobalaihackathon.devpost.com/rules),
   - a runtime call to the Token Factory inference API, or
   - deployment on Nebius AI Cloud compute (Serverless Jobs, Serverless Endpoints or DevPods).
 - Calling NVIDIA models through Hugging Face, OpenRouter or another provider **does not count**. There is no workaround.
-- Only the model call must be on Nebius. The frontend and other code can be hosted anywhere. Leaf hosts everything on a Nebius Serverless Endpoint anyway, for extra credit under Technological Implementation.
+- Only the model call must be on Nebius. The frontend and other code can be hosted anywhere. Leaf is hosted on Cloudflare Containers; every model call goes to Token Factory.
 - Other models are not banned. Judges score how well you use Nemotron, so NVIDIA models do Leaf's reasoning and writing.
 
 ### 2.3 Tracks
@@ -416,7 +416,7 @@ make run          # http://localhost:8000
 | `make run` | Local dev server with reload | per use |
 | `make docker-build` / `make docker-run` | Container build and local run | free |
 | `make eval` | Accuracy on `evals/cases.jsonl` | about 1–3¢ per case |
-| `make deploy` | Nebius Serverless Endpoint | GPU-free CPU instance, billed hourly |
+| `make deploy-cloudflare` | Cloudflare Containers | one small instance, sleeps when idle |
 
 ### 6.5 Repo layout
 
@@ -424,7 +424,7 @@ make run          # http://localhost:8000
 backend/  config.py models.py pipeline.py prompts.py schemas.py vision.py search.py app.py
 frontend/ index.html style.css app.js        (no build step; served by FastAPI)
 tests/    conftest.py (FakeLLM, FakeSearcher) test_pipeline.py test_app.py
-scripts/  smoke_test.py eval.py deploy_nebius.sh
+scripts/  smoke_test.py eval.py deploy_cloudflare.sh
 evals/    cases.jsonl images/ (you add) results.jsonl (gitignored)
 docs/     LEAF_PLAYBOOK.md PROGRESS.md
 .claude/  settings.json hooks/ agents/ skills/ rules/
@@ -438,33 +438,16 @@ Dockerfile Makefile pyproject.toml .env.example LICENSE README.md CLAUDE.md
 - No GPU is needed, because the models run on Token Factory.
 - Run `make docker-build && make docker-run`, then `curl -s localhost:8000/api/health`.
 
-### 6.7 Deploy to a Nebius Serverless Endpoint
+### 6.7 Deploy to Cloudflare Containers
 
-`scripts/deploy_nebius.sh`, or the `/deploy-nebius` skill:
+`make deploy-cloudflare` (`scripts/deploy_cloudflare.sh`, config in `cloudflare/wrangler.jsonc`). Live at https://leaf.risshabs-22.workers.dev.
 
-```bash
-IMAGE=docker.io/<you>/leaf:v1 SUBNET_ID=<subnet> make deploy
-```
-
-**What the script does:**
-1. Builds a `linux/amd64` image and pushes it.
-2. Creates the endpoint:
-   ```bash
-   nebius ai endpoint create --name leaf --image $IMAGE --platform cpu-d3 --preset 4vcpu-16gb \
-     --container-port 8000 --public --subnet-id $SUBNET_ID \
-     --env NEBIUS_API_KEY=... --env TAVILY_API_KEY=...
-   ```
-3. Prints the HTTPS URL, which it reads from `.status.public_endpoints`.
-
-**Notes:**
-- **Image source.** Docker Hub public images work. A Nebius Container Registry image works without credentials if it's in the same project:
-  - Image path: `cr.<region>.nebius.cloud/<registry>/leaf:v1`
-  - Run `nebius registry configure-helper` first.
-- **Secrets.** `--env` is simplest. The cleaner option is `--env-secret KEY=<secret_selector>`, using Nebius SecretStash.
-- **No auth on purpose.** Leaving out `--auth` keeps the demo open to judges. Leaf's own rate limits protect your credits.
-- **Updating.** The endpoint URL changes if you delete and recreate it, so deploy once near the end. Check `nebius ai endpoint --help` for an update command in your CLI version.
-- **Unverified commands.** Finding the subnet (`nebius vpc subnet list`) is UNVERIFIED; confirm with `--help`.
-- **Billing.** An endpoint bills while it exists. CPU instances start at $0.06/hour. Keep it up until Dec 15, then `nebius ai endpoint delete <id>`.
+- **What it does:** builds the image, then `wrangler deploy --secrets-file` ships the Worker, the container and the API keys from `.env` together. Setting secrets after the deploy is too late: the rollout restarts the container with the env it had.
+- **Shape:** one `basic` instance (1/4 vCPU, 1 GiB) behind a Worker. It sleeps after 30 idle minutes; a page visit to a sleeping container gets a "Leaf is waking up" page. Reports live in the R2 bucket `leaf-journal`.
+- **Check once:** wait for `npx --prefix cloudflare wrangler containers list` to show `ready`, then one visit in a headless browser. Never poll the site.
+- **Logs:** Workers Observability (dashboard or the telemetry API); container stdout is included.
+- **Cost:** Workers Paid ($5/month) covers it. Delete after judging ends (Dec 15): `npx --prefix cloudflare wrangler delete leaf`.
+- **Not Nebius hosting.** Nebius AI Cloud billing is suspended on this account, so never try Serverless Endpoints. Every model call still goes to Token Factory, which is all the rules require.
 
 ### 6.8 CI
 
@@ -628,7 +611,7 @@ There is also an MCP-only install, which skips the hooks and automatic routing: 
 - **Hook:** after every Edit or Write of a `.py` file, `ruff format` and `ruff check --fix` run automatically, leaving unused imports alone (`.claude/hooks/format_py.py`).
 - **Permissions** (`.claude/settings.json`):
   - Allowed without asking: the make targets for setup, smoke tests, tests, lint, format, run, eval and docker build; scripts; git add, commit, push to origin; and web lookups on the docs sites the `researcher` uses.
-  - Asks first: `make deploy`, the deploy script, `nebius …`, `docker push`.
+  - Asks first: `make deploy-cloudflare`, the deploy script, `wrangler …`, `docker push`.
   - Denied: reading `.env` (also through Bash), every form of force-push, `rm -rf`.
   - These rules are a seatbelt, not a vault: a determined script could still read a file. Keep real secrets only in `.env`, and never paste them into chat.
 

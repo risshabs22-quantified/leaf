@@ -5,6 +5,7 @@ Deadline: **Fri Oct 30, 2026, 10:00 AM PT**. Track: Best Apps and Agents, plus t
 Flow: photo → vision model → Nemotron 3 Ultra diagnosis → Tavily sources → Nemotron 3.5 Lightning care plan.
 
 ## Hard rules (breaking one can disqualify Leaf)
+- Hosting is Cloudflare Containers: deploy only with `make deploy-cloudflare`. Never use Nebius AI Cloud hosting (billing suspended). Model calls still go only to Token Factory.
 - Leaf's runtime model calls go only through `backend/models.py` to Nebius Token Factory. Never OpenRouter, Hugging Face or any other provider, not even for NVIDIA models.
 - NVIDIA Nemotron does the reasoning and writing. The vision step is the one exception: Token Factory has no public NVIDIA vision model (Oct 2026). Keep it swappable and prefer NVIDIA if one appears.
 - Tavily is called at runtime from `backend/search.py`. Required for the $3,000 Tavily prize.
@@ -19,12 +20,13 @@ Flow: photo → vision model → Nemotron 3 Ultra diagnosis → Tavily sources �
 - `frontend/`: static page served by FastAPI
 - `tests/`: offline fakes, never spend credits
 - `scripts/`: smoke test, eval, deploy
+- `cloudflare/`: the Worker and Wrangler config that host Leaf
 - `docs/LEAF_PLAYBOOK.md`: full reference
 - `docs/PROGRESS.md`: session log
 - `docs/AGENT_V2.md`: Leaf v2 investigator-agent plan, verified facts, tool schemas, milestone checkboxes (planned files: `backend/agent.py`, `critic.py`, `tools.py`, `store.py`). Read it at the start of every v2 session
 
 ## Commands
-`make setup` · `make smoke` · `make smoke-all` · `make test` · `make check` · `make fmt` · `make run` · `make eval` · `make deploy` · `make help`
+`make setup` · `make smoke` · `make smoke-all` · `make test` · `make check` · `make fmt` · `make run` · `make eval` · `make deploy-cloudflare` · `make help`
 
 ## How you work here
 - Do the work yourself: run scripts, tests, fixes and git commits without asking. Ask only for secrets, anything that costs money beyond test calls (deploys, GPUs, paid plans) or deleting cloud resources. Never force-push.
@@ -43,7 +45,7 @@ Flow: photo → vision model → Nemotron 3 Ultra diagnosis → Tavily sources �
 - Use your installed skills, subagents and MCP tools before hand-writing something they already do.
 
 ## Project skills and subagents
-- Skills: `/smoke`, `/eval-leaf`; user-invoked only: `/deploy-nebius`, `/submission-check`, `/demo-video`
+- Skills: `/smoke`, `/eval-leaf`; user-invoked only: `/deploy-nebius` (now deploys to Cloudflare), `/submission-check`, `/demo-video`
 - Subagents: `explorer` (haiku), `test-runner` (haiku), `researcher` (sonnet), `reviewer` (opus, run before big commits)
 
 ## Compact instructions
