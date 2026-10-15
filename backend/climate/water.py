@@ -151,7 +151,7 @@ class Placement(BaseModel):
 
 
 class WaterAdvice(BaseModel):
-    model: Literal["fao56", "indoor"]
+    model: Literal["fao56", "indoor", "sensor"]
     action: Literal["water", "skip", "check"]
     amount_mm: float | None = None  # depth over the root zone (1 mm = 1 L per m2)
     amount_l: float | None = None  # pots: litres for this pot

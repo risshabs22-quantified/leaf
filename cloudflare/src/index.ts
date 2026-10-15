@@ -140,7 +140,7 @@ const NO_STORE = { "cache-control": "no-store" };
 // A person opening a page (not a script calling the API), so a waking screen makes sense.
 function isPageVisit(request: Request, url: URL): boolean {
   if (request.method !== "GET") return false;
-  const page = ["/", "/app", "/plants", "/identify", "/today", "/season"].includes(url.pathname) ||
+  const page = ["/", "/app", "/plants", "/identify", "/today", "/season", "/connect"].includes(url.pathname) ||
     url.pathname.startsWith("/c/") || url.pathname.startsWith("/g/");
   if (!page) return false;
   return (request.headers.get("accept") ?? "").includes("text/html");

@@ -189,7 +189,7 @@ Migrations live in `backend/data/migrations/NNNN_name.sql`. Wrangler applies the
 | `active_daily` | `day`, `actor` (salted visitor hash; from M4 also a garden planned without a visit) | Active-user count for cost per user. The salt is per day and deleted after 2 days |
 | `day_salts` | `day`, `salt` | See above |
 
-Later migrations add `cells` and `climatology` (M2), `species` and `facts` (M3), `notifications` (M4), `season_plans` and `plan_weeks` (M5), `api_keys` and `sensor_readings` (M6), and `radar_reports` (M7).
+Later migrations add `cells` and `climatology` (M2), `species` and `facts` (M3), `notifications` (M4), `season_plans` and `plan_weeks` (M5), `api_keys`, `api_key_hits`, `sensor_readings`, `telegram_chats` and `telegram_links` (M6), and `radar_reports` (M7).
 
 ## Jobs
 
@@ -450,7 +450,7 @@ Where a source does not say when to start counting, Leaf counts from January 1 a
 - **Paying only for useful wording:** the morning wording is skipped when a garden has no open tasks or no device to send to.
 
 **Notifications (`backend/notify/`).**
-- **Channels:** chosen per garden. Web Push now; Telegram in M6.
+- **Channels:** chosen per garden: Web Push, and Telegram since M6 (a chat is linked with a one-time code).
 - **Dedupe:** a unique key per morning, evening warning, NWS alert or test, so nothing is sent twice.
 - **Quiet hours:** a routine message (the morning summary) is held in the queue until they end; they may cross midnight.
 - **Daily limit:** default 3 routine messages.
@@ -532,7 +532,90 @@ When a check-in is added to that report, the loop closes: the check-in task is m
 - Pest scouting in the plan is a reminder from sourced facts, not the degree-day model; that one runs in daily care.
 
 ### M6 Connect
-- [ ] Telegram bot; REST API v1 with OpenAPI, keys, per-key limits; MCP server (streamable HTTP); Home Assistant webhook
+- [x] REST API v1 with OpenAPI, API keys with scopes, per-key limits
+- [x] MCP server (streamable HTTP): diagnose, identify, care_plan, season_plan, weather_risk
+- [x] Home Assistant webhook: a sensor reading replaces the water balance; test readings are labelled
+- [x] Telegram bot, built and tested against a fake Bot API (hidden until its token is set)
+- [ ] Live: the Telegram bot with a real token (needs the token from @BotFather; steps below), the MCP server from a real MCP client, and the webhook from a real Home Assistant
+- [ ] Live: the Connect page and the API on production (PRODUCTION_CHECK_M6)
+
+Everything below calls the same functions (`backend/connect/tools.py`), so the web page, the API, MCP and Telegram cannot drift apart. A garden has no account, so a key belongs to a garden and acts for it.
+
+**API keys (`backend/connect/auth.py`).**
+- **Format and storage:** `lf_` plus 32 random bytes. Only the SHA-256 is stored, with a 9-character prefix so people can tell keys apart. The secret is shown once, when the garden's owner (with the garden key) makes it. A garden may have 5.
+- **Scopes:** `read` (garden, Today, season plan, readings), `readings` (send soil moisture), `tools` (diagnose, identify, weather risk, start a season plan). A key can never make keys, delete the garden, or read the garden key.
+- **Limits per key, counted in D1** (never KV, which allows one write a second and propagates slowly): 120 calls an hour and 1,000 a day by default, and a smaller budget of 20 a day for calls that can spend model credits (diagnose, identify, starting a season plan). The creator may lower them; ceilings are 600, 5,000 and 50. Over a limit: HTTP 429 with `Retry-After`.
+- **Shared limits still apply:** model-spending tools also go through the same limiter as the web, counted **per garden** (so five keys and a few chats of one garden share one hourly allowance), its daily cap, the concurrency cap and the spend guard. A key cannot spend past the day's $3 cap.
+- **A garden's own daily model budget:** 30 calls a day across all its keys and Telegram chats (counted in D1), so one garden cannot use up the day's diagnoses for everyone.
+- **Bad keys:** a wrong key is 401 and counts against the caller's address (600 an hour), so guessing is slow and a busy integration is not penalised.
+
+**REST API (`backend/connect/api_v1.py`).** Base `/api/v1`, OpenAPI at `/api/v1/openapi.json` (this API only, with a bearer scheme), a readable reference on `/connect`.
+
+| Call | Scope | What it does |
+| --- | --- | --- |
+| `GET /garden` | read | The garden and its plants |
+| `GET /today` | read | Urgent alerts, tasks with reasons and sources, water status |
+| `GET /season`, `POST /season` | read, tools | The verified plan; start writing one |
+| `GET /readings`, `POST /readings` | read, readings | Soil moisture readings; the Home Assistant webhook |
+| `POST /diagnose` | tools | Photo and/or notes; the garden's choices apply; optional `plant_id` joins the report to the plant. Returns the owner token for check-ins |
+| `POST /identify` | tools | Candidates for a plant photo |
+| `GET /weather-risk` | tools | Frost, heat and wind risk for a point or the garden |
+
+**Home Assistant (`POST /api/v1/readings`, `backend/care/sensor.py`).**
+- **Body:** `plant_id` or an exact plant name, `value` (percent, 0 to 100), optional `dry_below`, optional `test`, optional `source`.
+- **Rule:** a reading younger than 12 hours replaces the water balance for its plant, outdoors and indoors, even with no forecast. Below the dry mark (30 % unless `dry_below` is set) Leaf asks you to water, at or above it Leaf says no water is needed. The dry mark is Leaf's own default and the task says so.
+- **At once:** today's open water task is rewritten when a reading arrives. A task already done is left alone.
+- **Labelled:** a reading sent with `test: true` is stored as a test. The water task's title ends "(TEST reading)", so the morning notification and Telegram say so too. Its reason starts "TEST reading", its source is "A TEST soil moisture reading, not from a sensor", and every water entry in Today and the API has a `label` (`sensor` or `test`).
+- **Only a sensor key can send a real reading.** The Connect page's test button uses the garden key, and that endpoint stores whatever it receives as a test, so a typed value is never shown as a sensor reading.
+- **Limits for Home Assistant:** a key with only the `readings` scope starts at 600 calls an hour and 5,000 a day, because Home Assistant posts on every state change.
+- **Setup:** the Connect page shows a `rest_command` and automation for `configuration.yaml`, with the plant's id filled in, and a "send a test reading" button.
+
+**MCP (`backend/connect/mcp.py`, `POST /mcp`).** Checked against the specification pages (modelcontextprotocol.io, read 2026-10-15). Leaf serves both eras from one endpoint, with no sessions:
+- **2025-03-26 to 2025-11-25:** `initialize` (Leaf answers with the version the client asked for, else 2025-11-25), `notifications/initialized` (202), `tools/list`, `tools/call`, `ping`.
+- **2026-07-28 (current, stateless):** no handshake. Every request carries its version in `params._meta`; `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` must match the body or the answer is 400 with `-32020`; an unknown version is 400 with `-32022` and the supported list; `server/discover` replaces `initialize`; results carry `resultType`, and lists carry `ttlMs` and `cacheScope`.
+- **Transport:** plain JSON replies, no event stream (GET and DELETE answer 405), one message per POST. A foreign `Origin` is 403: only Leaf's own address is allowed (and loopback on a loopback host, for local work), never the `Host` header, which a DNS-rebinding page controls. Bodies over 64 KB (an image as base64, up to about 14 MB) need a valid key before Leaf reads them.
+- **Auth:** discovery (`initialize`, `server/discover`, `tools/list`, `ping`) needs no key; every `tools/call` needs a Leaf API key. A bad key is 401 with `WWW-Authenticate`, a missing scope is 403, a limit is 429. Failures inside a tool are normal results with `isError: true`; unknown tools and bad arguments are `-32602`; an unknown method is `-32601` (HTTP 200 for the 2025 protocol, 400 for 2026-07-28). A 2026-07-28 header without `_meta`, or an unknown version header, is refused.
+- **Tools:** `diagnose`, `identify`, `care_plan`, `season_plan` (with `start` to begin writing), `weather_risk`. A diagnosis returned over MCP never includes the owner token, because it would sit in a model's context.
+
+**Telegram (`backend/connect/telegram.py`, `backend/notify/telegram.py`).**
+- **Linking:** on Connect, "Link Telegram" gives a `t.me/<bot>?start=<code>` link. The code works once, for 15 minutes, and only its hash is stored. Until a chat is linked the bot only explains how.
+- **Private chats only.** Groups and other bots are ignored.
+- **Commands:** `/today`, `/season`, `/help`, `/unlink`. A photo (with an optional caption) is diagnosed, using the garden's organic and pet choices, and answered with the verdict, steps, cautions, sources and a report link. Typed text goes through the front door (code screen, then a model), then to the diagnosis, Today or the season plan.
+- **Notifications:** the morning summary and urgent alerts go to linked chats through the same service as Web Push (dedupe, quiet hours, daily limit, urgent alerts skip both). A chat that blocked the bot is removed.
+- **Webhook safety:** `X-Telegram-Bot-Api-Secret-Token` is compared in constant time with a secret that Leaf generated and Telegram echoes; any other request is refused. Updates are acknowledged at once and handled in the background, since a diagnosis outlasts Telegram's wait; Telegram's retries are dropped by update id. Each chat may send 40 messages an hour, and is told to slow down once, not on every message.
+- **Plain text only:** no model or web text is ever sent as markup. Link previews are off.
+- **The token:** never logged, never in errors, never in `repr`. The HTTP library logs every request URL at INFO and a Bot API URL contains the token, so its loggers are held at WARNING (found in review, checked with a test that fails when it is switched back), and exceptions are reduced to the method name and Telegram's own error.
+- **Photos** arrive as a photo or as an image file. A chat that is linked again moves to the new garden and is told so.
+- **Each message** runs in its own request context, so its model calls are metered under its own trace, and shutdown waits up to 20 s for messages still being answered.
+- **Off and hidden without a token:** `/connect` hides the Telegram section and the webhook answers 404.
+
+**To turn Telegram on** (needs you; Leaf never reads the env file):
+1. In Telegram, message @BotFather, send `/newbot`, and copy the token.
+2. Add one line to the project's env file: `TELEGRAM_BOT_TOKEN=<the token>`.
+3. `make deploy-cloudflare` ships the token and a generated webhook secret (kept in `~/.config/leaf/telegram_webhook_secret`, never printed) as Worker secrets.
+4. `.venv/bin/python -m scripts.telegram_setup` registers the webhook and the command list and prints the bot's username.
+
+**Review.** The adversarial reviewer found one blocker and five should-fix items, all fixed with tests:
+- **Blocker:** the bot token was written to the container logs on every Bot API call, by the HTTP library's own request log.
+- **TEST readings shown as real** in a task title, a notification and the Telegram water line.
+- **A typed value** could be stored as a sensor reading through the garden-key endpoint.
+- **One garden** could use the day's whole diagnosis allowance through five keys.
+- **Hourly and model counters** were never purged.
+- **The web test notification** never reached Telegram.
+- Also fixed: MCP body sizes before auth, the Origin check, status codes and header validation, base64 with line breaks, image files in Telegram, and a chat linked twice.
+- **Not fixed (documented):** a key's model count goes up before its work can fail (a busy server, a bad image), which is the safe direction.
+- **Test fix found on the way:** four M4 tests failed between 21:00 and 07:00 UTC, because their routine message fell in the default quiet hours. They now switch quiet hours off.
+
+**Measured locally (2026-10-15), real services, one Minneapolis test garden (deleted).**
+- **Home Assistant:** the weather estimate said "no water needed". A reading of 55 % kept it at skip but said so from the sensor. A TEST reading of 12 % rewrote the task to "Water tomato", labelled TEST, with the TEST source.
+- **REST:** diagnose from notes took 12 s ("likely", 3 causes, 4 steps, 6 sources, owner token returned) and, with `plant_id`, added 5 tasks to the garden. `weather-risk` returned a freeze risk for the coming night.
+- **MCP:** `initialize` (2025), `tools/list` in both eras, `care_plan`, `weather_risk` and `diagnose` (7 s, no owner token in the result), called as raw JSON-RPC.
+- **Connect page** in headless Chromium at 375 px: made a key, copied snippets with the key and a plant id filled in, sent a TEST reading; no horizontal scroll, zero console messages.
+
+**Limits.**
+- Telegram, the MCP server from a real client (Claude Code, Cursor), and Home Assistant itself have not been run live: the bot needs a token, and the other two were exercised with the same HTTP calls their clients make.
+- Per-key counters and the Telegram update dedupe assume one container (as everything else here does).
+- A key is bearer-secret: anyone holding it has its scopes until it is revoked.
 
 ### M7 Radar, ops and story
 - [ ] Radar collection and `/radar`; `/ops` dashboard; landing page and README rewritten as a platform with honest numbers

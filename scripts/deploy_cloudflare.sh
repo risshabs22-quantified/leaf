@@ -52,6 +52,22 @@ if os.path.exists(vapid):
     secrets["VAPID_PRIVATE_KEY"] = open(vapid).read()
 else:
     print("Note: no VAPID key file (run scripts/gen_vapid.py), so Web Push stays off.")
+# Telegram bot (optional): the token is TELEGRAM_BOT_TOKEN in the env file (from @BotFather). The
+# webhook secret is generated once into a user-only file, like the VAPID key, never printed.
+if env.get("TELEGRAM_BOT_TOKEN"):
+    import secrets as _secrets
+    tg_file = os.path.expanduser(
+        os.environ.get("LEAF_TELEGRAM_SECRET_FILE", "~/.config/leaf/telegram_webhook_secret")
+    )
+    if not os.path.exists(tg_file):
+        os.makedirs(os.path.dirname(tg_file), exist_ok=True)
+        fd = os.open(tg_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        os.write(fd, _secrets.token_urlsafe(32).encode())
+        os.close(fd)
+    secrets["TELEGRAM_BOT_TOKEN"] = env["TELEGRAM_BOT_TOKEN"]
+    secrets["TELEGRAM_WEBHOOK_SECRET"] = open(tg_file).read().strip()
+else:
+    print("Note: no TELEGRAM_BOT_TOKEN set, so the Telegram bot stays off (and hidden).")
 json.dump(secrets, open(sys.argv[1], "w"))
 print(f"{len(secrets)} secrets ready")
 PY

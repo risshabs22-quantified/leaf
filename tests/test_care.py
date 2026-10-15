@@ -406,6 +406,10 @@ def test_push_endpoints_must_be_browser_push_services(endpoint, ok):
 # ---------- jobs ----------
 
 
+# These tests run jobs on the real clock. Quiet hours (default 21:00-07:00) would hold their
+# routine messages at night, so they switch quiet hours off (an empty window).
+
+
 async def care_runner(llm_responses=None, pusher=None):
     db = SqliteDriver()
     await apply(db)
@@ -440,7 +444,9 @@ async def test_morning_plan_stores_tasks_updates_dst_and_notifies_once():
     )
     await repo.set_plan_hour(g.id, 3)  # stale hour, as after a clock change
     await repo.add_plant(g.id, PlantIn(common_name="tomato"))
-    await repo.put_notifications(g.id, NotificationSettings(channels=["push"]))
+    await repo.put_notifications(
+        g.id, NotificationSettings(channels=["push"], quiet_start="00:00", quiet_end="00:00")
+    )
     await repo.add_push(g.id, "https://fcm.googleapis.com/x", "p" * 30, "a" * 12)
     msg = JobMessage(kind="plan_cell", key="plan_cell:407_-740:d", payload={"cell": "407_-740"})
     status, body = await runner.run(msg)
@@ -460,7 +466,9 @@ async def test_lightning_words_the_morning_message_when_it_can():
     )
     g, _ = await repo.create_garden(GardenIn(name="g", lat=40.7, lon=-74.0, timezone="UTC"))
     await repo.add_plant(g.id, PlantIn(common_name="tomato"))
-    await repo.put_notifications(g.id, NotificationSettings(channels=["push"]))
+    await repo.put_notifications(
+        g.id, NotificationSettings(channels=["push"], quiet_start="00:00", quiet_end="00:00")
+    )
     await repo.add_push(g.id, "https://fcm.googleapis.com/x", "p" * 30, "a" * 12)
     await runner.run(JobMessage(kind="plan_cell", key="k", payload={"cell": "407_-740"}))
     assert push.sent[0][1]["title"] == "Frost tonight: cover the tomato"
@@ -481,7 +489,9 @@ async def test_nws_alert_job_is_triaged_by_nano_and_sent_once_per_garden():
     )
     g, _ = await repo.create_garden(GardenIn(name="g", lat=40.7, lon=-74.0, timezone="UTC"))
     await repo.add_plant(g.id, PlantIn(common_name="tomato"))
-    await repo.put_notifications(g.id, NotificationSettings(channels=["push"]))
+    await repo.put_notifications(
+        g.id, NotificationSettings(channels=["push"], quiet_start="00:00", quiet_end="00:00")
+    )
     await repo.add_push(g.id, "https://fcm.googleapis.com/x", "p" * 30, "a" * 12)
     alert = {"id": "urn:1", "event": "Freeze Warning", "kind": "freeze", "headline": "h"}
     msg = JobMessage(
@@ -673,7 +683,9 @@ async def test_triage_keeps_only_a_real_time_and_irrelevant_alerts_are_not_pushe
     )
     g, _ = await repo.create_garden(GardenIn(name="g", lat=40.7, lon=-74.0, timezone="UTC"))
     await repo.add_plant(g.id, PlantIn(common_name="tomato"))
-    await repo.put_notifications(g.id, NotificationSettings(channels=["push"]))
+    await repo.put_notifications(
+        g.id, NotificationSettings(channels=["push"], quiet_start="00:00", quiet_end="00:00")
+    )
     await repo.add_push(g.id, "https://fcm.googleapis.com/x", "p" * 30, "a" * 12)
     alert = {"id": "urn:2", "event": "Flood Warning", "kind": "flood", "headline": "h"}
     _, body = await runner.run(
@@ -687,7 +699,9 @@ async def test_alert_updates_are_sent_once_and_indoor_only_gardens_are_skipped()
     runner, repo, _, _ = await care_runner({"job_triage": {"relevant": True, "summary": "s"}}, push)
     g, _ = await repo.create_garden(GardenIn(name="g", lat=40.7, lon=-74.0, timezone="UTC"))
     await repo.add_plant(g.id, PlantIn(common_name="tomato"))
-    await repo.put_notifications(g.id, NotificationSettings(channels=["push"]))
+    await repo.put_notifications(
+        g.id, NotificationSettings(channels=["push"], quiet_start="00:00", quiet_end="00:00")
+    )
     await repo.add_push(g.id, "https://fcm.googleapis.com/x", "p" * 30, "a" * 12)
     for urn in ("urn:a", "urn:a-update"):  # NWS gives an update a new id
         alert = {
@@ -727,7 +741,9 @@ async def test_morning_is_never_urgent_and_costs_nothing_when_nobody_listens():
     await repo.add_plant(g.id, PlantIn(common_name="tomato"))
     _, body = await runner.run(JobMessage(kind="plan_cell", key="m", payload={"cell": "407_-740"}))
     assert body["result"]["results"][g.id]["notify"] == "unreachable" and llm.calls == []
-    await repo.put_notifications(g.id, NotificationSettings(channels=["push"]))
+    await repo.put_notifications(
+        g.id, NotificationSettings(channels=["push"], quiet_start="00:00", quiet_end="00:00")
+    )
     await repo.add_push(g.id, "https://fcm.googleapis.com/x", "p" * 30, "a" * 12)
     await runner.run(JobMessage(kind="plan_cell", key="m2", payload={"cell": "407_-740"}))
     row = (await repo.list_notifications(g.id))[0]
@@ -747,7 +763,9 @@ async def test_evening_check_warns_before_dark_once():
     runner, repo, _, _ = await care_runner(pusher=push)
     g, _ = await repo.create_garden(GardenIn(name="g", lat=40.7, lon=-74.0, timezone="UTC"))
     await repo.add_plant(g.id, PlantIn(common_name="tomato"))
-    await repo.put_notifications(g.id, NotificationSettings(channels=["push"]))
+    await repo.put_notifications(
+        g.id, NotificationSettings(channels=["push"], quiet_start="00:00", quiet_end="00:00")
+    )
     await repo.add_push(g.id, "https://fcm.googleapis.com/x", "p" * 30, "a" * 12)
     for key in ("e1", "e2"):
         await runner.run(JobMessage(kind="evening_check", key=key, payload={"cell": "407_-740"}))
@@ -759,7 +777,9 @@ async def test_notify_send_job_delivers_a_held_notification():
     push = FakePusher()
     runner, repo, _, _ = await care_runner(pusher=push)
     g, _ = await repo.create_garden(GardenIn(name="g", timezone="UTC"))
-    await repo.put_notifications(g.id, NotificationSettings(channels=["push"]))
+    await repo.put_notifications(
+        g.id, NotificationSettings(channels=["push"], quiet_start="00:00", quiet_end="00:00")
+    )
     await repo.add_push(g.id, "https://fcm.googleapis.com/x", "p" * 30, "a" * 12)
     nid = await repo.create_notification(g.id, "held", "morning", "t", "b")
     _, body = await runner.run(JobMessage(kind="notify_send", key="s", payload={"id": nid}))

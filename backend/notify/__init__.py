@@ -2,7 +2,7 @@
 Leaf. Channels the gardener chose; dedupe (the same reminder or alert never twice); quiet
 hours (sent when they end, through the job queue); a daily rate limit. Urgent alerts (frost,
 freeze, heat, wind, flood) skip both: a freeze warning held until morning comes too late.
-Web Push now, Telegram in M6.
+Web Push and Telegram.
 """
 
 from __future__ import annotations
@@ -19,6 +19,10 @@ log = logging.getLogger("leaf.notify")
 
 class Pusher(Protocol):
     async def send(self, sub: dict[str, Any], payload: dict[str, Any]) -> Any: ...
+
+
+class Telegram(Protocol):
+    async def send(self, chat_id: int | str, text: str) -> Any: ...
 
 
 class Queue(Protocol):
@@ -56,13 +60,14 @@ async def notify(
     url: str = "/today",
     now: datetime | None = None,
     respect_quiet: bool = True,
+    telegram: Telegram | None = None,
 ) -> str:
     """Decide and, when it is time, send. Returns what happened: sent, queued (quiet hours),
     duplicate, no_channels, daily_limit, no_subscribers, failed."""
     from backend.jobs import JobMessage  # jobs imports this module
 
     settings = await repo.get_notifications(garden.id)
-    if "push" not in settings.channels:
+    if not {"push", "telegram"} & set(settings.channels):
         return "no_channels"
     nid = await repo.create_notification(garden.id, dedupe_key, kind, title, body, url, urgent)
     if nid is None:
@@ -76,11 +81,16 @@ async def notify(
             delay_s=min(delay, 24 * 3600),
         )
         return "queued"
-    return await deliver(repo, pusher, garden, nid, now)
+    return await deliver(repo, pusher, garden, nid, now, telegram)
 
 
 async def deliver(
-    repo: Repo, pusher: Pusher | None, garden: Garden, nid: str, now: datetime | None = None
+    repo: Repo,
+    pusher: Pusher | None,
+    garden: Garden,
+    nid: str,
+    now: datetime | None = None,
+    telegram: Telegram | None = None,
 ) -> str:
     row = await repo.get_notification(nid)
     if row is None or row["status"] in ("sent", "skipped"):
@@ -98,8 +108,13 @@ async def deliver(
         if await repo.sent_since(garden.id, day_start, urgent=False) >= settings.max_per_day:
             await repo.mark_notification(nid, "skipped", "daily limit")
             return "daily_limit"
-    subs = await repo.list_push(garden.id)
-    if pusher is None or not subs:
+    subs = await repo.list_push(garden.id) if "push" in settings.channels else []
+    chats = await repo.list_telegram_chats(garden.id) if "telegram" in settings.channels else []
+    if pusher is None:
+        subs = []
+    if telegram is None:
+        chats = []
+    if not subs and not chats:
         await repo.mark_notification(nid, "skipped", "no subscribers")
         return "no_subscribers"
     payload = {
@@ -114,9 +129,14 @@ async def deliver(
         result = await pusher.send(sub, payload)
         await repo.push_result(sub["id"], result.ok, result.gone)
         delivered += int(result.ok)
+    for chat in chats:
+        sent = await telegram.send(chat["chat_id"], f"{row['title']}\n{row['body']}")
+        await repo.telegram_result(chat["chat_id"], sent.ok, sent.gone)
+        delivered += int(sent.ok)
+    total = len(subs) + len(chats)
     status = "sent" if delivered else "failed"
-    await repo.mark_notification(nid, status, f"{delivered}/{len(subs)} devices")
-    log.info("notification %s %s to %d/%d devices", row["kind"], status, delivered, len(subs))
+    await repo.mark_notification(nid, status, f"{delivered}/{total} devices")
+    log.info("notification %s %s to %d/%d devices", row["kind"], status, delivered, total)
     return status
 
 

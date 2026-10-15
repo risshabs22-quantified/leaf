@@ -23,6 +23,7 @@ Keep it short: newest entries first.
 | Platform M3: knowledge graph (cited species profiles, verified facts), identify from a photo with one-tap confirm, plant-ID eval | done | `docs/LEAF_PLATFORM.md` M3; 663 tests; 40-photo eval |
 | Platform M4: Leaf Care (morning planner, Today, notifications service, Web Push PWA, 14:00 frost/heat check, NWS alerts, Nano triage) | done | `docs/LEAF_PLATFORM.md` M4; 703 tests; push accepted by FCM |
 | Platform M5: Season Plan (Ultra outline + monthly chunks, code rules, Super verification, replanning, calendar export, printable page, Doctor wiring) | done | `docs/LEAF_PLATFORM.md` M5; 731 tests; live plan $0.21 |
+| Platform M6: Connect (REST API v1 and OpenAPI, API keys with scopes and per-key limits, MCP server, Home Assistant readings, Telegram bot) | built and checked locally; Telegram waits for a bot token | `docs/LEAF_PLATFORM.md` M6; 765 tests |
 | README final, video, Devpost draft | Devpost drafted (`docs/DEVPOST.md`); video todo | `/submission-check` |
 
 ## Next
@@ -39,6 +40,14 @@ Keep it short: newest entries first.
 | 2026-10-13 | 52 tune | Quick 52% / Deep 56% / Auto 58% | 75% / 73% / 73% | lab 6% / 38% / 25% | three verdicts, Auto, fitted thresholds; checklist off (48% with it) |
 
 ## Session log
+- 2026-10-15: **Leaf Platform M6, Connect** (`backend/connect/`, `/connect`). Details are in `docs/LEAF_PLATFORM.md` M6.
+  - **API and keys:** `/api/v1` with OpenAPI; keys with scopes (`read`, `readings`, `tools`), hashed, with per-key limits counted in D1 (hour, day, model budget) and a 30-call daily model budget per garden.
+  - **MCP:** `/mcp` serves both protocol eras (the 2025 handshake and the stateless 2026-07-28), written from the spec pages read today. Tools: diagnose, identify, care_plan, season_plan, weather_risk.
+  - **Home Assistant:** `POST /api/v1/readings`. A fresh soil-moisture reading replaces the water balance for its plant, in both directions, and a test reading is labelled TEST in the task title, reason, source and notifications.
+  - **Telegram:** webhook with a secret token, linking by one-time code, `/today`, `/season`, photo diagnosis, notifications through the same service as Web Push. Off and hidden without a token.
+  - **Review:** one blocker (the bot token reached the logs through the HTTP library's request log) and five should-fix items, fixed with tests, one confirmed by mutation.
+  - **Also fixed:** four M4 tests that failed between 21:00 and 07:00 UTC (quiet hours).
+  - **Live, local:** the sensor override, REST diagnose (12 s) and MCP calls with real weather, Tavily and Nemotron; the `/connect` page in headless Chromium at 375 px.
 - 2026-10-15: **Leaf Platform M5, Season Plan** (`backend/season/`, `/season`). Details are in `docs/LEAF_PLATFORM.md` M5.
   - **Writing:** one Ultra outline call fixes every planting date. Then one Ultra call per month, saved as each is written, so a timeout retry writes only what is missing.
   - **Checking:** code rules on every item: frost dates and temperature minimums from CSU Extension's frost classes, organic and pet choices through `actives.py`, toxic-plant precautions, and caps on repeated jobs. Then Super verifies in chunks of 25 and can only remove. Nothing unverified is shown, and a rewrite keeps the current plan visible.

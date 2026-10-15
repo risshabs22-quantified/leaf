@@ -133,6 +133,7 @@ async function refresh() {
   show("plants-block");
   $("p-identify").href = `/identify?garden=${encodeURIComponent(garden.id)}#k=${garden.key}`;
   show("notify-block");
+  show("connect-block");
   show("link-block");
   $("g-link").value = `${location.origin}/g/${garden.id}#k=${garden.key}`;
   loadNotify();

@@ -386,3 +386,13 @@ textarea:focus, input:focus { outline: none; border-bottom-color: var(--green); 
   .season-page details { display: block; }
 }
 
+/* Connect (M6) */
+.snippet { overflow-x: auto; padding: 12px; border: 1px solid var(--line); border-radius: 10px; font: 400 .78em/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; background: rgba(0, 0, 0, .03); max-width: 100%; }
+@media (prefers-color-scheme: dark) { .snippet { background: rgba(255, 255, 255, .05); } }
+.scopes { border: 0; padding: 0; margin: 12px 0; display: grid; gap: 8px; }
+.scopes label { display: block; font-size: .9em; }
+.key-new input, #g-link, #key-secret { width: 100%; max-width: 100%; }
+.api-table { width: 100%; border-collapse: collapse; font-size: .85em; }
+.api-table th, .api-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+.connect-page h3 { font: 600 .95em var(--sans); margin-top: 1.2em; }
+

@@ -31,6 +31,11 @@ from backend.checkin import check_in
 from backend.climate import Climate
 from backend.conditions import ConditionsError, WeatherClient
 from backend.config import ULTRA, Settings, get_settings
+from backend.connect.api_v1 import router as api_v1_router
+from backend.connect.manage import router as connect_router
+from backend.connect.mcp import router as mcp_router
+from backend.connect.telegram import drain as drain_telegram
+from backend.connect.telegram import router as telegram_router
 from backend.context import REQUEST, RequestContext
 from backend.data import open_data
 from backend.data.driver import DataError
@@ -39,6 +44,7 @@ from backend.jobs import BridgeQueue, JobContext, JobRunner, LocalQueue, S3Objec
 from backend.journal import JournalEntry, open_journal, public_view, thumbnail
 from backend.metering import Meter, MeteredLLM
 from backend.models import ModelError, SpendCapReached, TokenFactory
+from backend.notify.telegram import TelegramApi
 from backend.notify.webpush import WebPush
 from backend.pipeline import Leaf
 from backend.platform_api import refusal_for
@@ -59,6 +65,9 @@ from backend.store import MemoryCaseStore
 from backend.vision import discover_vision_model, prepare_image, prepare_photo
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+# httpx logs "POST <url>" for every request, and a Telegram Bot API URL contains the bot token.
+for _noisy in ("httpx", "httpcore"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 log = logging.getLogger("leaf.app")
 
 FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
@@ -262,6 +271,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await drain_telegram()  # messages still being answered get a moment to finish
         flusher.cancel()
         await app.state.meter.flush()
 
@@ -307,6 +317,13 @@ async def start_platform(app: FastAPI, s: Settings) -> None:
         except Exception:  # noqa: BLE001 - a bad key disables push, never the app
             log.error("VAPID private key is unusable; Web Push is off")
     pusher = getattr(app.state, "pusher", None)
+    if getattr(app.state, "telegram", None) is None and (
+        s.telegram_bot_token and s.telegram_webhook_secret
+    ):
+        app.state.telegram = TelegramApi(s.telegram_bot_token)
+    app.state.tg_seen = deque(maxlen=2000)
+    app.state.tg_limiter = RateLimiter(40, 100_000)  # messages per chat per hour
+    app.state.tg_warned = {}  # chat id -> when it was last told to slow down
     runner = JobRunner(
         JobContext(
             data.repo,
@@ -314,7 +331,12 @@ async def start_platform(app: FastAPI, s: Settings) -> None:
             s,
             meter,
             objects,
-            extra={"climate": app.state.climate, "leaf": app.state.leaf, "pusher": pusher},
+            extra={
+                "climate": app.state.climate,
+                "leaf": app.state.leaf,
+                "pusher": pusher,
+                "telegram": getattr(app.state, "telegram", None),
+            },
         )
     )
     if isinstance(queue, LocalQueue):
@@ -327,6 +349,10 @@ async def start_platform(app: FastAPI, s: Settings) -> None:
 
 app = FastAPI(title="Leaf", version="0.1.0", lifespan=lifespan)
 app.include_router(platform_router)
+app.include_router(api_v1_router)
+app.include_router(connect_router)
+app.include_router(mcp_router)
+app.include_router(telegram_router)
 
 
 @app.exception_handler(DataError)
@@ -348,6 +374,9 @@ app.add_middleware(
         "/api/auto/stream": MAX_DEEP_PHOTOS * MAX_UPLOAD_BYTES + 256 * 1024,
         "/api/chat": 256 * 1024,
         "/api/identify": MAX_UPLOAD_BYTES + 256 * 1024,
+        "/api/v1/diagnose": MAX_UPLOAD_BYTES + 256 * 1024,
+        "/api/v1/identify": MAX_UPLOAD_BYTES + 256 * 1024,
+        "/mcp": MAX_UPLOAD_BYTES * 4 // 3 + 512 * 1024,  # an image as base64
     },
     default=64 * 1024,
     pattern_limits=[("/api/cases/", "/checkin", MAX_UPLOAD_BYTES + 256 * 1024)],
@@ -487,11 +516,26 @@ async def diagnose(
     pets: Annotated[bool, Form()] = False,
 ) -> DiagnoseResponse:
     check_limits(request)
-    if image is None and not notes.strip():
+    data = await image.read(MAX_UPLOAD_BYTES + 1) if image is not None else None
+    return await diagnose_photo(
+        request, data, notes, region, answers, Garden(organic=organic, pets=pets)
+    )
+
+
+async def diagnose_photo(
+    request: Request,
+    data: bytes | None,
+    notes: str,
+    region: str,
+    answers: str,
+    garden: Garden,
+) -> DiagnoseResponse:
+    """A Quick diagnosis from a photo (raw bytes) and/or notes; the web form, the API, MCP and
+    Telegram all come through here. The caller has already applied its own rate limit."""
+    if data is None and not notes.strip():
         raise HTTPException(400, "Add a photo or describe what you see.")
     image_b64 = mime = None
-    if image is not None:
-        data = await image.read(MAX_UPLOAD_BYTES + 1)
+    if data is not None:
         if len(data) > MAX_UPLOAD_BYTES:
             raise HTTPException(413, "Photo is over 10 MB. Try a smaller one.")
         try:  # image decoding is CPU-bound: keep it off the event loop
@@ -506,7 +550,7 @@ async def diagnose(
             notes=notes[:2000],
             region=region[:100],
             answers=answers[:2000],
-            garden=Garden(organic=organic, pets=pets),
+            garden=garden,
         ),
     )
     await save_report(request, result, "quick", [image_b64] if image_b64 else [], ["photo"])
@@ -1048,6 +1092,10 @@ if FRONTEND.exists():
     @app.get("/season", include_in_schema=False)
     async def season_page() -> FileResponse:
         return FileResponse(FRONTEND / "season.html")
+
+    @app.get("/connect", include_in_schema=False)
+    async def connect_page() -> FileResponse:
+        return FileResponse(FRONTEND / "connect.html")
 
     @app.get("/identify", include_in_schema=False)
     async def identify_page() -> FileResponse:

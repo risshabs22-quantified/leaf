@@ -335,7 +335,14 @@ def _care(ctx: JobContext) -> CareContext:
 
 
 async def _notify(ctx: JobContext, garden: Garden, **kw: Any) -> str:
-    return await notify(ctx.repo, ctx.queue, ctx.extra.get("pusher"), garden, **kw)
+    return await notify(
+        ctx.repo,
+        ctx.queue,
+        ctx.extra.get("pusher"),
+        garden,
+        telegram=ctx.extra.get("telegram"),
+        **kw,
+    )
 
 
 async def _gardens(ctx: JobContext, cell: str) -> list[Garden]:
@@ -506,7 +513,15 @@ async def notify_send(ctx: JobContext, payload: dict[str, Any]) -> dict[str, Any
     garden = await ctx.repo.get_garden(row["garden_id"])
     if garden is None:
         return {"skipped": "garden deleted"}
-    return {"status": await deliver(ctx.repo, ctx.extra.get("pusher"), garden, row["id"])}
+    return {
+        "status": await deliver(
+            ctx.repo,
+            ctx.extra.get("pusher"),
+            garden,
+            row["id"],
+            telegram=ctx.extra.get("telegram"),
+        )
+    }
 
 
 class S3Objects:

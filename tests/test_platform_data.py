@@ -188,7 +188,9 @@ async def test_deleting_a_garden_removes_everything_in_it(repo: Repo):
     await repo.add_tasks([TaskIn(garden_id=garden.id, plant_id=plant.id, day="d", kind="k",
                                  title="t")])  # fmt: skip
     await repo.log_event(EventIn(garden_id=garden.id, kind="note"))
-    await repo.put_notifications(garden.id, NotificationSettings(channels=["push"]))
+    await repo.put_notifications(
+        garden.id, NotificationSettings(channels=["push"], quiet_start="00:00", quiet_end="00:00")
+    )
     assert await repo.delete_garden(garden.id)
     for table in ("plants", "tasks", "events", "notification_settings"):
         assert await query(repo.db, f"SELECT * FROM {table}") == []

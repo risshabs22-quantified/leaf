@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, ValidationError
 
 from backend.calendar_file import ics_calendar
+from backend.care.sensor import FRESH_S, is_fresh, sensor_advice
 from backend.care.service import CareContext, local_today, ordered, plan_garden
 from backend.climate import Climate, cell_center
 from backend.climate.crops import GENERAL_GDD_BASE_C, Crop, find_crop
@@ -526,6 +527,9 @@ async def plant_water(
     plant = await repo.get_plant(garden.id, plant_id)
     if plant is None:
         raise HTTPException(404, "No such plant in this garden.")
+    reading = (await repo.latest_readings(garden.id, now_s() - FRESH_S)).get(plant.id)
+    if is_fresh(reading, now_s()):  # the gardener's sensor beats any estimate
+        return sensor_advice(reading)
     placement = Placement.from_container(plant.container)
     southern = (garden.lat or 0) < 0
     if plant.setting == "indoor":
@@ -612,13 +616,21 @@ async def identify_plant(
     notes: Annotated[str, Form()] = "",
 ) -> dict[str, Any]:
     """Vision proposes, Super checks against sources; the gardener confirms with one tap."""
-    from backend.app import MAX_UPLOAD_BYTES, run_limited
+    from backend.app import MAX_UPLOAD_BYTES
 
     request.app.state.identify_limiter.check(_ip(request))
+    data = await image.read(MAX_UPLOAD_BYTES + 1)
+    return await identify_photo(request, data, notes)
+
+
+async def identify_photo(request: Request, data: bytes, notes: str) -> dict[str, Any]:
+    """Identify a plant from photo bytes (the web page, the API, MCP and Telegram share this).
+    The caller has already applied its own rate limit."""
+    from backend.app import MAX_UPLOAD_BYTES, run_limited
+
     leaf = request.app.state.leaf
     if not leaf.vision_model:
         raise HTTPException(503, "Photo identification is unavailable right now.")
-    data = await image.read(MAX_UPLOAD_BYTES + 1)
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "That photo is too large (10 MB at most).")
     try:
@@ -714,7 +726,11 @@ async def today(request: Request, garden_id: str, key: Key = None) -> dict[str, 
     """The garden's day: urgent alerts first, then every task with its reason, due time and
     source, and each plant's water status. Plans on demand (idempotent), so a new garden or a
     late change in the forecast shows at once."""
-    garden = await _open(request, garden_id, key)
+    return await today_view(request, await _open(request, garden_id, key))
+
+
+async def today_view(request: Request, garden: Garden) -> dict[str, Any]:
+    """Today for a garden (shared by the web page, the API, MCP and Telegram)."""
     ctx = REQUEST.get()
     plan = await plan_garden(_care_ctx(request), garden, trace_id=ctx.trace_id if ctx else "")
     day = local_today(garden).isoformat()
@@ -822,6 +838,7 @@ async def push_test(request: Request, garden_id: str, key: Key = None) -> dict[s
         request.app.state.queue,
         getattr(request.app.state, "pusher", None),
         garden,
+        telegram=getattr(request.app.state, "telegram", None),
         kind="test",
         title="Leaf notifications are on",
         body="This is how Leaf will tell you about frost, heat and today's garden tasks.",
@@ -882,7 +899,7 @@ SEASON_WRITES_PER_DAY = 3  # each plan costs about $0.06 in model calls
 WRITING_STALE_S = 15 * 60  # a plan still 'writing' after this may be started again
 
 
-async def _season_view(request: Request, garden: Garden) -> dict[str, Any]:
+async def season_view(request: Request, garden: Garden) -> dict[str, Any]:
     repo = _repo(request)
     plan = await repo.get_season_plan(garden.id)
     latest = await repo.latest_season_plan(garden.id)
@@ -915,7 +932,7 @@ async def season(request: Request, garden_id: str, key: Key = None) -> dict[str,
     (reason, sources, cautions), what the checks removed and why, the latest replans, and a
     rewrite in progress if there is one. Nothing unverified is ever returned."""
     garden = await _open(request, garden_id, key)
-    return await _season_view(request, garden)
+    return await season_view(request, garden)
 
 
 @router.post("/api/gardens/{garden_id}/season", status_code=202)
@@ -925,11 +942,16 @@ async def season_write(request: Request, garden_id: str, key: Key = None) -> dic
     Poll GET .../season until "pending" is gone or failed."""
     garden = await _open(request, garden_id, key)
     request.app.state.tool_limiter.check(_ip(request))
+    return await start_season(request, garden)
+
+
+async def start_season(request: Request, garden: Garden) -> dict[str, Any]:
+    """Start (or rewrite) a garden's season plan; shared by the web page, the API and MCP."""
     repo = _repo(request)
     latest = await repo.latest_season_plan(garden.id)
     busy = latest is not None and latest.status in ("writing", "unverified")
     if busy and now_s() - latest.updated_at < WRITING_STALE_S:
-        return await _season_view(request, garden)
+        return await season_view(request, garden)
     if await repo.count_events(garden.id, "season_plan", now_s() - 86400) >= SEASON_WRITES_PER_DAY:
         raise HTTPException(429, "Leaf writes a garden's plan at most 3 times a day. Try tomorrow.")
     ctx = REQUEST.get()
@@ -939,7 +961,7 @@ async def season_write(request: Request, garden_id: str, key: Key = None) -> dic
         )
     except PlanUnavailable as exc:
         raise HTTPException(409, str(exc)) from exc
-    return await _season_view(request, garden)
+    return await season_view(request, garden)
 
 
 @router.get("/api/gardens/{garden_id}/season.ics")

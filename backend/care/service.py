@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 from backend.care import Plan, PlantState, crop_for, plan_day
 from backend.care.pests import PESTS
+from backend.care.sensor import FRESH_S
 from backend.climate import Climate
 from backend.climate.crops import CROPS, GENERAL_GDD_BASE_C
 from backend.climate.nws import Alert, AlertsUnavailable
@@ -50,6 +51,7 @@ def local_today(garden: Garden, now: datetime | None = None) -> date:
 async def plant_states(ctx: CareContext, garden: Garden) -> list[PlantState]:
     tz = ZoneInfo(garden.timezone)
     out = []
+    readings = await ctx.repo.latest_readings(garden.id, now_s() - FRESH_S)
     for plant in await ctx.repo.list_plants(garden.id):
         key = (
             species_key(plant.species, binomial=True)
@@ -74,6 +76,7 @@ async def plant_states(ctx: CareContext, garden: Garden) -> list[PlantState]:
                     feedback=[
                         str(e.payload.get("kind")) for e in events if e.kind == "water_feedback"
                     ],
+                    reading=readings.get(plant.id),
                 )
             )
         else:
@@ -94,6 +97,7 @@ async def plant_states(ctx: CareContext, garden: Garden) -> list[PlantState]:
                         }
                         for e in events
                     ],
+                    reading=readings.get(plant.id),
                 )
             )
     return out

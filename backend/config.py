@@ -200,6 +200,11 @@ class Settings:
     vapid_subject: str = field(
         default_factory=lambda: _env("VAPID_SUBJECT", "https://leafathon.site")
     )
+    # Telegram (M6): both are Worker secrets. Without them the bot is off and the app says so.
+    telegram_bot_token: str = field(default_factory=lambda: _env("TELEGRAM_BOT_TOKEN"), repr=False)
+    telegram_webhook_secret: str = field(
+        default_factory=lambda: _env("TELEGRAM_WEBHOOK_SECRET"), repr=False
+    )
     spend_cap_usd: float = field(default_factory=lambda: _env_float("LEAF_SPEND_CAP_USD", 3.0))
     brownout: float = field(default_factory=lambda: _env_float("LEAF_BROWNOUT", 0.8))
 

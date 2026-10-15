@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connect · Leaf</title>
+<meta name="description" content="Connect your garden to Home Assistant, Telegram, Claude and your own code: API keys, a soil moisture webhook, an MCP server and a REST API.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M6 26C6 14 13 7 26 6c0 13-7 20-18 20z' fill='none' stroke='%2318793a' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M6 26C12 19 17 14 22 10' fill='none' stroke='%2318793a' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#18793a">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=2026101901">
+</head>
+<body class="calm">
+<canvas id="forest" aria-hidden="true"></canvas>
+<header class="site">
+  <a href="/" class="brand" aria-label="Leaf home">
+    <svg class="mark" viewBox="0 0 48 64" aria-hidden="true"><path d="M9 57C5 33 17 12 41 6c3 25-8 45-30 51" /><path d="M9 57C17 41 26 27 37 14" /></svg>
+    <span class="word">Leaf</span>
+  </a>
+  <nav class="nav" aria-label="Main">
+    <a class="wide" href="/#how">How it works</a>
+    <a class="wide" href="/#features">Features</a>
+    <a href="/today">Today</a>
+    <a href="/identify">Identify</a>
+    <a class="wide" href="/plants">My plants</a>
+    <a class="nav-cta" href="/app">Diagnose</a>
+  </nav>
+</header>
+
+<main class="page connect-page">
+  <div class="season-intro">
+    <h1 class="page-title" id="c-title">Connect</h1>
+    <p class="lede small">Use your garden from Home Assistant, Telegram, Claude and your own code. No account: everything here belongs to your garden's private link.</p>
+  </div>
+  <p id="c-status" class="status" role="status" aria-live="polite"></p>
+
+  <section id="c-none" class="block" hidden>
+    <h2>No garden on this device</h2>
+    <p class="small">Open your garden's private link first, or <a href="/today">set up a garden on Today</a>.</p>
+  </section>
+
+  <section id="c-keys" class="block" hidden aria-labelledby="keys-h">
+    <h2 id="keys-h">API keys</h2>
+    <p class="small">A key lets a program act for this garden. Give each program its own key and only the scopes it needs. Leaf shows a key once, when you make it, and keeps only a fingerprint.</p>
+    <form id="key-form" class="plant-form">
+      <label class="field"><span class="field-label">Name</span><input id="k-label" type="text" maxlength="60" placeholder="e.g. Home Assistant" required></label>
+      <fieldset class="scopes">
+        <legend class="field-label">What it may do</legend>
+        <label><input type="checkbox" name="scope" value="read" checked> <strong>read</strong>: the garden, Today, the season plan and readings</label>
+        <label><input type="checkbox" name="scope" value="readings"> <strong>readings</strong>: send soil moisture (Home Assistant)</label>
+        <label><input type="checkbox" name="scope" value="tools"> <strong>tools</strong>: diagnose, identify, weather risk, start a season plan (these use Leaf's models)</label>
+      </fieldset>
+      <button class="cta" type="submit"><span class="cta-text">Make a key</span></button>
+    </form>
+    <div id="key-new" class="key-new" hidden>
+      <p class="small caution-line">Copy this key now. Leaf will not show it again.</p>
+      <p><input id="key-secret" type="text" readonly aria-label="Your new API key"> <button id="key-copy" class="textbtn" type="button">Copy</button></p>
+    </div>
+    <ul id="key-list" class="plant-list"></ul>
+    <p class="small">Each key is limited per hour, per day and for calls that use Leaf's models. A garden can have 5 keys.</p>
+  </section>
+
+  <section id="c-ha" class="block" hidden aria-labelledby="ha-h">
+    <h2 id="ha-h">Home Assistant: soil moisture</h2>
+    <p class="small">A fresh reading (12 hours) replaces Leaf's weather-based watering estimate for that plant. Below the dry mark (30 % unless you set <code>dry_below</code>) Leaf asks you to water; at or above it, no water is needed. Make a key with the <strong>readings</strong> scope, then add this to Home Assistant. The example follows Home Assistant's documented <code>rest_command</code> format; Leaf has tested the web call, not a live Home Assistant.</p>
+    <pre id="ha-yaml" class="snippet" tabindex="0"></pre>
+    <h3>Try it without a sensor</h3>
+    <form id="test-form" class="plant-form">
+      <label class="field"><span class="field-label">Plant</span><select id="t-plant"></select></label>
+      <label class="field"><span class="field-label">Soil moisture, percent</span><input id="t-value" type="number" min="0" max="100" step="1" value="12" required></label>
+      <p class="small">This is sent as a <strong>test</strong> reading: Leaf uses it and labels it TEST wherever it appears.</p>
+      <button class="cta" type="submit"><span class="cta-text">Send a test reading</span></button>
+    </form>
+    <p id="test-result" class="small" role="status"></p>
+  </section>
+
+  <section id="c-tg" class="block" hidden aria-labelledby="tg-h">
+    <h2 id="tg-h">Telegram</h2>
+    <p class="small">Get your morning summary and frost, heat and storm warnings in Telegram, send a photo of a sick plant for a diagnosis, and ask for <code>/today</code> or <code>/season</code>.</p>
+    <p><button id="tg-link" class="cta" type="button"><span class="cta-text">Link Telegram</span></button> <button id="tg-unlink" class="textbtn" type="button" hidden>Disconnect</button></p>
+    <p id="tg-out" class="small" role="status"></p>
+  </section>
+
+  <section id="c-mcp" class="block" hidden aria-labelledby="mcp-h">
+    <h2 id="mcp-h">Claude and other MCP clients</h2>
+    <p class="small">Leaf is an MCP server (Streamable HTTP) with five tools: <code>diagnose</code>, <code>identify</code>, <code>care_plan</code>, <code>season_plan</code> and <code>weather_risk</code>. Make a key with the scopes you want, then:</p>
+    <pre id="mcp-code" class="snippet" tabindex="0"></pre>
+  </section>
+
+  <section id="c-api" class="block" hidden aria-labelledby="api-h">
+    <h2 id="api-h">REST API</h2>
+    <p class="small">Send <code>Authorization: Bearer YOUR_KEY</code>. The OpenAPI document is <a id="api-spec" href="/api/v1/openapi.json">/api/v1/openapi.json</a>.</p>
+    <pre id="api-curl" class="snippet" tabindex="0"></pre>
+    <table class="api-table"><thead><tr><th>Call</th><th>What it does</th></tr></thead><tbody id="api-rows"></tbody></table>
+  </section>
+</main>
+
+<footer class="foot">
+  <span>Open source, MIT license. <a href="https://github.com/risshabs22-quantified/leaf">Code on GitHub</a> · <a href="https://open-meteo.com/">Weather data by Open-Meteo.com</a></span>
+  <span>Leaf gives guidance, not certainty. For food crops and any chemical, follow the product label.</span>
+</footer>
+<script src="/static/connect.js?v=2026101901"></script>
+<script src="/static/rainforest.js?v=2026101901"></script>
+</body>
+</html>

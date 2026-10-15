@@ -211,6 +211,32 @@ class CallRow(BaseModel):
 PlanStatus = Literal["writing", "unverified", "ready", "failed"]
 
 
+class ApiKey(BaseModel):
+    id: str
+    garden_id: str
+    prefix: str
+    label: str = ""
+    scopes: list[str] = Field(default_factory=list)
+    per_hour: int = 120
+    per_day: int = 1000
+    model_per_day: int = 20
+    created_at: int
+    last_used: int | None = None
+    revoked_at: int | None = None
+
+
+class Reading(BaseModel):
+    id: int
+    garden_id: str
+    plant_id: str
+    kind: str = "soil_moisture"
+    value: float
+    dry_below: float | None = None
+    label: Literal["sensor", "test"] = "sensor"
+    source: str = ""
+    created_at: int
+
+
 class SeasonPlan(BaseModel):
     id: str
     garden_id: str
@@ -703,6 +729,21 @@ class Repo:
                     "DELETE FROM identifications WHERE created_at < ?",
                     (job_cut - (PHOTO_DAYS - JOB_DAYS) * 86400,),
                 ),
+                ("DELETE FROM sensor_readings WHERE created_at < ?", (now_s() - 14 * 86400,)),
+                (
+                    "DELETE FROM api_usage WHERE service LIKE 'model_calls:%' AND day < ?",
+                    (salt_cut,),
+                ),
+                (  # buckets are h<yyyymmddhh>, d<yyyymmdd>, m<yyyymmdd>: each kind has a prefix
+                    "DELETE FROM api_key_hits WHERE (bucket LIKE 'd%' AND bucket < ?)"
+                    " OR (bucket LIKE 'm%' AND bucket < ?) OR (bucket LIKE 'h%' AND bucket < ?)",
+                    (
+                        "d" + (today - timedelta(days=2)).strftime("%Y%m%d"),
+                        "m" + (today - timedelta(days=2)).strftime("%Y%m%d"),
+                        "h" + (today - timedelta(days=2)).strftime("%Y%m%d") + "00",
+                    ),
+                ),
+                ("DELETE FROM telegram_links WHERE expires_at < ?", (now_s(),)),
             ]
         )
         names = [
@@ -712,6 +753,10 @@ class Repo:
             "day_salts",
             "jobs",
             "identifications",
+            "sensor_readings",
+            "model_calls_by_garden",
+            "api_key_hits",
+            "telegram_links",
         ]
         return {n: r.changes for n, r in zip(names, res, strict=True)}
 
@@ -1318,6 +1363,241 @@ class Repo:
             since,
         )
         return int(rows[0]["n"]) if rows else 0
+
+    # ---------- Connect (M6): API keys, sensor readings, Telegram ----------
+
+    @staticmethod
+    def _api_key(row: dict[str, Any]) -> ApiKey:
+        return ApiKey(**{**row, "scopes": _load(row.get("scopes"), [])})
+
+    async def create_api_key(
+        self,
+        garden_id: str,
+        label: str,
+        scopes: Sequence[str],
+        per_hour: int = 120,
+        per_day: int = 1000,
+        model_per_day: int = 20,
+    ) -> tuple[ApiKey, str]:
+        """A new key and its secret, shown once (only the hash is kept)."""
+        secret = "lf_" + secrets.token_urlsafe(32)
+        kid = new_id()
+        now = now_s()
+        await execute(
+            self.db,
+            "INSERT INTO api_keys (id, garden_id, key_hash, prefix, label, scopes, per_hour,"
+            " per_day, model_per_day, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            kid,
+            garden_id,
+            hash_key(secret),
+            secret[:9],
+            label.strip()[:60],
+            _json(list(scopes)),
+            per_hour,
+            per_day,
+            model_per_day,
+            now,
+        )
+        rows = await query(self.db, "SELECT * FROM api_keys WHERE id = ?", kid)
+        return self._api_key(rows[0]), secret
+
+    async def api_key_by_secret(self, secret: str) -> ApiKey | None:
+        """The active key for a secret (looked up by hash), or None."""
+        if not secret.startswith("lf_") or len(secret) > 80:
+            return None
+        rows = await query(
+            self.db,
+            "SELECT * FROM api_keys WHERE key_hash = ? AND revoked_at IS NULL",
+            hash_key(secret),
+        )
+        if not rows:
+            return None
+        key = self._api_key(rows[0])
+        now = now_s()
+        if key.last_used is None or now - key.last_used >= TOUCH_EVERY_S:
+            await execute(self.db, "UPDATE api_keys SET last_used = ? WHERE id = ?", now, key.id)
+        return key
+
+    async def list_api_keys(self, garden_id: str) -> list[ApiKey]:
+        rows = await query(
+            self.db,
+            "SELECT * FROM api_keys WHERE garden_id = ? AND revoked_at IS NULL ORDER BY created_at",
+            garden_id,
+        )
+        return [self._api_key(r) for r in rows]
+
+    async def revoke_api_key(self, garden_id: str, key_id: str) -> bool:
+        return (
+            await execute(
+                self.db,
+                "UPDATE api_keys SET revoked_at = ? WHERE id = ? AND garden_id = ?"
+                " AND revoked_at IS NULL",
+                now_s(),
+                key_id,
+                garden_id,
+            )
+            > 0
+        )
+
+    async def take_api_hit(self, key_id: str, model: bool, now: datetime | None = None) -> dict:
+        """Count one call against a key and return its counts: hour, day, and (for calls that
+        may spend model credits) model. One batch, so concurrent calls never lose a count."""
+        now = now or datetime.now(UTC)
+        buckets = {
+            "hour": f"h{now:%Y%m%d%H}",
+            "day": f"d{now:%Y%m%d}",
+            **({"model": f"m{now:%Y%m%d}"} if model else {}),
+        }
+        stmts: list[Statement] = [
+            (
+                "INSERT INTO api_key_hits (key_id, bucket, n) VALUES (?, ?, 1)"
+                " ON CONFLICT (key_id, bucket) DO UPDATE SET n = n + 1",
+                (key_id, b),
+            )
+            for b in buckets.values()
+        ]
+        stmts += [
+            ("SELECT n FROM api_key_hits WHERE key_id = ? AND bucket = ?", (key_id, b))
+            for b in buckets.values()
+        ]
+        res = await self.db.batch(stmts)
+        counts = res[len(buckets) :]
+        return {name: int(r.rows[0]["n"]) for name, r in zip(buckets, counts, strict=True)}
+
+    async def add_reading(
+        self,
+        garden_id: str,
+        plant_id: str,
+        value: float,
+        *,
+        dry_below: float | None,
+        label: str,
+        source: str,
+        key_id: str | None,
+    ) -> None:
+        await execute(
+            self.db,
+            "INSERT INTO sensor_readings (garden_id, plant_id, value, dry_below, label, source,"
+            " key_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            garden_id,
+            plant_id,
+            value,
+            dry_below,
+            label,
+            source[:80],
+            key_id,
+            now_s(),
+        )
+
+    async def latest_readings(self, garden_id: str, since: int) -> dict[str, Reading]:
+        """The newest soil-moisture reading of each plant since `since`."""
+        rows = await query(
+            self.db,
+            "SELECT r.* FROM sensor_readings r JOIN (SELECT plant_id, MAX(id) AS mid FROM"
+            " sensor_readings WHERE garden_id = ? AND created_at >= ? GROUP BY plant_id) m"
+            " ON r.id = m.mid",
+            garden_id,
+            since,
+        )
+        return {r["plant_id"]: Reading(**r) for r in rows}
+
+    async def list_readings(
+        self, garden_id: str, plant_id: str | None = None, limit: int = 50
+    ) -> list[Reading]:
+        sql = "SELECT * FROM sensor_readings WHERE garden_id = ?"
+        params: list[Any] = [garden_id]
+        if plant_id:
+            sql += " AND plant_id = ?"
+            params.append(plant_id)
+        rows = await query(
+            self.db, sql + " ORDER BY id DESC LIMIT ?", *params, max(1, min(limit, 200))
+        )
+        return [Reading(**r) for r in rows]
+
+    async def drop_open_tasks(self, garden_id: str, plant_id: str, kind: str, day: str) -> int:
+        """Remove a plant's open task of a kind for a day, so the planner can write it again
+        (a done or skipped task is left alone)."""
+        return await execute(
+            self.db,
+            "DELETE FROM tasks WHERE garden_id = ? AND plant_id = ? AND kind = ? AND day = ?"
+            " AND status = 'open'",
+            garden_id,
+            plant_id,
+            kind,
+            day,
+        )
+
+    async def create_telegram_link(self, garden_id: str, ttl_s: int = 900) -> str:
+        """A one-time code for `/start <code>`; the garden's older unused codes are dropped."""
+        code = secrets.token_urlsafe(12)
+        await self.db.batch(
+            [
+                ("DELETE FROM telegram_links WHERE garden_id = ?", (garden_id,)),
+                (
+                    "INSERT INTO telegram_links (code_hash, garden_id, expires_at)"
+                    " VALUES (?, ?, ?)",
+                    (hash_key(code), garden_id, now_s() + ttl_s),
+                ),
+            ]
+        )
+        return code
+
+    async def consume_telegram_link(self, code: str, chat_id: str) -> str | None:
+        """Bind a chat to the garden a live code belongs to; the code works once. Returns the
+        garden id, or None for an unknown or expired code."""
+        now = now_s()
+        h = hash_key(code[:64])
+        res = await self.db.batch(
+            [
+                (
+                    "INSERT OR REPLACE INTO telegram_chats (chat_id, garden_id, created_at)"
+                    " SELECT ?, garden_id, ? FROM telegram_links WHERE code_hash = ?"
+                    " AND expires_at > ?",
+                    (chat_id, now, h, now),
+                ),
+                ("DELETE FROM telegram_links WHERE code_hash = ?", (h,)),
+                ("SELECT garden_id FROM telegram_chats WHERE chat_id = ?", (chat_id,)),
+            ]
+        )
+        if res[0].changes == 0:
+            return None
+        return res[2].rows[0]["garden_id"] if res[2].rows else None
+
+    async def telegram_chat(self, chat_id: str) -> dict[str, Any] | None:
+        rows = await query(self.db, "SELECT * FROM telegram_chats WHERE chat_id = ?", chat_id)
+        return rows[0] if rows else None
+
+    async def list_telegram_chats(self, garden_id: str) -> list[dict[str, Any]]:
+        return await query(self.db, "SELECT * FROM telegram_chats WHERE garden_id = ?", garden_id)
+
+    async def delete_telegram_chat(self, chat_id: str, garden_id: str | None = None) -> bool:
+        sql, params = "DELETE FROM telegram_chats WHERE chat_id = ?", [chat_id]
+        if garden_id:
+            sql, params = sql + " AND garden_id = ?", [chat_id, garden_id]
+        return await execute(self.db, sql, *params) > 0
+
+    async def telegram_result(self, chat_id: str, ok: bool, gone: bool = False) -> None:
+        """Record a send: success clears the failures; a chat that blocked the bot is removed,
+        and any other failure counts (ten in a row remove it too)."""
+        if gone:
+            await execute(self.db, "DELETE FROM telegram_chats WHERE chat_id = ?", chat_id)
+        elif ok:
+            await execute(
+                self.db,
+                "UPDATE telegram_chats SET last_ok = ?, failures = 0 WHERE chat_id = ?",
+                now_s(),
+                chat_id,
+            )
+        else:
+            await self.db.batch(
+                [
+                    (
+                        "UPDATE telegram_chats SET failures = failures + 1 WHERE chat_id = ?",
+                        (chat_id,),
+                    ),
+                    ("DELETE FROM telegram_chats WHERE chat_id = ? AND failures >= 10", (chat_id,)),
+                ]
+            )
 
     async def events_by_ref(self, kind: str, ref: str, limit: int = 20) -> list[Event]:
         """Events of a kind about one thing, newest first (e.g. the gardens a case is in)."""

@@ -22,6 +22,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from backend.care.pests import PESTS, Pest
+from backend.care.sensor import is_fresh, sensor_advice
 from backend.climate.crops import Crop, find_crop
 from backend.climate.forecast import Forecast
 from backend.climate.nws import Alerts
@@ -54,6 +55,7 @@ class PlantState:
     waterings: list[dict[str, Any]] = field(default_factory=list)  # outdoor balance input
     last_watered: date | None = None  # indoor model
     feedback: list[str] = field(default_factory=list)
+    reading: Any = None  # the plant's newest soil-moisture reading (backend/care/sensor.py)
 
     @property
     def name(self) -> str:
@@ -169,7 +171,9 @@ def plan_day(
     # 1. Water or skip, every plant.
     for s in states:
         placement = Placement.from_container(s.plant.container)
-        if s.plant.setting == "indoor":
+        if is_fresh(s.reading, now.timestamp()):  # the gardener's sensor beats any estimate
+            advice = sensor_advice(s.reading)
+        elif s.plant.setting == "indoor":
             advice = indoor_advice(placement, today, southern, s.last_watered, s.feedback)
         elif fc is not None:
             advice = outdoor_advice(s.crop, s.plant.stage, placement, fc, s.waterings, now)
@@ -183,6 +187,7 @@ def plan_day(
                 "reason": advice.reason,
                 "next_check": advice.next_check,
                 "model": advice.model,
+                "label": s.reading.label if advice.model == "sensor" else "",
             }
         )
         if advice.action in ("water", "check"):
@@ -194,14 +199,19 @@ def plan_day(
                 else ""
             )
             verb = "Water" if advice.action == "water" else "Check the soil of"
+            test = (
+                " (TEST reading)" if advice.model == "sensor" and s.reading.label == "test" else ""
+            )
             source = (
-                HEURISTIC
+                {**advice.sources[0], "heuristic": True}  # the dry mark is Leaf's own default
+                if advice.model == "sensor"
+                else HEURISTIC
                 if advice.model == "indoor"
                 else {**src("fao56_ch8"), "note": "FAO-56 water balance"}
             )
             task(
                 "water",
-                f"{verb} {s.name}{amount if advice.action == 'water' else ''}",
+                f"{verb} {s.name}{amount if advice.action == 'water' else ''}{test}",
                 advice.reason,
                 _at(today, 8, 0, tz),
                 source,
