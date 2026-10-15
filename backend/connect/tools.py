@@ -71,6 +71,8 @@ def diagnosis_summary(
             "check_in_days": plan.check_in_days,
         },
         "sources": [{"title": s.title, "url": s.url} for s in report.sources],
+        # Leaf Radar: the nearby reports that moved a score, and by how many points (at most 5)
+        "regional": report.regional.model_dump() if report.regional else None,
     }
     if include_token:
         out["owner_token"] = report.owner_token

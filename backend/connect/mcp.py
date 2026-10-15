@@ -82,7 +82,8 @@ TOOLS: list[dict[str, Any]] = [
             "Diagnose a plant problem from a photo and/or a description. Returns the verdict "
             "(confident, likely, or send to a lab), the most likely causes with confidence, a "
             "care plan checked in code against the garden's organic and pet choices, and the "
-            "web sources it rests on. With plant_id the report joins that plant: its steps become "
+            "web sources it rests on, and any nearby extension-service reports that moved a score "
+            "(at most 5 points). With plant_id the report joins that plant: its steps become "
             "today's tasks and the season plan is updated. Uses model credits; takes up to a "
             "minute."
         ),

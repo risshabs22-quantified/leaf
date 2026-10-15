@@ -797,6 +797,10 @@ def test_a_gardens_radar_and_diagnosis_use_its_state(settings):
         assert r.status_code == 200, r.text
         d = r.json()
         assert d["verdict"] in ("likely", "lab", "confident")
+        assert (
+            d["regional"]["region_name"] == "Minnesota"
+            and d["regional"]["boosted"][0]["points"] == 0.02
+        )
         # The v1 summary does not carry the note; the saved report does, and its share link does not.
         entry = client.portal.call(app.state.journal.get, d["case_id"])
         assert entry.report["regional"]["region_name"] == "Minnesota"
