@@ -26,10 +26,14 @@ from pydantic import BaseModel, Field
 from backend.climate import Climate, cell_center
 from backend.climate.openmeteo import WeatherUnavailable, climatology_cost
 from backend.config import Settings
-from backend.context import RequestContext, request_scope
+from backend.context import REQUEST, RequestContext, request_scope
 from backend.data.driver import Bridge, DataError
 from backend.data.repo import EventIn, Repo, now_s
+from backend.knowledge import budget as knowledge_budget
+from backend.knowledge.profile import build_profile
 from backend.metering import Meter
+from backend.schemas import ModelCall
+from backend.search import SearchPaused
 
 log = logging.getLogger("leaf.jobs")
 
@@ -234,6 +238,79 @@ async def climatology(ctx: JobContext, payload: dict[str, Any]) -> dict[str, Any
         raise
     await ctx.repo.put_climatology(cell, "ready", data, source=data.get("model", ""))
     return {"cell": cell, "zone": data["hardiness_zone"]["zone"]}
+
+
+SPECIES_PER_DAY = 5  # build attempts a UTC day; each profile is 3 Tavily credits
+
+
+@job("species_profile")
+async def species_profile(ctx: JobContext, payload: dict[str, Any]) -> dict[str, Any]:
+    """Build a species profile once (shared by every user): search, extract, verify, store.
+
+    The daily cap counts attempts, not successes. Out of credits, the build waits for the next
+    day. After its Tavily calls a build is never retried by the queue (that would spend them
+    again): a failure is recorded and can be queued again after a cooldown."""
+    key = str(payload.get("key", ""))
+    row = await ctx.repo.get_species(key)
+    if row is None:
+        return {"skipped": "unknown species"}
+    if row["status"] == "ready":
+        return {"skipped": "already built"}
+    now = now_s()
+    day_start = now - now % 86400
+    tomorrow = day_start + 86400 + _stagger_s(key)
+    if await ctx.repo.species_started_since(day_start) >= SPECIES_PER_DAY:
+        return await _defer_species(ctx, key, tomorrow, "daily species limit")
+    if await knowledge_budget.credits_left(ctx.repo) < knowledge_budget.PROFILE_CREDITS:
+        return await _defer_species(ctx, key, tomorrow, "daily knowledge credits")
+    await ctx.repo.start_species(key)
+    leaf = ctx.extra["leaf"]
+    trace: list[ModelCall] = []
+
+    async def spent(credits: int) -> None:
+        await knowledge_budget.record(ctx.repo, credits)
+
+    try:
+        built = await build_profile(
+            leaf.llm,
+            leaf.settings,
+            leaf.searcher,
+            row["scientific_name"],
+            row["common_names"],
+            trace,
+            on_credits=spent,
+        )
+    except SearchPaused:
+        return await _defer_species(ctx, key, tomorrow, "Tavily credits")
+    except Exception as exc:  # noqa: BLE001 - recorded, not retried (credits already spent)
+        log.exception("species profile %s failed", key)
+        await ctx.repo.fail_species(key, f"{type(exc).__name__}: {exc}")
+        return {"failed": type(exc).__name__}
+    ctx_trace = REQUEST.get()
+    await ctx.repo.save_profile(
+        key,
+        row["scientific_name"],
+        row["common_names"],
+        built["sources"],
+        built["facts"],
+        ctx_trace.trace_id if ctx_trace else "",
+    )
+    verified = sum(1 for f in built["facts"] if f["status"] == "verified")
+    return {"key": key, "verified": verified, "facts": len(built["facts"])}
+
+
+def species_job(key: str, attempt: str = "") -> JobMessage:
+    return JobMessage(
+        kind="species_profile",
+        key=f"species:{key}" + (f":{attempt}" if attempt else ""),
+        payload={"key": key},
+    )
+
+
+async def _defer_species(ctx: JobContext, key: str, until: int, why: str) -> dict[str, Any]:
+    attempt = datetime.fromtimestamp(until, UTC).strftime("%Y%m%dT%H%M")
+    await ctx.queue.send([species_job(key, attempt)], delay_s=max(60, until - now_s()))
+    return {"deferred_until": attempt, "why": why}
 
 
 class S3Objects:

@@ -68,6 +68,10 @@ ROUTE_PER_IP_PER_HOUR, ROUTE_DAILY_CAP = 60, 3000
 GARDEN_PER_IP_PER_HOUR, GARDEN_DAILY_CAP = 10, 500
 # Public /api/climate: about 1.9 Open-Meteo units per new cell-hour, so its own small budget.
 CLIMATE_PER_IP_PER_HOUR, CLIMATE_DAILY_CAP = 20, 500
+# Species profiles: a lookup only reads; builds (3 Tavily credits) are queued by confirmed
+# identifications and garden plants. Identification: vision, a Super check, 1 Tavily credit.
+SPECIES_PER_IP_PER_HOUR, SPECIES_DAILY_CAP = 60, 3000
+IDENTIFY_PER_IP_PER_HOUR, IDENTIFY_DAILY_CAP = 10, 60
 # Every garden request reads or writes D1 and keeps the container awake.
 GARDEN_USE_PER_IP_PER_HOUR, GARDEN_USE_DAILY_CAP = 600, 50_000
 SPEND_CAP_MESSAGE = (
@@ -290,10 +294,19 @@ async def start_platform(app: FastAPI, s: Settings) -> None:
     if isinstance(weather, WeatherClient) and weather.om is None:
         weather.om = app.state.climate.om  # every Open-Meteo forecast call shares one allowance
     app.state.climate_limiter = RateLimiter(CLIMATE_PER_IP_PER_HOUR, CLIMATE_DAILY_CAP)
+    app.state.species_limiter = RateLimiter(SPECIES_PER_IP_PER_HOUR, SPECIES_DAILY_CAP)
+    app.state.identify_limiter = RateLimiter(IDENTIFY_PER_IP_PER_HOUR, IDENTIFY_DAILY_CAP)
     queue = BridgeQueue(data.bridge) if data.bridge else LocalQueue()
     objects = S3Objects(s.journal_bucket) if s.journal_bucket else None
     runner = JobRunner(
-        JobContext(data.repo, queue, s, meter, objects, extra={"climate": app.state.climate})
+        JobContext(
+            data.repo,
+            queue,
+            s,
+            meter,
+            objects,
+            extra={"climate": app.state.climate, "leaf": app.state.leaf},
+        )
     )
     if isinstance(queue, LocalQueue):
         queue.runner = runner
@@ -325,6 +338,7 @@ app.add_middleware(
         "/api/auto": MAX_DEEP_PHOTOS * MAX_UPLOAD_BYTES + 256 * 1024,
         "/api/auto/stream": MAX_DEEP_PHOTOS * MAX_UPLOAD_BYTES + 256 * 1024,
         "/api/chat": 256 * 1024,
+        "/api/identify": MAX_UPLOAD_BYTES + 256 * 1024,
     },
     default=64 * 1024,
     pattern_limits=[("/api/cases/", "/checkin", MAX_UPLOAD_BYTES + 256 * 1024)],
@@ -338,7 +352,7 @@ async def security_headers(request: Request, call_next):
     response.headers.setdefault("Referrer-Policy", "no-referrer")
     if not request.url.path.startswith(("/docs", "/redoc", "/openapi")):
         response.headers.setdefault("Content-Security-Policy", CSP)
-    if request.url.path in ("/", "/app", "/plants") or request.url.path.startswith(
+    if request.url.path in ("/", "/app", "/plants", "/identify") or request.url.path.startswith(
         ("/static/", "/c/")
     ):
         # Revalidate every time (a cheap 304 via ETag), so a deploy never leaves a returning
@@ -978,6 +992,10 @@ if FRONTEND.exists():
     @app.get("/app", include_in_schema=False)
     async def app_page() -> FileResponse:
         return FileResponse(FRONTEND / "app.html")  # diagnose a plant
+
+    @app.get("/identify", include_in_schema=False)
+    async def identify_page() -> FileResponse:
+        return FileResponse(FRONTEND / "identify.html")  # name a plant from a photo
 
     @app.get("/plants", include_in_schema=False)
     async def plants_page() -> FileResponse:

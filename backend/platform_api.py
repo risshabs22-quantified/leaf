@@ -7,12 +7,13 @@ both answer 404, so ids cannot be probed.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request
+from fastapi import APIRouter, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
@@ -41,12 +42,18 @@ from backend.data.repo import (
     Task,
     TaskStatus,
     grid_cell,
+    new_id,
     now_s,
 )
-from backend.jobs import JobMessage
+from backend.jobs import JobMessage, species_job
+from backend.knowledge import budget as knowledge_budget
+from backend.knowledge import species_key
+from backend.knowledge.identify import identify
+from backend.knowledge.profile import profile_view
 from backend.router import REFUSALS, front_door
-from backend.schemas import FrontDoorDecision, Intent
+from backend.schemas import FrontDoorDecision, Intent, ModelCall
 from backend.spray import plan_spray
+from backend.vision import prepare_image
 
 log = logging.getLogger("leaf.platform")
 
@@ -140,7 +147,10 @@ async def add_plant(request: Request, garden_id: str, body: PlantIn, key: Key = 
     # Archived plants count too, so archive-then-add cannot grow a garden without limit.
     if len(await repo.list_plants(garden.id, include_archived=True)) >= MAX_PLANTS:
         raise HTTPException(400, f"A garden can hold up to {MAX_PLANTS} plants.")
-    return await repo.add_plant(garden.id, body)
+    plant = await repo.add_plant(garden.id, body)
+    if body.species or body.common_name:  # its profile is built once and shared
+        await queue_species(request, body.species, [body.common_name] if body.common_name else [])
+    return plant
 
 
 @router.delete("/api/gardens/{garden_id}/plants/{plant_id}")
@@ -530,3 +540,150 @@ async def plant_water(
     ]
     crop = find_crop(plant.species, plant.common_name)
     return outdoor_advice(crop, plant.stage, placement, fc, waterings)
+
+
+# ---------- knowledge graph and identify (M3) ----------
+
+
+SPECIES_REGISTRATIONS_PER_DAY = 50  # new species rows a UTC day (each may later cost credits)
+
+
+async def queue_species(
+    request: Request, scientific_name: str, common_names: list[str]
+) -> str | None:
+    """Register a species and queue its profile (built once, shared). Only confirmed
+    identifications and garden plants call this; anonymous lookups never do. Returns the key,
+    or None when today's limit on new species is reached."""
+    repo = _repo(request)
+    key = (
+        species_key(scientific_name, binomial=True)
+        if scientific_name
+        else species_key(common_names[0] if common_names else "")
+    )
+    if not key:
+        return None
+    if await repo.get_species(key) is None:
+        now = now_s()
+        if await repo.species_registered_since(now - now % 86400) >= SPECIES_REGISTRATIONS_PER_DAY:
+            log.warning("species registration limit reached; %s not queued", key)
+            return None
+    if await repo.register_species(key, scientific_name, common_names):
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M")
+        await request.app.state.queue.send([species_job(key, stamp)])
+    return key
+
+
+@router.get("/api/species/{name}")
+async def species(request: Request, name: str) -> dict[str, Any]:
+    """A species profile with every fact's source. Read-only: profiles are built when a
+    gardener confirms an identification or adds the plant to a garden."""
+    request.app.state.species_limiter.check(_ip(request))
+    if len(name) > 120:
+        raise HTTPException(422, "That name is too long.")
+    repo = _repo(request)
+    for key in dict.fromkeys([species_key(name), species_key(name, binomial=True)]):
+        row = await repo.get_species(key) if key else None
+        if row is not None:
+            return (
+                profile_view(row)
+                if row["status"] == "ready"
+                else {"key": key, "status": row["status"]}
+            )
+    raise HTTPException(404, "Leaf has no profile for this plant yet.")
+
+
+@router.post("/api/identify")
+async def identify_plant(
+    request: Request,
+    image: Annotated[UploadFile, File()],
+    notes: Annotated[str, Form()] = "",
+) -> dict[str, Any]:
+    """Vision proposes, Super checks against sources; the gardener confirms with one tap."""
+    from backend.app import MAX_UPLOAD_BYTES, run_limited
+
+    request.app.state.identify_limiter.check(_ip(request))
+    leaf = request.app.state.leaf
+    if not leaf.vision_model:
+        raise HTTPException(503, "Photo identification is unavailable right now.")
+    data = await image.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "That photo is too large (10 MB at most).")
+    try:
+        view_b64, _ = await asyncio.to_thread(prepare_image, data)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    trace: list[ModelCall] = []
+    repo = _repo(request)
+    use_search = await knowledge_budget.credits_left(repo) >= 1
+
+    async def spent(credits: int) -> None:
+        await knowledge_budget.record(repo, credits)
+
+    result = await run_limited(
+        request,
+        lambda: identify(
+            leaf.llm,
+            leaf.settings,
+            leaf.searcher,
+            leaf.vision_model,
+            view_b64,
+            notes[:500],
+            trace,
+            use_search=use_search,
+            on_credits=spent,
+        ),
+    )
+    ident_id = new_id()
+    ctx = REQUEST.get()
+    await _repo(request).save_identification(
+        ident_id, result["candidates"], result["features"], ctx.trace_id if ctx else ""
+    )
+    return {"id": ident_id, **result, "trace": [c.model_dump() for c in trace]}
+
+
+class Confirm(BaseModel):
+    scientific_name: str = Field(..., min_length=2, max_length=120)
+    common_name: str = Field("", max_length=80)
+    garden_id: str | None = Field(None, max_length=40)
+
+
+@router.post("/api/identify/{ident_id}/confirm")
+async def confirm_identification(
+    request: Request, ident_id: str, body: Confirm, key: Key = None
+) -> dict[str, Any]:
+    """The one tap: the gardener's choice (one of the candidates, or their own name) becomes
+    the plant's species, its profile is queued, and with a garden link it joins the garden."""
+    repo = _repo(request)
+    ident = await repo.get_identification(ident_id)
+    if ident is None:
+        raise HTTPException(404, "That identification has expired. Take the photo again.")
+    garden = await _open(request, body.garden_id, key) if body.garden_id else None
+    known = {c["key"]: c for c in ident["candidates"]}
+    candidate = known.get(species_key(body.scientific_name, binomial=True))
+    if candidate is not None:  # the model's canonical names, not whatever was sent
+        scientific, common = candidate["scientific_name"], candidate["common_name"]
+    else:  # typed by the gardener: kept as their name for it, not as a scientific name
+        scientific, common = "", " ".join(body.scientific_name.split())[:120]
+    chosen = species_key(scientific, binomial=True) if scientific else species_key(common)
+    if not await repo.choose_identification(ident_id, chosen):
+        raise HTTPException(409, "This identification was already confirmed.")
+    skey = await queue_species(request, scientific, [common] if common else [])
+    plant = None
+    if garden is not None:
+        plant = await repo.add_plant(garden.id, PlantIn(species=scientific, common_name=common))
+        await repo.log_event(
+            EventIn(
+                garden_id=garden.id,
+                plant_id=plant.id,
+                kind="identified",
+                ref=ident_id,
+                payload={"species": skey or chosen, "from_candidates": candidate is not None},
+            )
+        )
+    row = await repo.get_species(skey) if skey else None
+    return {
+        "species": skey or chosen,
+        "profile_status": row["status"] if row else "not_queued",
+        "from_candidates": candidate is not None,
+        "plant": plant.model_dump() if plant else None,
+    }

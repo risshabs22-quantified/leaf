@@ -316,3 +316,66 @@ class FrontDoorDecision(FrontDoorOut):
     orchestrator: str = ""
     source: Literal["explicit", "rules", "cache", "model"]
     trace: list[ModelCall] = Field(default_factory=list)
+
+
+class ExtractedFact(BaseModel):
+    field: str
+    value: Any = None
+    quote: str = ""
+    passage: str = ""
+
+
+class ExtractedFacts(BaseModel):
+    facts: list[ExtractedFact] = Field(default_factory=list)
+
+
+class FactVerdict(BaseModel):
+    i: int
+    supported: bool = False
+    note: str = ""
+
+
+class FactVerdicts(BaseModel):
+    verdicts: list[FactVerdict] = Field(default_factory=list)
+
+
+class PlantCandidate(BaseModel):
+    scientific_name: str
+    common_name: str = ""
+    confidence: float = Field(0.0, ge=0, le=1)
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _clamp(cls, v: Any) -> float:
+        try:
+            return min(1.0, max(0.0, float(v)))
+        except (TypeError, ValueError):
+            return 0.0
+
+
+class IdentifyOut(BaseModel):
+    plant_visible: bool = True
+    image_quality: str = "fair"
+    features: list[str] = Field(default_factory=list)
+    candidates: list[PlantCandidate] = Field(default_factory=list, max_length=5)
+
+
+class CheckedCandidate(BaseModel):
+    scientific_name: str
+    probability: float = Field(0.0, ge=0, le=1)
+    consistent: bool = True
+    reason: str = ""
+    source_ids: list[str] = Field(default_factory=list)
+
+    @field_validator("probability", mode="before")
+    @classmethod
+    def _clamp(cls, v: Any) -> float:
+        try:
+            return min(1.0, max(0.0, float(v)))
+        except (TypeError, ValueError):
+            return 0.0
+
+
+class IdentifyCheck(BaseModel):
+    ranking: list[CheckedCandidate] = Field(default_factory=list)
+    summary: str = ""

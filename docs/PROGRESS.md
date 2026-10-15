@@ -20,6 +20,7 @@ Keep it short: newest entries first.
 | Landing page, organic and pet-safe plans, spray windows, My plants | done | `/`, `/app`, `/plants`; 422 tests |
 | Platform M1: data layer (D1 via Worker bridge), routing table, Nano front door, job queue, meter and spend guard | done | https://leafathon.site on D1; 530 tests; production check below |
 | Platform M2: climate engine (forecast per cell, 1991-2020 climatology, zone, frost dates, NWS, FAO-56 water balance, indoor model, GDD, sowing) | done | `docs/LEAF_PLATFORM.md` M2; 610 tests; five-city zone check |
+| Platform M3: knowledge graph (cited species profiles, verified facts), identify from a photo with one-tap confirm, plant-ID eval | done | `docs/LEAF_PLATFORM.md` M3; 663 tests; 40-photo eval |
 | README final, video, Devpost draft | Devpost drafted (`docs/DEVPOST.md`); video todo | `/submission-check` |
 
 ## Next
@@ -36,6 +37,22 @@ Keep it short: newest entries first.
 | 2026-10-13 | 52 tune | Quick 52% / Deep 56% / Auto 58% | 75% / 73% / 73% | lab 6% / 38% / 25% | three verdicts, Auto, fitted thresholds; checklist off (48% with it) |
 
 ## Session log
+- 2026-10-16: **Leaf Platform M3, knowledge graph and identify** (`backend/knowledge/`, `/identify`). Details are in `docs/LEAF_PLATFORM.md` M3.
+  - **Profiles:** each profile comes from Tavily sources (a care search with a batched extract, plus its own toxicity search). Lightning extracts facts with exact quotes, code checks them, and Super verifies them. Unsourced fields are listed, and toxicity fails safe in code.
+  - **Identify:** the vision model proposes, Super re-ranks against sources, and the gardener taps one (or types a name). The profile is then built and shown with every fact's source.
+  - **Plant-ID eval** (40 licensed Commons photos): species top-1 was 92.5% for the vision model alone and 95% after Nemotron's check (fixed 1, broke 0). Genus top-1 was 97.5%. "Confident" was right 31 of 33 times. Cost $0.0026 a photo, median 6.9 s.
+  - **Found live:**
+    - Foxglove first came back "toxicity unknown" (one combined search crowded toxicity out), so toxicity got its own search; foxglove then came back toxic, citing poison.org.
+    - Lightning gave an ideal range as a survival limit; Super rejected it, and `ideal_temp_c` now exists.
+    - The vision model listed synonyms as separate candidates; its prompt changed (not re-measured).
+  - **Review fixes:**
+    - Common names no longer collide ("string of pearls" and "string of hearts" had one key).
+    - Anonymous lookups can no longer queue builds.
+    - The daily cap counts attempts; a separate daily Tavily budget covers the knowledge features; failed builds are not retried but can be requeued.
+    - Confirm checks the garden key first.
+    - A negated toxicity quote is rejected in code; reference data needs the right species.
+    - "Checked" requires sources; web titles are sanitised in prompts; only http(s) links are rendered.
+  - 663 tests.
 - 2026-10-15: **Leaf Platform M2, climate engine** (`backend/climate/`). Details are in `docs/LEAF_PLATFORM.md` M2.
   - **Sources:** two researchers fetched FAO-56 Tables 12, 19 and 22 and the Chapter 8 equations and Examples 36 and 38, plus the USDA PHZM method, NWS frost and wind criteria, Rutgers heat, the OSU/UC ANR germination tables and the MRCC/USBR degree-day methods. Every value cites one; where none exists, the value is labelled a heuristic.
   - **Found live:** Open-Meteo's `era5_land` returns no precipitation or ET0, so climatology uses `era5_seamless`. A 5-year archive chunk once took over 30 s, so archive calls now allow 90 s, retry once and cache their chunks.

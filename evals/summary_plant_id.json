@@ -1,0 +1,1236 @@
+{
+ "vision_model": "moonshotai/Kimi-K2.6",
+ "summary": {
+  "cases": 40,
+  "vision_only": {
+   "species_top1": 0.925,
+   "species_top3": 0.95,
+   "genus_top1": 0.975
+  },
+  "checked": {
+   "species_top1": 0.95,
+   "species_top3": 0.95,
+   "genus_top1": 0.975
+  },
+  "check_fixed": [
+   "plant_id/nephrolepis_exaltata.jpg"
+  ],
+  "check_broke": [],
+  "confident_right": 31,
+  "confident_total": 33,
+  "median_s": 6.9,
+  "cost_usd": 0.1057
+ },
+ "rows": [
+  {
+   "file": "plant_id/solanum_lycopersicum.jpg",
+   "label": "Solanum lycopersicum",
+   "vision_top": [
+    "solanum lycopersicum"
+   ],
+   "checked_top": [
+    "solanum lycopersicum"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 9.1,
+   "cost_usd": 0.00273,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/ocimum_basilicum.jpg",
+   "label": "Ocimum basilicum",
+   "vision_top": [
+    "ocimum basilicum",
+    "ocimum citriodorum",
+    "ocimum sanctum"
+   ],
+   "checked_top": [
+    "ocimum basilicum",
+    "ocimum citriodorum",
+    "ocimum sanctum"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 9.0,
+   "cost_usd": 0.00311,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/salvia_rosmarinus.jpg",
+   "label": "Salvia rosmarinus",
+   "vision_top": [
+    "salvia rosmarinus",
+    "rosmarinus officinalis",
+    "salvia officinalis"
+   ],
+   "checked_top": [
+    "salvia rosmarinus",
+    "rosmarinus officinalis",
+    "salvia officinalis"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": false,
+   "seconds": 10.2,
+   "cost_usd": 0.00293,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/lavandula_angustifolia.jpg",
+   "label": "Lavandula angustifolia",
+   "vision_top": [
+    "lavandula angustifolia",
+    "lavandula intermedia",
+    "rosmarinus officinalis"
+   ],
+   "checked_top": [
+    "lavandula angustifolia",
+    "lavandula intermedia",
+    "rosmarinus officinalis"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": false,
+   "seconds": 11.0,
+   "cost_usd": 0.0031,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/mentha_spicata.jpg",
+   "label": "Mentha spicata",
+   "vision_top": [
+    "mentha spicata",
+    "mentha piperita",
+    "nepeta cataria"
+   ],
+   "checked_top": [
+    "mentha spicata",
+    "mentha piperita",
+    "nepeta cataria"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 11.0,
+   "cost_usd": 0.00348,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/helianthus_annuus.jpg",
+   "label": "Helianthus annuus",
+   "vision_top": [
+    "helianthus annuus"
+   ],
+   "checked_top": [
+    "helianthus annuus"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 6.0,
+   "cost_usd": 0.00226,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/hydrangea_macrophylla.jpg",
+   "label": "Hydrangea macrophylla",
+   "vision_top": [
+    "hydrangea macrophylla",
+    "hydrangea serrata"
+   ],
+   "checked_top": [
+    "hydrangea macrophylla",
+    "hydrangea serrata"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 9.2,
+   "cost_usd": 0.003,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/tulipa_gesneriana.jpg",
+   "label": "Tulipa gesneriana",
+   "vision_top": [
+    "tulipa"
+   ],
+   "checked_top": [
+    "tulipa"
+   ],
+   "vision": {
+    "species_top1": false,
+    "species_top3": false,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": false,
+    "species_top3": false,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 7.0,
+   "cost_usd": 0.00246,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/narcissus_pseudonarcissus.jpg",
+   "label": "Narcissus pseudonarcissus",
+   "vision_top": [
+    "narcissus pseudonarcissus",
+    "narcissus incomparabilis",
+    "narcissus hispanicus"
+   ],
+   "checked_top": [
+    "narcissus pseudonarcissus",
+    "narcissus incomparabilis",
+    "narcissus hispanicus"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 10.1,
+   "cost_usd": 0.00328,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/monstera_deliciosa.jpg",
+   "label": "Monstera deliciosa",
+   "vision_top": [
+    "monstera deliciosa",
+    "monstera borsigiana"
+   ],
+   "checked_top": [
+    "monstera deliciosa",
+    "monstera borsigiana"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 7.9,
+   "cost_usd": 0.00278,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/dracaena_trifasciata.jpg",
+   "label": "Dracaena trifasciata",
+   "vision_top": [
+    "sansevieria trifasciata",
+    "sansevieria hyacinthoides",
+    "dracaena pethera"
+   ],
+   "checked_top": [
+    "sansevieria trifasciata",
+    "sansevieria hyacinthoides",
+    "dracaena pethera"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 10.4,
+   "cost_usd": 0.00341,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/epipremnum_aureum.jpg",
+   "label": "Epipremnum aureum",
+   "vision_top": [
+    "epipremnum aureum",
+    "scindapsus pictus",
+    "philodendron hederaceum"
+   ],
+   "checked_top": [
+    "epipremnum aureum",
+    "philodendron hederaceum",
+    "scindapsus pictus"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 10.1,
+   "cost_usd": 0.00322,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/chlorophytum_comosum.jpg",
+   "label": "Chlorophytum comosum",
+   "vision_top": [
+    "chlorophytum comosum"
+   ],
+   "checked_top": [
+    "chlorophytum comosum"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 5.4,
+   "cost_usd": 0.00225,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/spathiphyllum_wallisii.jpg",
+   "label": "Spathiphyllum wallisii",
+   "vision_top": [
+    "spathiphyllum wallisii",
+    "spathiphyllum cochlearispathum",
+    "zantedeschia aethiopica"
+   ],
+   "checked_top": [
+    "spathiphyllum wallisii",
+    "spathiphyllum cochlearispathum",
+    "zantedeschia aethiopica"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 9.1,
+   "cost_usd": 0.00334,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/ficus_lyrata.jpg",
+   "label": "Ficus lyrata",
+   "vision_top": [
+    "ficus lyrata"
+   ],
+   "checked_top": [
+    "ficus lyrata"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 5.8,
+   "cost_usd": 0.00232,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/aloe_vera.jpg",
+   "label": "Aloe vera",
+   "vision_top": [
+    "aloe vera",
+    "aloe barbadensis",
+    "aloe ferox"
+   ],
+   "checked_top": [
+    "aloe vera",
+    "aloe barbadensis",
+    "aloe ferox"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": false,
+   "seconds": 7.2,
+   "cost_usd": 0.00284,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/crassula_ovata.jpg",
+   "label": "Crassula ovata",
+   "vision_top": [
+    "crassula ovata"
+   ],
+   "checked_top": [
+    "crassula ovata"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 4.1,
+   "cost_usd": 0.00202,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/cucurbita_pepo.jpg",
+   "label": "Cucurbita pepo",
+   "vision_top": [
+    "cucumis sativus",
+    "tussilago farfara",
+    "petasites hybridus"
+   ],
+   "checked_top": [
+    "cucumis sativus",
+    "petasites hybridus",
+    "tussilago farfara"
+   ],
+   "vision": {
+    "species_top1": false,
+    "species_top3": false,
+    "genus_top1": false
+   },
+   "checked": {
+    "species_top1": false,
+    "species_top3": false,
+    "genus_top1": false
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 8.5,
+   "cost_usd": 0.003,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/cucumis_sativus.jpg",
+   "label": "Cucumis sativus",
+   "vision_top": [
+    "cucumis sativus",
+    "cucumis melo",
+    "cucurbita pepo"
+   ],
+   "checked_top": [
+    "cucumis sativus",
+    "cucumis melo",
+    "cucurbita pepo"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 8.3,
+   "cost_usd": 0.00298,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/capsicum_annuum.jpg",
+   "label": "Capsicum annuum",
+   "vision_top": [
+    "capsicum annuum",
+    "capsicum frutescens"
+   ],
+   "checked_top": [
+    "capsicum annuum",
+    "capsicum frutescens"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 5.4,
+   "cost_usd": 0.00242,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/fragaria_ananassa.jpg",
+   "label": "Fragaria ananassa",
+   "vision_top": [
+    "fragaria ananassa"
+   ],
+   "checked_top": [
+    "fragaria ananassa"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 5.1,
+   "cost_usd": 0.0022,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/lactuca_sativa.jpg",
+   "label": "Lactuca sativa",
+   "vision_top": [
+    "lactuca sativa"
+   ],
+   "checked_top": [
+    "lactuca sativa"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 4.5,
+   "cost_usd": 0.00243,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/brassica_oleracea.jpg",
+   "label": "Brassica oleracea",
+   "vision_top": [
+    "brassica oleracea"
+   ],
+   "checked_top": [
+    "brassica oleracea"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": false,
+   "seconds": 4.9,
+   "cost_usd": 0.00233,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/daucus_carota.jpg",
+   "label": "Daucus carota",
+   "vision_top": [
+    "daucus carota",
+    "ammi majus"
+   ],
+   "checked_top": [
+    "daucus carota",
+    "ammi majus"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 5.5,
+   "cost_usd": 0.0026,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/solanum_tuberosum.jpg",
+   "label": "Solanum tuberosum",
+   "vision_top": [
+    "solanum tuberosum"
+   ],
+   "checked_top": [
+    "solanum tuberosum"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": false,
+   "seconds": 4.5,
+   "cost_usd": 0.00199,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/vaccinium_corymbosum.jpg",
+   "label": "Vaccinium corymbosum",
+   "vision_top": [
+    "vaccinium corymbosum",
+    "vaccinium angustifolium",
+    "vaccinium ashei"
+   ],
+   "checked_top": [
+    "vaccinium corymbosum",
+    "vaccinium angustifolium",
+    "vaccinium ashei"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 6.9,
+   "cost_usd": 0.00257,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/malus_domestica.jpg",
+   "label": "Malus domestica",
+   "vision_top": [
+    "malus domestica"
+   ],
+   "checked_top": [
+    "malus domestica"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 8.9,
+   "cost_usd": 0.00237,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/citrus_limon.jpg",
+   "label": "Citrus limon",
+   "vision_top": [
+    "citrus limon",
+    "citrus meyeri",
+    "citrus aurantiifolia"
+   ],
+   "checked_top": [
+    "citrus limon",
+    "citrus meyeri",
+    "citrus aurantiifolia"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 8.5,
+   "cost_usd": 0.00316,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/digitalis_purpurea.jpg",
+   "label": "Digitalis purpurea",
+   "vision_top": [
+    "digitalis purpurea"
+   ],
+   "checked_top": [
+    "digitalis purpurea"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 3.6,
+   "cost_usd": 0.002,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/nerium_oleander.jpg",
+   "label": "Nerium oleander",
+   "vision_top": [
+    "nerium oleander"
+   ],
+   "checked_top": [
+    "nerium oleander"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": false,
+   "seconds": 5.0,
+   "cost_usd": 0.00214,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/lilium_longiflorum.jpg",
+   "label": "Lilium longiflorum",
+   "vision_top": [
+    "lilium longiflorum",
+    "lilium formosanum",
+    "lilium candidum"
+   ],
+   "checked_top": [
+    "lilium longiflorum",
+    "lilium formosanum",
+    "lilium candidum"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 6.9,
+   "cost_usd": 0.00297,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/hosta_plantaginea.jpg",
+   "label": "Hosta plantaginea",
+   "vision_top": [
+    "hosta plantaginea",
+    "hosta ventricosa"
+   ],
+   "checked_top": [
+    "hosta plantaginea",
+    "hosta ventricosa"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 6.9,
+   "cost_usd": 0.00267,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/nephrolepis_exaltata.jpg",
+   "label": "Nephrolepis exaltata",
+   "vision_top": [
+    "nephrolepis cordifolia",
+    "nephrolepis exaltata",
+    "blechnum spicant"
+   ],
+   "checked_top": [
+    "nephrolepis exaltata",
+    "nephrolepis cordifolia",
+    "blechnum spicant"
+   ],
+   "vision": {
+    "species_top1": false,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": false,
+   "seconds": 7.8,
+   "cost_usd": 0.00285,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/pelargonium_zonale.jpg",
+   "label": "Pelargonium zonale",
+   "vision_top": [
+    "pelargonium hortorum",
+    "pelargonium domesticum"
+   ],
+   "checked_top": [
+    "pelargonium hortorum",
+    "pelargonium domesticum"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 6.0,
+   "cost_usd": 0.00228,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/tagetes_erecta.jpg",
+   "label": "Tagetes erecta",
+   "vision_top": [
+    "tagetes erecta",
+    "tagetes patula"
+   ],
+   "checked_top": [
+    "tagetes erecta",
+    "tagetes patula"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 6.7,
+   "cost_usd": 0.00267,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/paeonia_lactiflora.jpg",
+   "label": "Paeonia lactiflora",
+   "vision_top": [
+    "paeonia lactiflora"
+   ],
+   "checked_top": [
+    "paeonia lactiflora"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 4.2,
+   "cost_usd": 0.00198,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/syringa_vulgaris.jpg",
+   "label": "Syringa vulgaris",
+   "vision_top": [
+    "syringa vulgaris",
+    "syringa hyacinthiflora",
+    "syringa chinensis"
+   ],
+   "checked_top": [
+    "syringa vulgaris",
+    "syringa hyacinthiflora",
+    "syringa chinensis"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 5.4,
+   "cost_usd": 0.00232,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/ilex_aquifolium.jpg",
+   "label": "Ilex aquifolium",
+   "vision_top": [
+    "ilex aquifolium",
+    "ilex opaca",
+    "ilex cornuta"
+   ],
+   "checked_top": [
+    "ilex aquifolium",
+    "ilex opaca",
+    "ilex cornuta"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 5.9,
+   "cost_usd": 0.00234,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/rosa_rugosa.jpg",
+   "label": "Rosa rugosa",
+   "vision_top": [
+    "rosa rugosa",
+    "rosa canina",
+    "rosa moyesii"
+   ],
+   "checked_top": [
+    "rosa rugosa",
+    "rosa canina",
+    "rosa moyesii"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 6.4,
+   "cost_usd": 0.0024,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  },
+  {
+   "file": "plant_id/allium_sativum.jpg",
+   "label": "Allium sativum",
+   "vision_top": [
+    "allium sativum",
+    "allium ampeloprasum",
+    "allium ursinum"
+   ],
+   "checked_top": [
+    "allium sativum",
+    "allium ampeloprasum",
+    "allium ursinum"
+   ],
+   "vision": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "checked": {
+    "species_top1": true,
+    "species_top3": true,
+    "genus_top1": true
+   },
+   "was_checked": true,
+   "confident": true,
+   "seconds": 7.2,
+   "cost_usd": 0.00253,
+   "models": [
+    "moonshotai/Kimi-K2.6",
+    "nvidia/nemotron-3-super-120b-a12b"
+   ]
+  }
+ ]
+}

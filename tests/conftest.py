@@ -26,7 +26,11 @@ from backend.prompts import (
     CLAIM_CHECK_SYSTEM,
     CRITIC_SYSTEM,
     DIAGNOSE_SYSTEM,
+    FACT_EXTRACT_SYSTEM,
+    FACT_VERIFY_SYSTEM,
     FRONT_DOOR_SYSTEM,
+    IDENTIFY_CHECK_SYSTEM,
+    IDENTIFY_SYSTEM,
     LOOK_CLOSER_SYSTEM,
     PLAN_DEEP_SYSTEM,
     PLAN_SYSTEM,
@@ -97,6 +101,10 @@ def step_of(messages: list[dict[str, Any]]) -> str:
         CHECKIN_VISION_SYSTEM: "checkin_compare",
         CHECKIN_PLAN_SYSTEM: "checkin_plan",
         FRONT_DOOR_SYSTEM: "front_door",
+        FACT_EXTRACT_SYSTEM: "fact_extract",
+        FACT_VERIFY_SYSTEM: "fact_verify",
+        IDENTIFY_SYSTEM: "identify",
+        IDENTIFY_CHECK_SYSTEM: "identify_check",
     }.get(system, "repair")
 
 
@@ -212,6 +220,13 @@ class FakeSearcher:
     async def extract(self, url: str, query: str) -> tuple[list[str], int]:
         self.extracted = getattr(self, "extracted", []) + [url]
         return [f"Passage about {query} from {url}."], 1
+
+    async def extract_many(self, urls: list[str], query: str) -> tuple[dict[str, list[str]], int]:
+        self.extracted = getattr(self, "extracted", []) + list(urls)
+        pages = getattr(self, "pages", None)  # tests may script page text per URL
+        if pages is not None:
+            return {u: pages[u] for u in urls if u in pages}, 1
+        return {u: [f"Passage about {query} from {u}."] for u in urls}, 1
 
     async def search(self, query: str) -> list[dict[str, Any]]:
         self.queries.append(query)

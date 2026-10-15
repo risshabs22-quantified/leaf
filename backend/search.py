@@ -41,6 +41,10 @@ class Searcher(Protocol):
         """Passages of one page most relevant to `query`, plus credits charged."""
         ...
 
+    async def extract_many(self, urls: list[str], query: str) -> tuple[dict[str, list[str]], int]:
+        """Passages for up to five pages in one call (one credit per five pages)."""
+        ...
+
 
 class SearchPaused(RuntimeError):
     """Today's Tavily credit allowance is used up. Callers answer without fresh sources."""
@@ -190,6 +194,24 @@ class TavilySearcher:
         self._extract_cache[key] = (time.time(), passages)
         return passages, 1  # basic extract: 1 credit per 5 successful URLs
 
+    async def extract_many(self, urls: list[str], query: str) -> tuple[dict[str, list[str]], int]:
+        """Up to five pages per credit, the same 3 relevant chunks per page as `extract`."""
+        urls = list(dict.fromkeys(urls))[:5]
+        if not urls:
+            return {}, 0
+        if self.budget:
+            await self.budget.take(1)
+        resp = await self._client.extract(
+            urls=urls, query=query, chunks_per_source=3, extract_depth="basic"
+        )
+        out: dict[str, list[str]] = {}
+        for r in resp.get("results") or []:
+            raw = str(r.get("raw_content") or "")
+            passages = [c.strip()[:900] for c in raw.split("[...]") if c.strip()][:3]
+            if r.get("url") and passages:
+                out[str(r["url"])] = passages
+        return out, (1 if out else 0)  # failed extractions are not charged
+
 
 def search_paused(searcher: Searcher) -> bool:
     """Has today's Tavily allowance run out? Then answers carry no fresh sources and say so."""
@@ -215,6 +237,9 @@ class NullSearcher:
 
     async def extract(self, url: str, query: str) -> tuple[list[str], int]:
         return [], 0
+
+    async def extract_many(self, urls: list[str], query: str) -> tuple[dict[str, list[str]], int]:
+        return {}, 0
 
 
 def _trust(url: str) -> int:

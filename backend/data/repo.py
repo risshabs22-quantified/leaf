@@ -671,9 +671,20 @@ class Repo:
                     "DELETE FROM jobs WHERE status IN ('done', 'failed') AND updated_at < ?",
                     (job_cut,),
                 ),
+                (
+                    "DELETE FROM identifications WHERE created_at < ?",
+                    (job_cut - (PHOTO_DAYS - JOB_DAYS) * 86400,),
+                ),
             ]
         )
-        names = ["model_calls", "cache_stats", "active_daily", "day_salts", "jobs"]
+        names = [
+            "model_calls",
+            "cache_stats",
+            "active_daily",
+            "day_salts",
+            "jobs",
+            "identifications",
+        ]
         return {n: r.changes for n, r in zip(names, res, strict=True)}
 
     # ---------- climate (M2): cells, climatology, free-service usage ----------
@@ -782,3 +793,171 @@ class Repo:
             self.db, "SELECT * FROM plants WHERE id = ? AND garden_id = ?", plant_id, garden_id
         )
         return _plant(rows[0]) if rows else None
+
+    # ---------- knowledge graph (M3): species, facts, identifications ----------
+
+    async def register_species(
+        self,
+        key: str,
+        scientific_name: str = "",
+        common_names: Sequence[str] = (),
+        retry_failed_after_s: int = 6 * 3600,
+    ) -> bool:
+        """Queue a species for its profile. True when it is new, or when it failed more than
+        `retry_failed_after_s` ago and is queued again; False when nothing needs building."""
+        now = now_s()
+        res = await self.db.batch(
+            [
+                (
+                    "INSERT OR IGNORE INTO species (key, scientific_name, common_names, status,"
+                    " created_at, updated_at) VALUES (?, ?, ?, 'queued', ?, ?)",
+                    (key, scientific_name, _json(list(common_names)), now, now),
+                ),
+                (
+                    "UPDATE species SET status = 'queued', error = '', updated_at = ?"
+                    " WHERE key = ? AND status = 'failed' AND updated_at < ?",
+                    (now, key, now - retry_failed_after_s),
+                ),
+            ]
+        )
+        return res[0].changes > 0 or res[1].changes > 0
+
+    async def species_registered_since(self, since: int) -> int:
+        rows = await query(
+            self.db, "SELECT COUNT(*) AS n FROM species WHERE created_at >= ?", since
+        )
+        return int(rows[0]["n"]) if rows else 0
+
+    async def start_species(self, key: str) -> None:
+        now = now_s()
+        await execute(
+            self.db,
+            "UPDATE species SET attempts = attempts + 1, started_at = ?, updated_at = ?"
+            " WHERE key = ?",
+            now,
+            now,
+            key,
+        )
+
+    async def get_species(self, key: str) -> dict[str, Any] | None:
+        res = await self.db.batch(
+            [
+                ("SELECT * FROM species WHERE key = ?", (key,)),
+                (
+                    "SELECT field, value, quote, source_url, source_title, status, note"
+                    " FROM facts WHERE species = ? AND status != 'rejected' ORDER BY id",
+                    (key,),
+                ),
+            ]
+        )
+        if not res[0].rows:
+            return None
+        row = res[0].rows[0]
+        return {
+            **row,
+            "common_names": _load(row.get("common_names"), []),
+            "sources": _load(row.get("sources"), []),
+            "facts": [{**f, "value": _load(f["value"], None)} for f in res[1].rows],
+        }
+
+    async def save_profile(
+        self,
+        key: str,
+        scientific_name: str,
+        common_names: Sequence[str],
+        sources: list[dict[str, Any]],
+        facts: Sequence[dict[str, Any]],
+        trace_id: str = "",
+    ) -> None:
+        """Replace a species' facts and mark it ready in one atomic batch (facts are capped
+        upstream at knowledge.profile.MAX_FACTS)."""
+        now = now_s()
+        stmts: list[Statement] = [
+            ("DELETE FROM facts WHERE species = ?", (key,)),
+            *[
+                (
+                    "INSERT INTO facts (species, field, value, quote, source_url, source_title,"
+                    " status, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        key,
+                        f["field"],
+                        _json(f["value"]),
+                        f.get("quote", "")[:600],
+                        f.get("source_url", ""),
+                        f.get("source_title", "")[:200],
+                        f["status"],
+                        f.get("note", "")[:300],
+                        now,
+                    ),
+                )
+                for f in facts
+            ],
+            (
+                "UPDATE species SET scientific_name = ?, common_names = ?, sources = ?,"
+                " status = 'ready', error = '', trace_id = ?, built_at = ?, updated_at = ?"
+                " WHERE key = ?",
+                (
+                    scientific_name,
+                    _json(list(common_names)),
+                    _json(sources),
+                    trace_id,
+                    now,
+                    now,
+                    key,
+                ),
+            ),
+        ]
+        await self.db.batch(stmts)
+
+    async def fail_species(self, key: str, error: str) -> None:
+        await execute(
+            self.db,
+            "UPDATE species SET status = 'failed', error = ?, updated_at = ? WHERE key = ?",
+            error[:500],
+            now_s(),
+            key,
+        )
+
+    async def species_started_since(self, since: int) -> int:
+        """Build attempts started since `since`, finished or not: the daily cap counts these,
+        so failed builds use it up too."""
+        rows = await query(
+            self.db, "SELECT COUNT(*) AS n FROM species WHERE started_at >= ?", since
+        )
+        return int(rows[0]["n"]) if rows else 0
+
+    async def save_identification(
+        self, ident_id: str, candidates: list[dict[str, Any]], features: list[str], trace_id: str
+    ) -> None:
+        await execute(
+            self.db,
+            "INSERT INTO identifications (id, candidates, features, trace_id, created_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            ident_id,
+            _json(candidates),
+            _json(features),
+            trace_id,
+            now_s(),
+        )
+
+    async def get_identification(self, ident_id: str) -> dict[str, Any] | None:
+        rows = await query(self.db, "SELECT * FROM identifications WHERE id = ?", ident_id)
+        if not rows:
+            return None
+        r = rows[0]
+        return {
+            **r,
+            "candidates": _load(r.get("candidates"), []),
+            "features": _load(r.get("features"), []),
+        }
+
+    async def choose_identification(self, ident_id: str, chosen: str) -> bool:
+        return (
+            await execute(
+                self.db,
+                "UPDATE identifications SET chosen = ? WHERE id = ? AND chosen IS NULL",
+                chosen,
+                ident_id,
+            )
+            > 0
+        )

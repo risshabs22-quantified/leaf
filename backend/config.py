@@ -102,10 +102,11 @@ ROUTES: dict[str, Route] = {
     "json_repair": Route((LIGHTNING,), 2048, False, 1500, 800),
     # Later milestones (docs/LEAF_PLATFORM.md).
     "orchestrate": Route((ULTRA, SUPER), 4000, True, 3000, 1500),
-    "fact_extract": Route((LIGHTNING, SUPER), 2000, False, 4000, 1000),
-    "fact_verify": Route((SUPER, ULTRA), 2000, True, 3000, 500),
+    "fact_extract": Route((LIGHTNING, SUPER), 3000, False, 4500, 1200),
+    # Super reasons before answering, and reasoning counts toward max_tokens.
+    "fact_verify": Route((SUPER, ULTRA), 4000, True, 4500, 1200),
     "identify": Route((VISION,), 4000, False, 1500, 600),
-    "identify_check": Route((SUPER, ULTRA), 1500, True, 2500, 400),
+    "identify_check": Route((SUPER, ULTRA), 3000, True, 2500, 800),
     "care_wording": Route((LIGHTNING, NANO), 1200, False, 800, 400, optional=True),
     "notify_text": Route((LIGHTNING, NANO), 300, False, 300, 100, optional=True),
     "translate": Route((LIGHTNING,), 1500, False, 600, 600, optional=True),

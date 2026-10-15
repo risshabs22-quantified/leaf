@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Identify a plant · Leaf</title>
+<meta name="description" content="Name a plant from a photo. Leaf checks the guess against sources and shows what each plant needs, with every fact cited.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M6 26C6 14 13 7 26 6c0 13-7 20-18 20z' fill='none' stroke='%2318793a' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M6 26C12 19 17 14 22 10' fill='none' stroke='%2318793a' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=2026101602">
+</head>
+<body class="calm">
+<canvas id="forest" aria-hidden="true"></canvas>
+<header class="site">
+  <a href="/" class="brand" aria-label="Leaf home">
+    <svg class="mark" viewBox="0 0 48 64" aria-hidden="true"><path d="M9 57C5 33 17 12 41 6c3 25-8 45-30 51" /><path d="M9 57C17 41 26 27 37 14" /></svg>
+    <span class="word">Leaf</span>
+  </a>
+  <nav class="nav" aria-label="Main">
+    <a class="wide" href="/#how">How it works</a>
+    <a class="wide" href="/#features">Features</a>
+    <a href="/identify" aria-current="page">Identify</a>
+    <a href="/plants">My plants</a>
+    <a class="nav-cta" href="/app">Diagnose a plant</a>
+  </nav>
+</header>
+
+<main class="page identify-page">
+  <div class="intro">
+    <h1 class="page-title">Identify a plant</h1>
+    <p>Take a photo of the whole plant or a clear leaf. A vision model makes its best guesses, Nemotron checks them against sources, and you choose the right one. Leaf then builds what that plant needs, and every fact names where it came from.</p>
+  </div>
+
+  <section class="intake" aria-labelledby="photo-h">
+    <h2 id="photo-h" class="sr-only">Photo</h2>
+    <label class="slot drop" id="id-slot">
+      <input type="file" accept="image/*" id="id-photo">
+      <span class="slot-label">Choose a photo</span>
+    </label>
+    <label class="field">
+      <span class="field-label">Anything to add? <span class="opt">Optional, e.g. "grows in shade, about 1 m tall"</span></span>
+      <input type="text" id="id-notes" maxlength="300" autocomplete="off">
+    </label>
+    <button id="id-go" class="cta" type="button" disabled><span class="cta-text">Identify</span><svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button>
+    <p id="id-status" class="status" role="status" aria-live="polite"></p>
+  </section>
+
+  <section id="id-result" class="block" hidden>
+    <h2>Which one is it?</h2>
+    <p id="id-summary" class="small"></p>
+    <ol id="id-cands" class="cands"></ol>
+    <form id="id-other" class="other">
+      <label class="field"><span class="field-label">None of these? Type its name</span>
+        <input type="text" id="id-other-name" maxlength="120" autocomplete="off" required></label>
+      <button type="submit" class="textbtn">Use this name</button>
+    </form>
+    <details class="trace"><summary>How Leaf decided</summary><ul id="id-trace" class="small"></ul></details>
+  </section>
+
+  <section id="id-profile" class="block" hidden aria-live="polite">
+    <h2 id="prof-title"></h2>
+    <p id="prof-status" class="status"></p>
+    <dl id="prof-facts" class="facts"></dl>
+    <p id="prof-unsourced" class="small"></p>
+  </section>
+</main>
+
+<footer class="foot">
+  <span>Open source, MIT license. <a href="https://github.com/risshabs22-quantified/leaf">Code on GitHub</a></span>
+  <span>Leaf gives guidance, not certainty. Never eat a plant on an app's word.</span>
+</footer>
+<script src="/static/identify.js?v=2026101602"></script>
+<script src="/static/rainforest.js?v=2026101602"></script>
+</body>
+</html>

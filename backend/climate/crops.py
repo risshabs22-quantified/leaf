@@ -285,6 +285,17 @@ CROPS: dict[str, Crop] = {
 GENERAL_GDD_BASE_C = 10.0  # 50 F, the general base (NCEI / MRCC)
 
 
+def find_crop_exact(name: str) -> Crop | None:
+    """The crop whose alias is exactly this name (or its plural): "pea" yes, "sweet pea" no."""
+    text = " ".join((name or "").lower().split())
+    for crop in CROPS.values():
+        for alias in crop.names:
+            plural = alias[:-1] + "ies" if alias.endswith("y") else alias + "s"
+            if text in (alias, plural, alias + "es"):
+                return crop
+    return None
+
+
 def find_crop(*names: str) -> Crop | None:
     """The crop for a plant's species or common name ("Solanum lycopersicum", "cherry tomato").
 

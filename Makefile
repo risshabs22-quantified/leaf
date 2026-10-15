@@ -2,7 +2,7 @@
 PY := .venv/bin/python
 PIP := .venv/bin/pip
 
-.PHONY: help setup smoke smoke-all test lint fmt check worker-check migrate-local eval-router run docker-build docker-run deploy deploy-cloudflare eval clean
+.PHONY: help setup smoke smoke-all test lint fmt check worker-check migrate-local eval-router eval-plant-id run docker-build docker-run deploy deploy-cloudflare eval clean
 
 help:  ## List targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-13s %s\n", $$1, $$2}'
@@ -53,6 +53,9 @@ deploy-cloudflare:  ## Deploy to Cloudflare Containers (DRY_RUN=1 validates only
 
 eval-router:  ## Score the front door on evals/front_door.jsonl, Lightning and Nano 3 (about half a cent)
 	$(PY) -m scripts.eval_front_door
+
+eval-plant-id:  ## Score photo identification on evals/plant_id.jsonl (about 16 cents, 40 Tavily credits)
+	$(PY) -m scripts.eval_plant_id
 
 eval:  ## Score Leaf on evals/cases.jsonl (spends credits)
 	$(PY) scripts/eval.py

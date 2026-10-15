@@ -123,10 +123,10 @@ Per-task budgets are listed below. `max_tokens` is the cap on one call's output,
 | `chat` | Lightning → Super | off | 800 | 1500 / 400 | 0.0002 | exists |
 | `json_repair` | Lightning | off | 2048 | 1500 / 800 | 0.0003 | exists |
 | `orchestrate` | Ultra → Super | on | 4000 | 3000 / 1500 | 0.0075 | M5 |
-| `fact_extract` | Lightning → Super | off | 2000 | 4000 / 1000 | 0.0005 | M3 |
-| `fact_verify` | Super → Ultra | on | 2000 | 3000 / 500 | 0.0014 | M3 |
+| `fact_extract` | Lightning → Super | off | 3000 | 4500 / 1200 | 0.0006 | M3 |
+| `fact_verify` | Super → Ultra | on | 4000 | 4500 / 1200 | 0.0024 | M3 |
 | `identify` | vision | off | 4000 | measured | 0.002 | M3 |
-| `identify_check` | Super → Ultra | on | 1500 | 2500 / 400 | 0.0011 | M3 |
+| `identify_check` | Super → Ultra | on | 3000 | 2500 / 800 | 0.0015 | M3 |
 | `care_wording` (per garden per day) | Lightning → Nano | off | 1200 | 800 / 400 | 0.00014 | M4 |
 | `notify_text` | Lightning → Nano | off | 300 | 300 / 100 | 0.00004 | M4 |
 | `translate` | Lightning | off | 1500 | 600 / 600 | 0.0002 | M4 |
@@ -362,6 +362,49 @@ None of the five matched exactly, and all five were within one half zone (four c
 ### M3 Knowledge graph and identify
 - [ ] Species profiles from Tavily sources (Lightning extracts, Super verifies, unsourced facts marked)
 - [ ] Identify from a photo (vision proposes, Super checks, the user confirms); plant-ID eval on 40 licensed photos
+- [ ] Live: a profile built and an identification confirmed on production
+
+**Species profiles (`backend/knowledge/profile.py`).** A profile is built once per species by the `species_profile` job and shared by every user. It costs 3 Tavily credits and about $0.003 in models.
+- **Sources:** one search for care (light, water, soil, feeding, temperature, pests, diseases, timing) is followed by a batched extract of the top five pages, extension and university pages first. A separate search covers toxicity to pets and children, and its result snippets become passages too.
+- **Extraction:** Lightning extracts facts into 15 typed fields. Each fact must quote 5 to 20 consecutive words of its passage. Code checks the field, the value's type and the quote; the quote check ignores case and punctuation, but its words and numbers must be identical. Super then verifies each fact against its passage.
+- **What users see:** only verified facts, plus reference facts from Leaf's cited tables (FAO-56 Kc and rooting depth, germination soil temperatures). Every field with no verified fact is listed as unsourced.
+- **Toxicity is decided in code:**
+  - sources that disagree resolve to the more toxic answer, and no source means "unknown", never "not toxic";
+  - a toxicity quote must agree with its value, so a quote inside "Not toxic to cats and dogs" can never support "toxic";
+  - the nearby passage must say who is at risk (pets, or people).
+- **Who can start a build:** profiles are built only when a gardener confirms an identification or adds a plant to a garden. `GET /api/species/{name}` only reads, so anonymous lookups cannot spend credits.
+- **Keys:** a binomial is reduced to genus and species; a common name keeps every word, so "string of pearls" and "string of hearts" never share a profile.
+- **Limits:**
+  - at most 50 new species a day, and 5 build attempts a day (failed attempts count too);
+  - the knowledge features (profiles and identification) have their own 12 Tavily credits a day, counted in D1, so diagnosis is never starved;
+  - out of credits, builds wait for the next day;
+  - a failed build is not retried by the queue (its credits are already spent) but can be queued again after 6 hours.
+- **Reference data** matches on the scientific name, or on an exact common name, so "sweet pea" (*Lathyrus*) never gets the garden pea's numbers.
+
+**Live profile findings (2026-10-16).**
+- **Toxicity:** the first foxglove profile came back "toxicity unknown", because one combined search let care passages crowd out toxicity. Toxicity now has its own search. Foxglove then came back toxic to pets and children, citing poison.org and an animal-poisons page.
+- **Temperature limits:** Lightning sometimes reports an ideal growing range as a temperature limit. Super rejected it every time this was seen ("a preference range, not a survival limit"), and an `ideal_temp_c` field now gives that range its own place.
+- **Variation:** which facts a profile gets varies from run to run with the pages found. With strict quoting, some real facts are rejected, so a profile can have several unsourced fields. That is the intended trade: missing facts rather than unverified ones.
+
+**Identify (`backend/knowledge/identify.py`).**
+- The vision model (Kimi-K2.6, the one non-NVIDIA model) proposes up to three species and the features it saw.
+- One Tavily search (1 credit, cached a day) finds identification pages for the top two.
+- Super re-ranks the same candidates against those pages; code drops any species Super adds and any source id that does not exist. A candidate Super leaves out drops to zero.
+- An identification counts as "checked" only when there were sources; without sources it is never preselected.
+- The gardener confirms with one tap on `/identify`, or types a name. Only then does the plant get a species, its profile is queued, and with a garden link it joins the garden.
+- Limits are 10 an hour per IP and 60 a day.
+
+**Plant-ID eval (2026-10-16, `make eval-plant-id`).** 40 licensed Commons photos of 40 common garden plants and houseplants (`evals/README.md`):
+
+| | Species top-1 | Species top-3 | Genus top-1 |
+| --- | --- | --- | --- |
+| Vision model alone | 92.5% (37/40) | 95% | 97.5% |
+| After Nemotron's check | **95% (38/40)** | 95% | 97.5% |
+
+- **The check:** it fixed one (Boston fern), broke none, and cost $0.0026 a photo with a median of 6.9 s.
+- **"Confident" (preselected) was right 31 of 33 times.** The two misses were a tulip named only to genus and a zucchini called cucumber, so the gardener's tap is still required.
+- **These photos flatter the model:** they are well lit and well framed, unlike phone photos, and Commons photos are likely in the vision model's training data. So 92-95% is an optimistic ceiling, not what a gardener's phone photo will get.
+- **One change since the eval:** the vision prompt now asks for each species once under its accepted name. The eval showed it splitting its own confidence between synonyms (rosemary as *Salvia rosmarinus* and *Rosmarinus officinalis*). This change has not been re-measured.
 
 ### M4 Leaf Care
 - [ ] Morning planner per garden, once per populated timezone; afternoon frost and heat check (Worker prefilter); Today screen; notifications service (channels, quiet hours, dedupe, rate limits); Web Push PWA; Nano 3 job triage

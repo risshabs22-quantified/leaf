@@ -332,3 +332,20 @@ textarea:focus, input:focus { outline: none; border-bottom-color: var(--green); 
 .plant-actions .textbtn { margin: 0; }
 @media (max-width: 480px) { .plant { grid-template-columns: 72px 1fr; gap: 14px; } .plant-photo { width: 72px; height: 72px; } }
 .plant-actions a, .plant-actions .textbtn, .remind a, .remind .textbtn { font: 500 14px/1.4 var(--sans); }
+
+/* Identify (M3) */
+.identify-page .slot { min-height: 96px; align-items: center; cursor: pointer; }
+.identify-page .slot input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.cands { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 14px; }
+.cand { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; }
+.cand.lead { border-color: var(--green); }
+.cand em { color: var(--muted); }
+.cand .pick { justify-self: start; }
+.other { display: grid; gap: 8px; margin-top: 8px; }
+.facts { display: grid; grid-template-columns: minmax(7em, auto) 1fr; gap: 6px 14px; margin: 12px 0; }
+.facts dt { font-weight: 600; }
+.facts dd { margin: 0; grid-column: 2; }
+.facts .cite { font-size: .8em; margin-left: 4px; }
+.facts .quote { display: block; font-size: .8em; color: var(--muted); font-style: italic; }
+.cand, .facts dd, .facts .cite { overflow-wrap: anywhere; }
+@media (max-width: 480px) { .facts { grid-template-columns: 1fr; } .facts dd { grid-column: 1; } }
