@@ -9,7 +9,7 @@ import { WAKING_HTML } from "./waking";
 export { ContainerProxy } from "@cloudflare/containers";
 
 // Worker secrets (deployed with `--secrets-file`), passed to the container and nowhere else.
-const SECRETS = ["NEBIUS_API_KEY", "TAVILY_API_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"] as const;
+const SECRETS = ["NEBIUS_API_KEY", "TAVILY_API_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "VAPID_PRIVATE_KEY"] as const;
 // Plain settings from `vars` in wrangler.jsonc.
 const SETTINGS = [
   "LEAF_DAILY_CAP",
@@ -22,6 +22,7 @@ const SETTINGS = [
   "LEAF_SPEND_CAP_USD",
   "LEAF_BROWNOUT",
   "LEAF_NANO_MODEL",
+  "VAPID_PUBLIC_KEY",
   "AWS_ENDPOINT_URL",
   "AWS_REGION",
 ] as const;
@@ -139,7 +140,8 @@ const NO_STORE = { "cache-control": "no-store" };
 // A person opening a page (not a script calling the API), so a waking screen makes sense.
 function isPageVisit(request: Request, url: URL): boolean {
   if (request.method !== "GET") return false;
-  const page = ["/", "/app", "/plants", "/identify"].includes(url.pathname) || url.pathname.startsWith("/c/");
+  const page = ["/", "/app", "/plants", "/identify", "/today"].includes(url.pathname) ||
+    url.pathname.startsWith("/c/") || url.pathname.startsWith("/g/");
   if (!page) return false;
   return (request.headers.get("accept") ?? "").includes("text/html");
 }
@@ -159,11 +161,122 @@ function isInternalPath(pathname: string): boolean {
   return pathname.toLowerCase().startsWith("/internal/") || decoded.toLowerCase().startsWith("/internal/");
 }
 
-// Cron Trigger -> the jobs it starts (docs/LEAF_PLATFORM.md, "Jobs"). UTC.
+// Cron Triggers (UTC; docs/LEAF_PLATFORM.md, "Jobs"). The Worker does the first fan-out
+// itself against D1 and wakes the container only when there is work.
+const CRON_HOUSEKEEPING = "17 7 * * *";
+const CRON_HOURLY = "5 * * * *"; // morning planning at 05:00 local, frost/heat check at 14:00
+const CRON_NWS = "35 */3 * * *"; // new NWS alerts for US cells
+const EVENING_OFFSET_H = 9; // 14:00 local is 9 hours after the 05:00 planning hour
+const FROST_C = 3; // the prefilter only decides whether to wake the container;
+const HEAT_C = 32; // the climate engine makes the real call with each plant's limits
+const NWS_UA = "Leaf garden care (https://leafathon.site)";
+// Bounds one cron run's outbound calls (Workers allow 1,000 subrequests per invocation).
+const MAX_CELLS_PER_RUN = 200;
+const NWS_EVENTS: Record<string, string> = {
+  "Frost Advisory": "frost", "Freeze Watch": "freeze", "Freeze Warning": "freeze",
+  "Heat Advisory": "heat", "Extreme Heat Watch": "heat", "Extreme Heat Warning": "heat",
+  "Wind Advisory": "wind", "High Wind Watch": "wind", "High Wind Warning": "wind",
+  "Flood Watch": "flood", "Flood Advisory": "flood", "Flood Warning": "flood",
+  "Flash Flood Watch": "flood", "Flash Flood Warning": "flood",
+};
+
 function scheduledJobs(cron: string, at: Date): Job[] {
   const day = at.toISOString().slice(0, 10);
-  if (cron === "17 7 * * *") return [{ kind: "housekeeping", key: `housekeeping:${day}`, payload: {} }];
+  if (cron === CRON_HOUSEKEEPING) return [{ kind: "housekeeping", key: `housekeeping:${day}`, payload: {} }];
   return [];
+}
+
+type CellRow = { cell: string; lat: number; lon: number };
+
+// Count the Worker's own Open-Meteo calls in the same daily and hourly allowance as the app.
+async function chargeOpenMeteo(env: Env, at: Date, units: number): Promise<void> {
+  const day = at.toISOString().slice(0, 10);
+  const hour = at.toISOString().slice(0, 13);
+  const sql = "INSERT INTO api_usage (day, service, units, calls) VALUES (?, ?, ?, 1) ON CONFLICT (day, service) DO UPDATE SET units = units + excluded.units, calls = calls + 1";
+  await env.DB.batch([
+    env.DB.prepare(sql).bind(day, "open-meteo", units),
+    env.DB.prepare(sql).bind(hour, "open-meteo:hour", units),
+  ]);
+}
+
+async function hourlyJobs(env: Env, at: Date): Promise<Job[]> {
+  const hour = at.getUTCHours();
+  const day = at.toISOString().slice(0, 10);
+  const jobs: Job[] = [];
+  // Gardens without a location are planned too (indoor plants, cycles): one job each.
+  const morning = await env.DB.prepare(
+    "SELECT DISTINCT IFNULL(cell, 'g:' || id) AS cell FROM gardens WHERE plan_hour_utc = ? LIMIT ?",
+  ).bind(hour, MAX_CELLS_PER_RUN).all<{ cell: string }>();
+  for (const r of morning.results ?? []) {
+    jobs.push({ kind: "plan_cell", key: `plan_cell:${r.cell}:${day}`, payload: { cell: r.cell } });
+  }
+  const evening = await env.DB.prepare(
+    "SELECT DISTINCT c.cell, c.lat, c.lon FROM gardens g JOIN cells c ON c.cell = g.cell WHERE g.plan_hour_utc = ? LIMIT ?",
+  ).bind((hour - EVENING_OFFSET_H + 24) % 24, MAX_CELLS_PER_RUN).all<CellRow>();
+  for (const c of evening.results ?? []) {
+    try {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&hourly=temperature_2m&forecast_hours=24&timezone=auto`;
+      const r = await fetch(url);
+      await chargeOpenMeteo(env, at, 1);
+      if (!r.ok) continue;
+      const temps = ((await r.json()) as { hourly?: { temperature_2m?: (number | null)[] } }).hourly?.temperature_2m ?? [];
+      const vals = temps.filter((t): t is number => typeof t === "number");
+      if (vals.length && (Math.min(...vals) <= FROST_C || Math.max(...vals) >= HEAT_C)) {
+        jobs.push({ kind: "evening_check", key: `evening_check:${c.cell}:${day}`, payload: { cell: c.cell } });
+      }
+    } catch (err) {
+      console.error("evening prefilter failed", c.cell, err);
+    }
+  }
+  return jobs;
+}
+
+type NwsFeature = { id?: string; properties?: Record<string, unknown> };
+
+async function nwsJobs(env: Env): Promise<Job[]> {
+  const cells = await env.DB.prepare(
+    "SELECT DISTINCT c.cell, c.lat, c.lon FROM cells c JOIN gardens g ON g.cell = c.cell WHERE c.us = 1 LIMIT ?",
+  ).bind(MAX_CELLS_PER_RUN).all<CellRow>();
+  const jobs: Job[] = [];
+  for (const c of cells.results ?? []) {
+    try {
+      const r = await fetch(`https://api.weather.gov/alerts/active?point=${c.lat.toFixed(4)},${c.lon.toFixed(4)}`, {
+        headers: { "User-Agent": NWS_UA, Accept: "application/geo+json" },
+      });
+      if (!r.ok) continue;
+      const features = ((await r.json()) as { features?: NwsFeature[] }).features ?? [];
+      const seenKey = `nws_seen:${c.cell}`;
+      const seen: string[] = JSON.parse((await env.KV.get(seenKey)) ?? "[]");
+      const fresh = [];
+      for (const f of features) {
+        const p = f.properties ?? {};
+        const event = String(p.event ?? "");
+        const id = String(p.id ?? f.id ?? "");
+        if (!id || !(event in NWS_EVENTS) || seen.includes(id)) continue;
+        fresh.push(id);
+        jobs.push({
+          kind: "alert",
+          key: `alert:${c.cell}:${id}`.slice(0, 200),
+          payload: {
+            cell: c.cell,
+            alert: {
+              id, event, kind: NWS_EVENTS[event],
+              severity: String(p.severity ?? ""), urgency: String(p.urgency ?? ""),
+              headline: String(p.headline ?? "").slice(0, 300),
+              onset: p.onset ?? null, ends: p.ends ?? p.expires ?? null,
+              instruction: String(p.instruction ?? "").slice(0, 800),
+            },
+          },
+        });
+      }
+      if (fresh.length) {
+        await env.KV.put(seenKey, JSON.stringify([...fresh, ...seen].slice(0, 50)), { expirationTtl: 3 * 86400 });
+      }
+    } catch (err) {
+      console.error("NWS check failed", c.cell, err);
+    }
+  }
+  return jobs;
 }
 
 // Backoff for a failed job: 30 s, 60 s, 120 s ... capped at an hour.
@@ -221,8 +334,13 @@ export default {
 
   // Cron Triggers only enqueue; the queue consumer wakes the container for the work.
   async scheduled(controller: ScheduledController, env: Env): Promise<void> {
-    const jobs = scheduledJobs(controller.cron, new Date(controller.scheduledTime));
-    if (jobs.length) await env.JOBS.sendBatch(jobs.map((body) => ({ body })));
+    const at = new Date(controller.scheduledTime);
+    let jobs = scheduledJobs(controller.cron, at);
+    if (controller.cron === CRON_HOURLY) jobs = await hourlyJobs(env, at);
+    if (controller.cron === CRON_NWS) jobs = await nwsJobs(env);
+    for (let i = 0; i < jobs.length; i += 100) {
+      await env.JOBS.sendBatch(jobs.slice(i, i + 100).map((body) => ({ body })));
+    }
   },
 
   // Each job runs in the container (backend/jobs.py), which answers how to settle it.

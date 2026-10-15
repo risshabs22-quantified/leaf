@@ -44,8 +44,16 @@ if env.get("AWS_ACCESS_KEY_ID") and env.get("AWS_SECRET_ACCESS_KEY"):
     keys += ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]
 else:
     print("Note: no R2 keys in .env, so reports and share links are lost when the container sleeps.")
-json.dump({k: env[k] for k in keys}, open(sys.argv[1], "w"))
-print(f"{len(keys)} secrets ready")
+secrets = {k: env[k] for k in keys}
+# Web Push private key: created once by scripts/gen_vapid.py in a user-only file (never printed).
+import os
+vapid = os.path.expanduser(os.environ.get("LEAF_VAPID_KEY_FILE", "~/.config/leaf/vapid_private.pem"))
+if os.path.exists(vapid):
+    secrets["VAPID_PRIVATE_KEY"] = open(vapid).read()
+else:
+    print("Note: no VAPID key file (run scripts/gen_vapid.py), so Web Push stays off.")
+json.dump(secrets, open(sys.argv[1], "w"))
+print(f"{len(secrets)} secrets ready")
 PY
 
 # Platform schema first: the new version's code expects it. Applies only migrations D1 has not

@@ -38,6 +38,7 @@ from backend.jobs import BridgeQueue, JobContext, JobRunner, LocalQueue, S3Objec
 from backend.journal import JournalEntry, open_journal, public_view, thumbnail
 from backend.metering import Meter, MeteredLLM
 from backend.models import ModelError, SpendCapReached, TokenFactory
+from backend.notify.webpush import WebPush
 from backend.pipeline import Leaf
 from backend.platform_api import refusal_for
 from backend.platform_api import router as platform_router
@@ -298,6 +299,12 @@ async def start_platform(app: FastAPI, s: Settings) -> None:
     app.state.identify_limiter = RateLimiter(IDENTIFY_PER_IP_PER_HOUR, IDENTIFY_DAILY_CAP)
     queue = BridgeQueue(data.bridge) if data.bridge else LocalQueue()
     objects = S3Objects(s.journal_bucket) if s.journal_bucket else None
+    if getattr(app.state, "pusher", None) is None and s.vapid_private_key:
+        try:
+            app.state.pusher = WebPush(s.vapid_private_key, s.vapid_subject)
+        except Exception:  # noqa: BLE001 - a bad key disables push, never the app
+            log.error("VAPID private key is unusable; Web Push is off")
+    pusher = getattr(app.state, "pusher", None)
     runner = JobRunner(
         JobContext(
             data.repo,
@@ -305,7 +312,7 @@ async def start_platform(app: FastAPI, s: Settings) -> None:
             s,
             meter,
             objects,
-            extra={"climate": app.state.climate, "leaf": app.state.leaf},
+            extra={"climate": app.state.climate, "leaf": app.state.leaf, "pusher": pusher},
         )
     )
     if isinstance(queue, LocalQueue):
@@ -352,9 +359,13 @@ async def security_headers(request: Request, call_next):
     response.headers.setdefault("Referrer-Policy", "no-referrer")
     if not request.url.path.startswith(("/docs", "/redoc", "/openapi")):
         response.headers.setdefault("Content-Security-Policy", CSP)
-    if request.url.path in ("/", "/app", "/plants", "/identify") or request.url.path.startswith(
-        ("/static/", "/c/")
-    ):
+    if request.url.path in (
+        "/",
+        "/app",
+        "/plants",
+        "/identify",
+        "/today",
+    ) or request.url.path.startswith(("/static/", "/c/", "/g/")):
         # Revalidate every time (a cheap 304 via ETag), so a deploy never leaves a returning
         # visitor running last version's script against this version's API.
         response.headers.setdefault("Cache-Control", "no-cache")
@@ -992,6 +1003,29 @@ if FRONTEND.exists():
     @app.get("/app", include_in_schema=False)
     async def app_page() -> FileResponse:
         return FileResponse(FRONTEND / "app.html")  # diagnose a plant
+
+    @app.get("/today", include_in_schema=False)
+    async def today_page() -> FileResponse:
+        return FileResponse(FRONTEND / "today.html")  # the garden's day
+
+    @app.get("/g/{garden_id}", include_in_schema=False)
+    async def garden_link(garden_id: str) -> FileResponse:
+        return FileResponse(FRONTEND / "today.html")  # a private link; the key is in #k=
+
+    @app.get("/sw.js", include_in_schema=False)
+    async def service_worker() -> FileResponse:
+        # Served from the root so it controls every page; never cached, so updates land.
+        return FileResponse(
+            FRONTEND / "sw.js",
+            media_type="text/javascript",
+            headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"},
+        )
+
+    @app.get("/manifest.webmanifest", include_in_schema=False)
+    async def manifest() -> FileResponse:
+        return FileResponse(
+            FRONTEND / "manifest.webmanifest", media_type="application/manifest+json"
+        )
 
     @app.get("/identify", include_in_schema=False)
     async def identify_page() -> FileResponse:

@@ -349,3 +349,21 @@ textarea:focus, input:focus { outline: none; border-bottom-color: var(--green); 
 .facts .quote { display: block; font-size: .8em; color: var(--muted); font-style: italic; }
 .cand, .facts dd, .facts .cite { overflow-wrap: anywhere; }
 @media (max-width: 480px) { .facts { grid-template-columns: 1fr; } .facts dd { grid-column: 1; } }
+
+/* Today (M4) */
+.urgent { display: grid; gap: 10px; margin: 16px 0; }
+.urgent .alert { padding: 12px 14px; border-radius: 12px; border: 1px solid var(--amber-line); background: color-mix(in srgb, var(--amber) 14%, transparent); }
+.urgent .alert p { margin: 4px 0; }
+.tasks, .water, .plant-list { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 12px; }
+.task { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; overflow-wrap: anywhere; }
+.task.urgent { border-color: var(--amber-line); }
+.task.done, .task.skipped { opacity: .6; }
+.task-time { font: 500 .8em var(--sans); color: var(--muted); }
+.task-foot { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; font-size: .85em; }
+.src { color: var(--muted); }
+.water li, .plant-list li { overflow-wrap: anywhere; }
+.water .why { display: block; }
+.plant-form select, .today-page select { display: block; width: 100%; padding: 6px 0 8px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--ink); font: inherit; }
+.quiet { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; align-items: end; }
+.quiet button { grid-column: 1 / -1; justify-self: start; margin-top: 10px; }
+#g-link { display: inline-block; width: calc(100% - 5em); }

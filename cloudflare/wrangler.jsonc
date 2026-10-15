@@ -54,7 +54,7 @@
     ]
   },
   // UTC. Each run wakes the container only when there is work (docs/LEAF_PLATFORM.md, "Jobs").
-  "triggers": { "crons": ["17 7 * * *"] },
+  "triggers": { "crons": ["17 7 * * *", "5 * * * *", "35 */3 * * *"] },
   // Not secret. API keys are Worker secrets, set by the deploy script from .env.
   "vars": {
     "LEAF_DAILY_CAP": "60",
@@ -63,6 +63,8 @@
     "LEAF_PUBLIC_URL": "https://leafathon.site",
     "LEAF_PLATFORM_URL": "http://leaf-platform.internal",
     "LEAF_SPEND_CAP_USD": "3",
+    // Web Push public key (not secret; the private key is a Worker secret).
+    "VAPID_PUBLIC_KEY": "BFQi-bEmXlUw--QfSymJraCa1UKb0JAP2iMEiV8B2pW-otSqSuYB1XpbDc4OHEZ5r0VblK5IuMviSaTpDmn-cC8",
     "AWS_ENDPOINT_URL": "https://a5df400bbbb2f6a57594bc84d3d11c56.r2.cloudflarestorage.com",
     "AWS_REGION": "auto"
   }

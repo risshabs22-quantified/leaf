@@ -408,6 +408,68 @@ None of the five matched exactly, and all five were within one half zone (four c
 
 ### M4 Leaf Care
 - [ ] Morning planner per garden, once per populated timezone; afternoon frost and heat check (Worker prefilter); Today screen; notifications service (channels, quiet hours, dedupe, rate limits); Web Push PWA; Nano 3 job triage
+- [ ] Live: a production garden planned, Today shown, and a Web Push notification delivered
+
+**The planner (`backend/care/`), in code.** Each morning, every garden gets its tasks for the day. Each task has a reason, a due time and a source; a rule without a published source is labelled "Leaf's own rule".
+
+| Task | When | Source |
+| --- | --- | --- |
+| Water or skip, per plant | 08:00; FAO-56 balance outdoors, the indoor model indoors | FAO-56 / Leaf heuristic (indoor) |
+| Protect from frost | an hour before sunset, when tonight's low is 2.2 °C (36 °F) or below, or an NWS frost or freeze alert starts by tomorrow morning (stated with the alert's own times, and used even if the forecast is down). Plants whose profile says "hardy" are skipped unless it is a hard freeze or a Freeze Warning | NWS frost criteria, NCEI thresholds, the NWS alert itself |
+| Protect from heat | 09:00, high of 32.2 °C (90 °F) or more, or an NWS heat alert | Rutgers |
+| Secure against wind | 12:00, sustained 48 km/h or gusts of 72 km/h, or an NWS wind alert | NWS wind criteria |
+| Flood | 08:00, an NWS flood alert | the NWS alert |
+| Feed | every 28 days in the growing season, only when the plant's profile has a verified feeding fact | that fact's page (the interval is Leaf's own) |
+| Harvest check | every 3 days at the fruiting or harvest stage | Leaf's own rule |
+| Prune check | monthly, outdoor plants | Leaf's own rule |
+| Photo check-in | weekly per plant, and the morning after a frost night | Leaf's own rule |
+| Scout for a pest | when season degree days reach the pest's published threshold (300 °F-days window) | the extension page with that threshold |
+
+**Pests timed by degree days (`backend/care/pests.py`).** Six pests have a published threshold, base temperature and hosts:
+- Japanese beetle: 1,030 °F-days, base 50 °F, from January 1 (Iowa State).
+- Squash vine borer: 900, base 50 °F (Wisconsin).
+- Cabbage maggot: 300, base 43 °F (Wisconsin).
+- Onion maggot: 680, base 40 °F (Wisconsin).
+- European corn borer: 375, base 50 °F (Cornell).
+- Squash bug: 193, base 58 °F (Wisconsin).
+
+Where a source does not say when to start counting, Leaf counts from January 1 and says so in the task. These are US extension thresholds counted from January 1, so pest scouting runs in the northern hemisphere only. Colorado potato beetle and codling moth are left out: they need a biofix (first egg mass, first moth catch) that Leaf cannot observe.
+
+**Models.** Code decides every task. Lightning (`care_wording`, optional) only words the morning notification from the day's task list. Code rejects its wording if it names any number, or any plant of the garden or the crop table, that the tasks do not; then a template says the same, as it does when Lightning fails or the budget is in brownout. Nano 3 (`job_triage`) turns an NWS alert into one plain line for gardeners; the alert's event decides what is done.
+
+**Schedule (Worker, UTC).**
+- **Hourly** (`5 * * * *`): the Worker reads D1 itself. It queues `plan_cell` for cells whose local time is 05:00. It also checks cells whose local time is 14:00, fetching their next-24-hour temperatures from Open-Meteo (1 unit each, counted in the shared allowance). It queues `evening_check` only at 3 °C or below, or 32 °C or above.
+- **Every 3 hours** (`35 */3 * * *`): the Worker fetches NWS alerts for US cells and queues an `alert` job only for alert IDs it has not seen (kept in KV for 3 days).
+- **Container:** it wakes only when one of those jobs exists. Each morning run also corrects the garden's planning hour for daylight saving.
+- **Gardens without a location** are planned too, one job each, for their indoor plants and cycles. A location can be added later from Today.
+- **Bounds:** each cron run handles at most 200 cells.
+- **Paying only for useful wording:** the morning wording is skipped when a garden has no open tasks or no device to send to.
+
+**Notifications (`backend/notify/`).**
+- **Channels:** chosen per garden. Web Push now; Telegram in M6.
+- **Dedupe:** a unique key per morning, evening warning, NWS alert or test, so nothing is sent twice.
+- **Quiet hours:** a routine message (the morning summary) is held in the queue until they end; they may cross midnight.
+- **Daily limit:** default 3 routine messages.
+- **Urgent alerts** (frost, freeze, heat, wind, flood) skip both the quiet hours and the daily limit, because a freeze warning held until 07:00 comes too late. The morning summary is never urgent.
+- **NWS updates:** each update of an alert gets a new id, so alerts are deduped on event and onset and are sent once. They go only to gardens with outdoor plants, and only when Nano judges them relevant to plants.
+- **Push endpoints:** only the browsers' push services (FCM, Mozilla, Apple, Windows) are accepted, because the server POSTs to them.
+- **Dead subscriptions:** a 404 or 410 from the push service deletes the subscription.
+- **VAPID keys:** `scripts/gen_vapid.py` creates the pair once. The private key goes to a user-only file (`~/.config/leaf/vapid_private.pem`, mode 600) and is never printed, then reaches Cloudflare as a Worker secret through the deploy script's secrets file. The public key is in `wrangler.jsonc`.
+
+**Today (`/today`, private link `/g/<id>#k=<key>`), installable (manifest, service worker, icons).**
+- **Setup:** create a garden from a place name or the browser's location; the time zone comes from the browser.
+- **Today:** urgent alerts on top, then tasks with time, reason and source, and one-tap Done, Skip or Undo.
+- **Water:** each plant's status, with "I watered it" and, indoors, "still wet" or "very dry" feedback.
+- **Plants:** add plants, or link to Identify for this garden.
+- **Notifications:** turn on notifications (permission asked from the tap, as iPhone requires), a test button and quiet hours.
+- **iPhone:** in Safari, not from the Home Screen, it shows how to Add to Home Screen first (Web Push needs iOS 16.4+ and an installed web app).
+
+**Measured locally (2026-10-15), real services.**
+- A Minneapolis garden with tomato, zucchini and an 8 L monstera: today's 15 mm of rain meant no watering outdoors, and the monstera got "check the soil". No frost was forecast, so there were no alerts.
+- Turning on notifications in Chromium subscribed through Google's push service. The test push was encrypted, VAPID-signed and accepted ("sent to 1/1 devices").
+- Delivery to a real Android phone or an iPhone from the Home Screen needs a real device; that check is listed under "Still to verify".
+
+**Still to verify:** a push received on a real Android phone (Chrome) and on an iPhone after Add to Home Screen.
 
 ### M5 Season Plan
 - [ ] Ultra season plan, Super verification against code rules, living plan with replanning, calendar export and printable page, Doctor wiring

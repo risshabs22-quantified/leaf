@@ -23,15 +23,24 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
+from backend.care.service import (
+    CareContext,
+    local_today,
+    morning_message,
+    plan_garden,
+    triage_alert,
+)
 from backend.climate import Climate, cell_center
+from backend.climate.nws import EVENTS, Alert
 from backend.climate.openmeteo import WeatherUnavailable, climatology_cost
 from backend.config import Settings
 from backend.context import REQUEST, RequestContext, request_scope
 from backend.data.driver import Bridge, DataError
-from backend.data.repo import EventIn, Repo, now_s
+from backend.data.repo import EventIn, Garden, Repo, now_s, plan_hour_utc
 from backend.knowledge import budget as knowledge_budget
 from backend.knowledge.profile import build_profile
 from backend.metering import Meter
+from backend.notify import deliver, notify
 from backend.schemas import ModelCall
 from backend.search import SearchPaused
 
@@ -311,6 +320,135 @@ async def _defer_species(ctx: JobContext, key: str, until: int, why: str) -> dic
     attempt = datetime.fromtimestamp(until, UTC).strftime("%Y%m%dT%H%M")
     await ctx.queue.send([species_job(key, attempt)], delay_s=max(60, until - now_s()))
     return {"deferred_until": attempt, "why": why}
+
+
+# ---------- Leaf Care (M4) ----------
+
+
+def _care(ctx: JobContext) -> CareContext:
+    return CareContext(ctx.repo, ctx.extra["climate"], ctx.extra["leaf"])
+
+
+async def _notify(ctx: JobContext, garden: Garden, **kw: Any) -> str:
+    return await notify(ctx.repo, ctx.queue, ctx.extra.get("pusher"), garden, **kw)
+
+
+async def _gardens(ctx: JobContext, cell: str) -> list[Garden]:
+    """The gardens a planning job covers: a weather cell, or one garden with no location yet
+    ("g:<id>"), which still gets its indoor and cycle tasks every morning."""
+    if cell.startswith("g:"):
+        g = await ctx.repo.get_garden(cell[2:])
+        return [g] if g is not None else []
+    return await ctx.repo.gardens_in_cell(cell)
+
+
+async def _reachable(ctx: JobContext, garden: Garden) -> bool:
+    """A garden that can actually be notified (so no wording is paid for when it cannot)."""
+    settings = await ctx.repo.get_notifications(garden.id)
+    return "push" in settings.channels and bool(await ctx.repo.list_push(garden.id))
+
+
+@job("plan_cell")
+async def plan_cell(ctx: JobContext, payload: dict[str, Any]) -> dict[str, Any]:
+    """Morning planning for every garden in a cell (05:00 local), then each garden's summary
+    notification. The forecast, alerts and degree days are fetched once for the cell."""
+    care = _care(ctx)
+    done: dict[str, Any] = {}
+    for garden in await _gardens(ctx, str(payload.get("cell", ""))):
+        hour = plan_hour_utc(garden.timezone)  # follows daylight saving
+        if hour != garden.plan_hour_utc:
+            await ctx.repo.set_plan_hour(garden.id, hour)
+        await plan_garden(care, garden)
+        day = local_today(garden).isoformat()
+        tasks = await ctx.repo.list_tasks(garden.id, day, day)
+        status = "no_tasks"
+        if any(t.status == "open" for t in tasks):
+            status = "unreachable"
+            if await _reachable(ctx, garden):
+                trace: list[ModelCall] = []
+                title, body = await morning_message(care, garden, tasks, trace)
+                # Never urgent: the morning summary waits for quiet hours to end.
+                status = await _notify(
+                    ctx,
+                    garden,
+                    kind="morning",
+                    title=title,
+                    body=body,
+                    dedupe_key=f"morning:{garden.id}:{day}",
+                )
+        done[garden.id] = {"tasks": len(tasks), "notify": status}
+    return {"gardens": len(done), "results": done}
+
+
+@job("evening_check")
+async def evening_check(ctx: JobContext, payload: dict[str, Any]) -> dict[str, Any]:
+    """14:00 local, only on days the Worker's temperature prefilter flagged: re-plan with the
+    newest forecast and warn about frost or heat before dark."""
+    care = _care(ctx)
+    sent = {}
+    for garden in await ctx.repo.gardens_in_cell(str(payload.get("cell", ""))):
+        plan = await plan_garden(care, garden)
+        day = local_today(garden).isoformat()
+        for u in plan.urgent:
+            if u["kind"] in ("frost", "heat"):
+                sent[garden.id] = await _notify(
+                    ctx,
+                    garden,
+                    kind="alert",
+                    title=u["title"],
+                    body=u["text"][:160],
+                    dedupe_key=f"evening:{garden.id}:{day}:{u['kind']}",
+                    urgent=True,
+                )
+    return {"notified": sent}
+
+
+@job("alert")
+async def nws_alert(ctx: JobContext, payload: dict[str, Any]) -> dict[str, Any]:
+    """A new NWS alert for a cell (found by the Worker): Nano 3 words it, the planner adds
+    the protection tasks, and every garden with outdoor plants in the cell is told once per
+    event and onset (NWS gives each update of an alert a new id)."""
+    alert = Alert.model_validate(payload.get("alert") or {})
+    if alert.event not in EVENTS:
+        return {"skipped": "not a garden alert"}
+    care = _care(ctx)
+    gardens = []
+    for g in await ctx.repo.gardens_in_cell(str(payload.get("cell", ""))):
+        if any(p.setting == "outdoor" for p in await ctx.repo.list_plants(g.id)):
+            gardens.append(g)
+    if not gardens:
+        return {"skipped": "no outdoor plants in this cell"}
+    trace: list[ModelCall] = []
+    triage = await triage_alert(care, alert, trace)
+    sent = {}
+    for garden in gardens:
+        await plan_garden(care, garden)
+        if not triage.relevant:
+            sent[garden.id] = "not_relevant"
+            continue
+        body = triage.summary + (f" Protect plants by {triage.act_by}." if triage.act_by else "")
+        sent[garden.id] = await _notify(
+            ctx,
+            garden,
+            kind="alert",
+            title=f"NWS {alert.event}",
+            body=body[:200],
+            dedupe_key=f"alert:{garden.id}:{alert.event}:{alert.onset or alert.id}",
+            urgent=True,
+        )
+    return {"relevant": triage.relevant, "notified": sent}
+
+
+@job("notify_send")
+async def notify_send(ctx: JobContext, payload: dict[str, Any]) -> dict[str, Any]:
+    """A notification held back by quiet hours, sent when they end."""
+    row = await ctx.repo.get_notification(str(payload.get("id", "")))
+    if row is None:
+        return {"skipped": "gone"}
+    garden = await ctx.repo.get_garden(row["garden_id"])
+    if garden is None:
+        return {"skipped": "garden deleted"}
+    return {"status": await deliver(ctx.repo, ctx.extra.get("pusher"), garden, row["id"])}
 
 
 class S3Objects:

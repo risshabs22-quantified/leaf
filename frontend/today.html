@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Today · Leaf</title>
+<meta name="description" content="Your garden today: what to water, what to protect from frost or heat, and what to check, from your own weather and plants.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M6 26C6 14 13 7 26 6c0 13-7 20-18 20z' fill='none' stroke='%2318793a' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M6 26C12 19 17 14 22 10' fill='none' stroke='%2318793a' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#18793a">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=2026101702">
+</head>
+<body class="calm">
+<canvas id="forest" aria-hidden="true"></canvas>
+<header class="site">
+  <a href="/" class="brand" aria-label="Leaf home">
+    <svg class="mark" viewBox="0 0 48 64" aria-hidden="true"><path d="M9 57C5 33 17 12 41 6c3 25-8 45-30 51" /><path d="M9 57C17 41 26 27 37 14" /></svg>
+    <span class="word">Leaf</span>
+  </a>
+  <nav class="nav" aria-label="Main">
+    <a class="wide" href="/#how">How it works</a>
+    <a class="wide" href="/#features">Features</a>
+    <a href="/today" aria-current="page">Today</a>
+    <a href="/identify">Identify</a>
+    <a class="wide" href="/plants">My plants</a>
+    <a class="nav-cta" href="/app">Diagnose</a>
+  </nav>
+</header>
+
+<main class="page today-page">
+  <div class="intro">
+    <h1 class="page-title" id="t-title">Today</h1>
+    <p id="t-sub" class="lede small"></p>
+  </div>
+  <p id="t-status" class="status" role="status" aria-live="polite"></p>
+
+  <section id="setup" class="block" hidden aria-labelledby="setup-h">
+    <h2 id="setup-h">Set up your garden</h2>
+    <p class="small">No account: Leaf gives this garden a private link. Keep it to open your garden on another device.</p>
+    <form id="setup-form">
+      <label class="field"><span class="field-label">Name</span><input id="g-name" type="text" maxlength="80" value="My garden" required></label>
+      <label class="field"><span class="field-label">Town or city <span class="opt">Used for your weather; stored to about 1 km</span></span><input id="g-place" type="text" maxlength="80" autocomplete="address-level2"></label>
+      <p><button type="button" id="g-locate" class="textbtn">Use my location instead</button> <span id="g-where" class="small"></span></p>
+      <button class="cta" type="submit"><span class="cta-text">Create my garden</span></button>
+    </form>
+  </section>
+
+  <section id="where-block" class="block" hidden aria-labelledby="where-h">
+    <h2 id="where-h">Add your garden's location</h2>
+    <p class="small">Leaf needs it for watering, frost and heat warnings. Indoor plants are cared for without it.</p>
+    <form id="where-form">
+      <label class="field"><span class="field-label">Town or city</span><input id="w-place" type="text" maxlength="80" autocomplete="address-level2" required></label>
+      <button type="submit" class="textbtn">Save location</button>
+    </form>
+  </section>
+
+  <section id="urgent" class="urgent" hidden aria-live="polite"></section>
+
+  <section id="tasks-block" class="block" hidden aria-labelledby="tasks-h">
+    <h2 id="tasks-h">To do today</h2>
+    <ol id="tasks" class="tasks"></ol>
+    <p id="tasks-empty" class="small" hidden>Nothing to do today. Leaf checks again tomorrow morning.</p>
+  </section>
+
+  <section id="water-block" class="block" hidden aria-labelledby="water-h">
+    <h2 id="water-h">Water</h2>
+    <ul id="water" class="water"></ul>
+  </section>
+
+  <section id="plants-block" class="block" hidden aria-labelledby="plants-h">
+    <h2 id="plants-h">Plants</h2>
+    <ul id="plant-list" class="plant-list"></ul>
+    <form id="plant-form" class="plant-form">
+      <label class="field"><span class="field-label">Plant name</span><input id="p-name" type="text" maxlength="80" placeholder="e.g. tomato, basil, monstera" required></label>
+      <label class="field"><span class="field-label">Where</span>
+        <select id="p-setting"><option value="outdoor">Outdoors</option><option value="indoor">Indoors</option></select></label>
+      <label class="field"><span class="field-label">Pot size in litres <span class="opt">Leave empty if it grows in the ground</span></span><input id="p-pot" type="number" min="0.2" max="500" step="0.1"></label>
+      <label class="field"><span class="field-label">Stage</span>
+        <select id="p-stage"><option value="">Not sure</option><option value="seedling">Seedling</option><option value="growing">Growing</option><option value="flowering">Flowering</option><option value="fruiting">Fruiting</option><option value="harvest">Ready to harvest</option></select></label>
+      <button class="cta" type="submit"><span class="cta-text">Add plant</span></button>
+      <a id="p-identify" class="textbtn" href="/identify">Not sure what it is? Identify it from a photo</a>
+    </form>
+  </section>
+
+  <section id="notify-block" class="block" hidden aria-labelledby="notify-h">
+    <h2 id="notify-h">Notifications</h2>
+    <p class="small">Leaf can tell you each morning what needs doing, and warn you about frost, heat, wind and floods. Nothing is sent during your quiet hours, except that it waits until they end.</p>
+    <p id="ios-hint" class="small caution-line" hidden>On iPhone and iPad: tap Share, then "Add to Home Screen", and open Leaf from your Home Screen to turn notifications on.</p>
+    <p><button id="n-enable" class="cta" type="button"><span class="cta-text">Turn on notifications</span></button> <button id="n-test" class="textbtn" type="button" hidden>Send a test</button></p>
+    <p id="n-state" class="small" role="status"></p>
+    <form id="quiet-form" class="quiet">
+      <label class="field"><span class="field-label">Quiet from</span><input id="q-start" type="time" value="21:00"></label>
+      <label class="field"><span class="field-label">Quiet until</span><input id="q-end" type="time" value="07:00"></label>
+      <button type="submit" class="textbtn">Save quiet hours</button>
+    </form>
+  </section>
+
+  <section id="link-block" class="block" hidden>
+    <h2>Your private link</h2>
+    <p class="small">Anyone with this link can see and change this garden, so keep it to yourself.</p>
+    <p><input id="g-link" type="text" readonly aria-label="Private garden link"> <button id="g-copy" class="textbtn" type="button">Copy</button></p>
+  </section>
+</main>
+
+<footer class="foot">
+  <span>Open source, MIT license. <a href="https://github.com/risshabs22-quantified/leaf">Code on GitHub</a> · <a href="https://open-meteo.com/">Weather data by Open-Meteo.com</a></span>
+  <span>Leaf gives guidance, not certainty. For food crops and any chemical, follow the product label.</span>
+</footer>
+<script src="/static/today.js?v=2026101702"></script>
+<script src="/static/rainforest.js?v=2026101702"></script>
+</body>
+</html>

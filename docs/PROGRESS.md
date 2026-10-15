@@ -21,6 +21,7 @@ Keep it short: newest entries first.
 | Platform M1: data layer (D1 via Worker bridge), routing table, Nano front door, job queue, meter and spend guard | done | https://leafathon.site on D1; 530 tests; production check below |
 | Platform M2: climate engine (forecast per cell, 1991-2020 climatology, zone, frost dates, NWS, FAO-56 water balance, indoor model, GDD, sowing) | done | `docs/LEAF_PLATFORM.md` M2; 610 tests; five-city zone check |
 | Platform M3: knowledge graph (cited species profiles, verified facts), identify from a photo with one-tap confirm, plant-ID eval | done | `docs/LEAF_PLATFORM.md` M3; 663 tests; 40-photo eval |
+| Platform M4: Leaf Care (morning planner, Today, notifications service, Web Push PWA, 14:00 frost/heat check, NWS alerts, Nano triage) | done | `docs/LEAF_PLATFORM.md` M4; 703 tests; push accepted by FCM |
 | README final, video, Devpost draft | Devpost drafted (`docs/DEVPOST.md`); video todo | `/submission-check` |
 
 ## Next
@@ -37,6 +38,27 @@ Keep it short: newest entries first.
 | 2026-10-13 | 52 tune | Quick 52% / Deep 56% / Auto 58% | 75% / 73% / 73% | lab 6% / 38% / 25% | three verdicts, Auto, fitted thresholds; checklist off (48% with it) |
 
 ## Session log
+- 2026-10-15: **Leaf Platform M4, Leaf Care** (`backend/care/`, `backend/notify/`, `/today`). Details are in `docs/LEAF_PLATFORM.md` M4.
+  - **Planner (code):** each task has a reason, a due time and a source.
+    - Water or skip per plant.
+    - Frost, heat, wind and flood protection from the forecast and NWS alerts.
+    - Feeding (only with a verified feeding fact).
+    - Harvest, prune and photo check-ins.
+    - Pest scouting for six pests with published degree-day thresholds; a researcher fetched these.
+  - **Notifications:** channels, dedupe, quiet hours (urgent alerts skip them), daily limits.
+  - **Web Push:** VAPID keys were generated into a user-only file and shipped as a Worker secret, never printed. The app is installable (manifest, service worker, icons).
+  - **Worker crons:**
+    - hourly: planning at 05:00 local, and a 14:00 frost/heat prefilter that wakes the container only on risk days;
+    - every 3 hours: NWS checks for US cells, with seen ids in KV.
+  - **Models:** Lightning words the morning message (code rejects any number or plant not in the tasks); Nano 3 triages NWS alerts.
+  - **Local run with real services:** a Minneapolis garden got the right tasks (rain day, no watering outdoors; "check the soil" indoors). Chromium subscribed through Google's push service, and a test push was accepted (1/1 devices).
+  - **Review fixes:**
+    - Alerts now work without a forecast, and a Freeze Watch two nights out no longer reads as "tonight".
+    - Urgent alerts skip quiet hours; iPhone permission is asked first on the tap; NWS updates are sent once.
+    - Gardens without a location are planned, and a location can be added later.
+    - Nano's "relevant" flag and act-by time are used safely.
+    - The service worker refuses off-site URLs; the nav fits 375 px; Worker runs are bounded.
+  - 703 tests.
 - 2026-10-16: **Leaf Platform M3, knowledge graph and identify** (`backend/knowledge/`, `/identify`). Details are in `docs/LEAF_PLATFORM.md` M3.
   - **Profiles:** each profile comes from Tavily sources (a care search with a batched extract, plus its own toxicity search). Lightning extracts facts with exact quotes, code checks them, and Super verifies them. Unsourced fields are listed, and toxicity fails safe in code.
   - **Identify:** the vision model proposes, Super re-ranks against sources, and the gardener taps one (or types a name). The profile is then built and shown with every fact's source.

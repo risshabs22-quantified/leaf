@@ -379,3 +379,14 @@ class CheckedCandidate(BaseModel):
 class IdentifyCheck(BaseModel):
     ranking: list[CheckedCandidate] = Field(default_factory=list)
     summary: str = ""
+
+
+class CareWording(BaseModel):
+    title: str = Field("", max_length=200)
+    body: str = Field("", max_length=600)
+
+
+class AlertTriage(BaseModel):
+    relevant: bool = True
+    summary: str = Field("", max_length=600)
+    act_by: str = ""

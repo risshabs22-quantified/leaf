@@ -1,0 +1,16 @@
+{
+  "id": "/today",
+  "name": "Leaf: your garden, day by day",
+  "short_name": "Leaf",
+  "description": "Daily garden care from your weather and plants, frost and heat alerts, and a plant doctor.",
+  "start_url": "/today",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f6f1",
+  "theme_color": "#18793a",
+  "icons": [
+    { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

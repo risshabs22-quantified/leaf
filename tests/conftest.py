@@ -20,6 +20,7 @@ from backend.models import CallResult, ModelError, ToolCall
 from backend.pipeline import Leaf
 from backend.prompts import (
     AGENT_SYSTEM,
+    CARE_WORDING_SYSTEM,
     CHAT_SYSTEM,
     CHECKIN_PLAN_SYSTEM,
     CHECKIN_VISION_SYSTEM,
@@ -31,6 +32,7 @@ from backend.prompts import (
     FRONT_DOOR_SYSTEM,
     IDENTIFY_CHECK_SYSTEM,
     IDENTIFY_SYSTEM,
+    JOB_TRIAGE_SYSTEM,
     LOOK_CLOSER_SYSTEM,
     PLAN_DEEP_SYSTEM,
     PLAN_SYSTEM,
@@ -105,6 +107,8 @@ def step_of(messages: list[dict[str, Any]]) -> str:
         FACT_VERIFY_SYSTEM: "fact_verify",
         IDENTIFY_SYSTEM: "identify",
         IDENTIFY_CHECK_SYSTEM: "identify_check",
+        CARE_WORDING_SYSTEM: "care_wording",
+        JOB_TRIAGE_SYSTEM: "job_triage",
     }.get(system, "repair")
 
 

@@ -961,3 +961,140 @@ class Repo:
             )
             > 0
         )
+
+    # ---------- care and notifications (M4) ----------
+
+    async def gardens_in_cell(self, cell: str) -> list[Garden]:
+        rows = await query(self.db, "SELECT * FROM gardens WHERE cell = ? ORDER BY id", cell)
+        return [_garden(r) for r in rows]
+
+    async def set_plan_hour(self, garden_id: str, hour: int) -> None:
+        await execute(self.db, "UPDATE gardens SET plan_hour_utc = ? WHERE id = ?", hour, garden_id)
+
+    async def create_notification(
+        self,
+        garden_id: str,
+        dedupe_key: str,
+        kind: str,
+        title: str,
+        body: str,
+        url: str = "/today",
+        urgent: bool = False,
+    ) -> str | None:
+        """A new notification's id, or None when `dedupe_key` was already used (never send
+        the same reminder or alert twice)."""
+        nid = new_id()
+        changed = await execute(
+            self.db,
+            "INSERT OR IGNORE INTO notifications (id, garden_id, dedupe_key, kind, urgent,"
+            " title, body, url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            nid,
+            garden_id,
+            dedupe_key[:200],
+            kind,
+            int(urgent),
+            title[:120],
+            body[:400],
+            url[:200],
+            now_s(),
+        )
+        return nid if changed else None
+
+    async def get_notification(self, nid: str) -> dict[str, Any] | None:
+        rows = await query(self.db, "SELECT * FROM notifications WHERE id = ?", nid)
+        return rows[0] if rows else None
+
+    async def mark_notification(self, nid: str, status: str, note: str = "") -> None:
+        await execute(
+            self.db,
+            "UPDATE notifications SET status = ?, note = ?, sent_at = CASE WHEN ? = 'sent'"
+            " THEN ? ELSE sent_at END WHERE id = ?",
+            status,
+            note[:300],
+            status,
+            now_s(),
+            nid,
+        )
+
+    async def sent_since(self, garden_id: str, since: int, urgent: bool | None = None) -> int:
+        sql = "SELECT COUNT(*) AS n FROM notifications WHERE garden_id = ? AND status = 'sent'"
+        sql += " AND sent_at >= ?"
+        params: list[Any] = [garden_id, since]
+        if urgent is not None:
+            sql += " AND urgent = ?"
+            params.append(int(urgent))
+        rows = await query(self.db, sql, *params)
+        return int(rows[0]["n"]) if rows else 0
+
+    async def list_notifications(self, garden_id: str, limit: int = 20) -> list[dict[str, Any]]:
+        return await query(
+            self.db,
+            "SELECT id, kind, urgent, title, body, url, status, note, created_at, sent_at"
+            " FROM notifications WHERE garden_id = ? ORDER BY created_at DESC LIMIT ?",
+            garden_id,
+            max(1, min(limit, 100)),
+        )
+
+    async def add_push(self, garden_id: str, endpoint: str, p256dh: str, auth: str) -> str:
+        """Save a browser's subscription (an endpoint moves to the newest garden)."""
+        sid = new_id()
+        await execute(
+            self.db,
+            "INSERT INTO push_subscriptions (id, garden_id, endpoint, p256dh, auth, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (endpoint) DO UPDATE SET"
+            " garden_id = excluded.garden_id, p256dh = excluded.p256dh, auth = excluded.auth,"
+            " failures = 0",
+            sid,
+            garden_id,
+            endpoint,
+            p256dh,
+            auth,
+            now_s(),
+        )
+        return sid
+
+    async def list_push(self, garden_id: str) -> list[dict[str, Any]]:
+        return await query(
+            self.db, "SELECT * FROM push_subscriptions WHERE garden_id = ?", garden_id
+        )
+
+    async def delete_push(self, garden_id: str, endpoint: str) -> bool:
+        return (
+            await execute(
+                self.db,
+                "DELETE FROM push_subscriptions WHERE garden_id = ? AND endpoint = ?",
+                garden_id,
+                endpoint,
+            )
+            > 0
+        )
+
+    async def push_result(self, sub_id: str, ok: bool, gone: bool = False) -> None:
+        if gone:
+            await execute(self.db, "DELETE FROM push_subscriptions WHERE id = ?", sub_id)
+        elif ok:
+            await execute(
+                self.db,
+                "UPDATE push_subscriptions SET last_ok = ?, failures = 0 WHERE id = ?",
+                now_s(),
+                sub_id,
+            )
+        else:
+            await execute(
+                self.db,
+                "UPDATE push_subscriptions SET failures = failures + 1 WHERE id = ?",
+                sub_id,
+            )
+
+    async def set_location(self, garden_id: str, lat: float, lon: float) -> Garden | None:
+        """Add or move a garden's location (rounded to 0.01 degrees, as at creation)."""
+        lat, lon = round(lat, 2), round(lon, 2)
+        await execute(
+            self.db,
+            "UPDATE gardens SET lat = ?, lon = ?, cell = ? WHERE id = ?",
+            lat,
+            lon,
+            grid_cell(lat, lon),
+            garden_id,
+        )
+        return await self.get_garden(garden_id)

@@ -192,6 +192,13 @@ class Settings:
     platform_db: str = field(default_factory=lambda: _env("LEAF_PLATFORM_DB", "data/platform.db"))
     # Hard daily model spend (UTC day). At brownout x cap, optional tasks use rules or
     # templates; at the cap every model call is refused and Leaf runs rules-only.
+    # Web Push (VAPID). The public key is not secret (browsers need it); the private key is a
+    # Worker secret. No private key: notifications are recorded but nothing is pushed.
+    vapid_public_key: str = field(default_factory=lambda: _env("VAPID_PUBLIC_KEY"))
+    vapid_private_key: str = field(default_factory=lambda: _env("VAPID_PRIVATE_KEY"), repr=False)
+    vapid_subject: str = field(
+        default_factory=lambda: _env("VAPID_SUBJECT", "https://leafathon.site")
+    )
     spend_cap_usd: float = field(default_factory=lambda: _env_float("LEAF_SPEND_CAP_USD", 3.0))
     brownout: float = field(default_factory=lambda: _env_float("LEAF_BROWNOUT", 0.8))
 

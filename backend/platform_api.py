@@ -17,6 +17,7 @@ from fastapi import APIRouter, File, Form, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
+from backend.care.service import CareContext, local_today, ordered, plan_garden
 from backend.climate import Climate, cell_center
 from backend.climate.crops import GENERAL_GDD_BASE_C, Crop, find_crop
 from backend.climate.forecast import Forecast
@@ -50,6 +51,7 @@ from backend.knowledge import budget as knowledge_budget
 from backend.knowledge import species_key
 from backend.knowledge.identify import identify
 from backend.knowledge.profile import profile_view
+from backend.notify import notify
 from backend.router import REFUSALS, front_door
 from backend.schemas import FrontDoorDecision, Intent, ModelCall
 from backend.spray import plan_spray
@@ -275,9 +277,16 @@ def summarize_usage(raw: dict[str, list[dict[str, Any]]], guard: dict[str, Any])
     for r in raw["calls"]:
         t = by_task.setdefault(
             r["task"],
-            {"calls": 0, "failed": 0, "prompt_tokens": 0, "completion_tokens": 0,
-             "cost_usd": 0.0, "latency_ms_sum": 0.0, "models": {}},
-        )  # fmt: skip
+            {
+                "calls": 0,
+                "failed": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "cost_usd": 0.0,
+                "latency_ms_sum": 0.0,
+                "models": {},
+            },
+        )
         calls = int(r["calls"])
         t["calls"] += calls
         t["failed"] += int(r["failed"] or 0)
@@ -687,3 +696,167 @@ async def confirm_identification(
         "from_candidates": candidate is not None,
         "plant": plant.model_dump() if plant else None,
     }
+
+
+# ---------- Leaf Care (M4): Today, push, place search ----------
+
+
+def _care_ctx(request: Request) -> CareContext:
+    return CareContext(_repo(request), _climate(request), request.app.state.leaf)
+
+
+@router.get("/api/gardens/{garden_id}/today")
+async def today(request: Request, garden_id: str, key: Key = None) -> dict[str, Any]:
+    """The garden's day: urgent alerts first, then every task with its reason, due time and
+    source, and each plant's water status. Plans on demand (idempotent), so a new garden or a
+    late change in the forecast shows at once."""
+    garden = await _open(request, garden_id, key)
+    ctx = REQUEST.get()
+    plan = await plan_garden(_care_ctx(request), garden, trace_id=ctx.trace_id if ctx else "")
+    day = local_today(garden).isoformat()
+    tasks = ordered(await _repo(request).list_tasks(garden.id, day, day))
+    alerts: list[dict[str, Any]] = []
+    if garden.cell:
+        try:
+            nws = await _climate(request).alerts(garden.cell)
+            alerts = [a.model_dump() for a in nws.alerts]
+        except AlertsUnavailable:
+            pass
+    return {
+        "garden": garden.model_dump(),
+        "date": day,
+        "urgent": plan.urgent,
+        "alerts": alerts,
+        "tasks": [t.model_dump() for t in tasks],
+        "water": plan.water,
+        "attribution": {"text": ATTRIBUTION, "url": ATTRIBUTION_URL},
+    }
+
+
+# Push services the major browsers use. Leaf's server POSTs to a subscription's endpoint, so
+# any other host is refused (otherwise a forged endpoint could aim requests anywhere).
+PUSH_HOSTS = (
+    "fcm.googleapis.com",
+    "updates.push.services.mozilla.com",
+    "push.services.mozilla.com",
+    "web.push.apple.com",
+    "notify.windows.com",
+)
+
+
+def push_host_ok(endpoint: str) -> bool:
+    from urllib.parse import urlparse
+
+    u = urlparse(endpoint)
+    host = (u.hostname or "").lower()
+    return u.scheme == "https" and any(host == h or host.endswith("." + h) for h in PUSH_HOSTS)
+
+
+class PushKeys(BaseModel):
+    p256dh: str = Field(..., min_length=20, max_length=200)
+    auth: str = Field(..., min_length=8, max_length=100)
+
+
+class PushSubscription(BaseModel):
+    endpoint: str = Field(..., max_length=1000)
+    keys: PushKeys
+
+
+@router.get("/api/push/key")
+async def push_key(request: Request) -> dict[str, Any]:
+    s = request.app.state.leaf.settings
+    enabled = bool(s.vapid_public_key and getattr(request.app.state, "pusher", None))
+    return {"public_key": s.vapid_public_key, "enabled": enabled}
+
+
+@router.post("/api/gardens/{garden_id}/push")
+async def push_subscribe(
+    request: Request, garden_id: str, body: PushSubscription, key: Key = None
+) -> dict[str, Any]:
+    garden = await _open(request, garden_id, key)
+    if not push_host_ok(body.endpoint):
+        raise HTTPException(422, "That is not a browser push service.")
+    repo = _repo(request)
+    await repo.add_push(garden.id, body.endpoint, body.keys.p256dh, body.keys.auth)
+    settings = await repo.get_notifications(garden.id)
+    if "push" not in settings.channels:
+        settings.channels = [*settings.channels, "push"]
+        await repo.put_notifications(garden.id, settings)
+    return {"subscribed": True, "devices": len(await repo.list_push(garden.id))}
+
+
+class PushEndpoint(BaseModel):
+    endpoint: str = Field(..., max_length=1000)
+
+
+@router.post("/api/gardens/{garden_id}/push/remove")
+async def push_unsubscribe(
+    request: Request, garden_id: str, body: PushEndpoint, key: Key = None
+) -> dict[str, Any]:
+    garden = await _open(request, garden_id, key)
+    removed = await _repo(request).delete_push(garden.id, body.endpoint)
+    return {"removed": removed}
+
+
+@router.post("/api/gardens/{garden_id}/push/test")
+async def push_test(request: Request, garden_id: str, key: Key = None) -> dict[str, Any]:
+    """Send a test notification to this garden's devices (at most one a minute)."""
+    garden = await _open(request, garden_id, key)
+    minute = datetime.now(UTC).strftime("%Y%m%d%H%M")
+    status = await notify(
+        _repo(request),
+        request.app.state.queue,
+        getattr(request.app.state, "pusher", None),
+        garden,
+        kind="test",
+        title="Leaf notifications are on",
+        body="This is how Leaf will tell you about frost, heat and today's garden tasks.",
+        dedupe_key=f"test:{garden.id}:{minute}",
+        urgent=True,
+        respect_quiet=False,
+    )
+    return {"status": status}
+
+
+@router.get("/api/gardens/{garden_id}/notifications/history")
+async def notification_history(request: Request, garden_id: str, key: Key = None) -> list[dict]:
+    garden = await _open(request, garden_id, key)
+    return await _repo(request).list_notifications(garden.id)
+
+
+@router.get("/api/geocode")
+async def geocode(request: Request, q: Annotated[str, Query(min_length=2, max_length=80)]) -> dict:
+    """A place name to coordinates for setting a garden's location (Open-Meteo geocoding)."""
+    request.app.state.tool_limiter.check(_ip(request))
+    weather = request.app.state.weather
+    try:
+        place = await weather.geocode(q)
+    except ConditionsError as exc:
+        raise HTTPException(502, "The place search is unavailable right now.") from exc
+    if place is None:
+        raise HTTPException(404, "Leaf could not find that place.")
+    return {"label": place.label, "lat": place.lat, "lon": place.lon}
+
+
+class Location(BaseModel):
+    lat: float = Field(..., ge=-90, le=90)
+    lon: float = Field(..., ge=-180, le=180)
+
+
+@router.post("/api/gardens/{garden_id}/location")
+async def set_location(
+    request: Request, garden_id: str, body: Location, key: Key = None
+) -> dict[str, Any]:
+    """Add or move the garden's location; its weather cell and climatology follow."""
+    garden = await _open(request, garden_id, key)
+    updated = await _repo(request).set_location(garden.id, body.lat, body.lon)
+    job = JobMessage(
+        kind="garden_ready",
+        key=f"garden_ready:{garden.id}:{updated.cell}",
+        payload={"garden_id": garden.id},
+    )
+    try:
+        await request.app.state.queue.send([job])
+    except DataError as exc:
+        log.warning("could not queue garden_ready for %s: %s", garden.id, exc)
+    return {"garden": updated.model_dump()}
