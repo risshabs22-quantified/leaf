@@ -198,12 +198,12 @@ def test_frost_rules_remove_early_and_late_plantings_and_caution_the_margin():
         may,
         ULTRA,
     )
-    assert [r["week"] for r in removed] == [may[0]]
+    # Very tender: May 1 + 14 days = May 15, so the week of May 11 starts too early as well.
+    assert [r["week"] for r in removed] == [may[0], may[1]]
     assert "Too early" in removed[0]["reason"] and "May 15" in removed[0]["reason"]
-    margin = next(k for k in kept if k["week"] == may[1])
-    texts = " ".join(c["text"] for c in margin["cautions"])
-    assert "Not before May 15" in texts and "1 year in 10" in texts
-    assert not next(k for k in kept if k["week"] == may[2])["cautions"]
+    assert [k["week"] for k in kept] == [may[2]]
+    texts = " ".join(c["text"] for c in kept[0]["cautions"])
+    assert "1 year in 10" not in texts  # May 18 is after the 1-in-10 late frost date (May 15)
     octo = weeks_of(2026, 10)
     _, late = check_items([item(octo[0], "p1", "sow", "Sow tomatoes")], inp, octo, ULTRA)
     assert late and "Too late" in late[0]["reason"]
@@ -999,3 +999,21 @@ async def test_replans_wait_in_brownout():
     llm.complete = capped
     out = await replan(ctx, g, {"kind": "frost", "key": "k", "weeks": [MAY[2]], "text": "t"})
     assert out["skipped"].startswith("brownout")
+
+
+def test_the_outline_moves_a_mid_week_earliest_date_to_the_next_week_instead_of_losing_it():
+    from backend.season import outline_items
+
+    inp = inputs()
+    may = weeks_of(2026, 5)  # the earliest tomato date is May 15, a Friday: week of May 11
+    kept, removed = outline_items(
+        [
+            item(may[1], "p1", "transplant", "Plant out the tomatoes"),  # holds May 15: moves
+            item(may[0], "p1", "sow", "Sow tomatoes outdoors"),  # a week too early: removed
+        ],
+        inp,
+        may,
+        ULTRA,
+    )
+    assert [(k["week"], k["action"]) for k in kept] == [(may[2], "Plant out the tomatoes")]
+    assert [r["week"] for r in removed] == [may[0]] and "Too early" in removed[0]["reason"]

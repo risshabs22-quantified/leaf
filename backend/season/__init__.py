@@ -530,9 +530,8 @@ def _rules(
         return None
     cls = CLASS_LABEL[pp.frost_class]
     why_cls = " (Leaf has no source on its frost tolerance, so treats it as tender)" * pp.assumed
-    sunday = week + timedelta(days=6)
     earliest = inputs.earliest(pp, week)
-    if earliest and sunday < earliest:
+    if earliest and week < earliest:  # the week must start on or after the earliest date
         return (
             f"Too early: {pp.name} is {cls}{why_cls}; it goes outdoors from {fmt_day(earliest)}"
             " here (CSU Extension, from the average last spring frost)."
@@ -549,13 +548,6 @@ def _rules(
         return (
             f"Too cold: daytime highs here average {fmt_c(tmax)} in {week.strftime('%B')};"
             f" {cls} plants need {fmt_c(need)} or more (CSU Extension)."
-        )
-    if earliest and week < earliest:
-        item["cautions"].append(
-            {
-                "text": f"Not before {fmt_day(earliest)} this week ({cls}).",
-                "source": source("csu_planting"),
-            }
         )
     late = inputs.last_frost(week, "risk_10")
     if pp.frost_class != "hardy" and late and week <= late:
@@ -628,13 +620,36 @@ def _products(item: dict[str, Any], inputs: PlanInputs, week: date) -> str | Non
 # ---------- the outline: each plant's sowing and planting-out weeks ----------
 
 
+def _snap_outline(raw: list[Any], inputs: PlanInputs, weeks: list[str]) -> list[dict[str, Any]]:
+    """A planting dated in the week that holds a plant's earliest outdoor date (weeks start
+    on Monday, the date falls mid-week) moves to the first week that starts on or after it,
+    so the plan keeps the planting instead of losing it. Nothing earlier is moved."""
+    out = []
+    for r in raw:
+        r = dict(r if isinstance(r, dict) else r.model_dump())
+        pp = inputs.plants.get(str(r.get("plant") or "").strip())
+        try:
+            week = monday(date.fromisoformat(str(r.get("week"))[:10]))
+        except ValueError:
+            out.append(r)
+            continue
+        kind = str(r.get("kind") or "").strip().lower()
+        earliest = inputs.earliest(pp, week) if pp and pp.outdoor and kind in STARTS else None
+        if earliest and week < earliest <= week + timedelta(days=6):
+            later = (week + timedelta(weeks=1)).isoformat()
+            if later in weeks:
+                r["week"] = later
+        out.append(r)
+    return out
+
+
 def outline_items(
     raw: list[Any], inputs: PlanInputs, weeks: list[str], by: str
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """The outline's milestones, through the same code rules; only plantings are kept, at
     most a few per plant. Every month of the plan takes its plantings from here, so the
     months (written separately) cannot contradict each other."""
-    kept, removed = check_items(raw, inputs, weeks, by, limit=False)
+    kept, removed = check_items(_snap_outline(raw, inputs, weeks), inputs, weeks, by, limit=False)
     per_plant: dict[str, int] = {}
     out = []
     for it in kept:
