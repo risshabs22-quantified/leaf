@@ -47,6 +47,8 @@ Keep it short: newest entries first.
   - **Telegram:** webhook with a secret token, linking by one-time code, `/today`, `/season`, photo diagnosis, notifications through the same service as Web Push. Off and hidden without a token.
   - **Review:** one blocker (the bot token reached the logs through the HTTP library's request log) and five should-fix items, fixed with tests, one confirmed by mutation.
   - **Also fixed:** four M4 tests that failed between 21:00 and 07:00 UTC (quiet hours).
+  - **Production check:** migration 0006 applied; the Connect page, a key, a TEST reading, the REST API and MCP (both protocol eras) worked in a real browser session, Telegram stayed off and hidden; test garden deleted.
+  - **To finish Telegram (needs you):** make a bot with @BotFather, add `TELEGRAM_BOT_TOKEN=<token>` to the env file, run `make deploy-cloudflare`, then `.venv/bin/python -m scripts.telegram_setup`.
   - **Live, local:** the sensor override, REST diagnose (12 s) and MCP calls with real weather, Tavily and Nemotron; the `/connect` page in headless Chromium at 375 px.
 - 2026-10-15: **Leaf Platform M5, Season Plan** (`backend/season/`, `/season`). Details are in `docs/LEAF_PLATFORM.md` M5.
   - **Writing:** one Ultra outline call fixes every planting date. Then one Ultra call per month, saved as each is written, so a timeout retry writes only what is missing.

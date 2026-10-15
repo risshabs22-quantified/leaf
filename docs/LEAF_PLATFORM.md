@@ -537,7 +537,7 @@ When a check-in is added to that report, the loop closes: the check-in task is m
 - [x] Home Assistant webhook: a sensor reading replaces the water balance; test readings are labelled
 - [x] Telegram bot, built and tested against a fake Bot API (hidden until its token is set)
 - [ ] Live: the Telegram bot with a real token (needs the token from @BotFather; steps below), the MCP server from a real MCP client, and the webhook from a real Home Assistant
-- [ ] Live: the Connect page and the API on production (PRODUCTION_CHECK_M6)
+- [x] Live on production (headless Chromium, one test garden, deleted afterwards): the Connect page, a key made in it, a TEST reading, the REST API and MCP
 
 Everything below calls the same functions (`backend/connect/tools.py`), so the web page, the API, MCP and Telegram cannot drift apart. A garden has no account, so a key belongs to a garden and acts for it.
 
@@ -611,6 +611,11 @@ Everything below calls the same functions (`backend/connect/tools.py`), so the w
 - **REST:** diagnose from notes took 12 s ("likely", 3 causes, 4 steps, 6 sources, owner token returned) and, with `plant_id`, added 5 tasks to the garden. `weather-risk` returned a freeze risk for the coming night.
 - **MCP:** `initialize` (2025), `tools/list` in both eras, `care_plan`, `weather_risk` and `diagnose` (7 s, no owner token in the result), called as raw JSON-RPC.
 - **Connect page** in headless Chromium at 375 px: made a key, copied snippets with the key and a plant id filled in, sent a TEST reading; no horizontal scroll, zero console messages.
+
+**Measured in production (2026-10-15).** Migration 0006 applied to D1. In a real headless browser at 375 px, the Connect page made a `readings` and `tools` key and sent a test reading, with zero console messages.
+- **API:** the key worked, a call without one was 401, the OpenAPI document listed 7 paths with a bearer scheme, and a `test: true` reading showed `label: test` in the readings list and on Today's water list, where the sensor reading said no water was needed.
+- **MCP:** `initialize` (2025-11-25), `server/discover` (2026-07-28), and the five tools listed; `tools/call` without a key was 401. `care_plan` and `weather_risk` worked, and `diagnose` took 10 s ("Early blight", no owner token in the result, 5 tasks added to the plant).
+- **Telegram:** off, as designed: `/api/connect/status` says so, the Connect page hides its section, and the webhook answers 404.
 
 **Limits.**
 - Telegram, the MCP server from a real client (Claude Code, Cursor), and Home Assistant itself have not been run live: the bot needs a token, and the other two were exercised with the same HTTP calls their clients make.
