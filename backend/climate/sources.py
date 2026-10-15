@@ -93,6 +93,12 @@ SOURCES: dict[str, Source] = {
         "url": "https://ucanr.edu/blog/nursery-and-flower-grower/article/soil-mixes-part-3-how-"
         "much-air-and-water",
     },
+    "csu_planting": {
+        "title": "Colorado State University Extension, CMG GardenNotes #720: Vegetable Planting "
+        "Guide (hardy, semi-hardy, tender and very tender crops; planting dates from the "
+        "average last spring frost)",
+        "url": "https://extension.colostate.edu/resource/vegetable-planting-guide/",
+    },
     "HEURISTIC": {
         "title": "Leaf heuristic: no published source; an assumption shown as such",
         "url": "",

@@ -26,6 +26,7 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 from backend.actives import apply_garden
 from backend.cache import SharedCache
 from backend.calendar_file import Reminder, ics
+from backend.care.service import CareContext
 from backend.checkin import check_in
 from backend.climate import Climate
 from backend.conditions import ConditionsError, WeatherClient
@@ -52,6 +53,7 @@ from backend.search import (
     search_paused,
     tavily_balance,
 )
+from backend.season.service import checkin_loop
 from backend.spray import SprayForecast, plan_spray
 from backend.store import MemoryCaseStore
 from backend.vision import discover_vision_model, prepare_image, prepare_photo
@@ -990,7 +992,23 @@ async def checkin(
         await request.app.state.journal.put(fresh)
     if len(_checkin_locks) > 1000:
         _checkin_locks.clear()
+    await _close_loop(request, fresh, record)
     return public_view(fresh)
+
+
+async def _close_loop(request: Request, entry: JournalEntry, record: Any) -> None:
+    """A report linked to a garden (Leaf Doctor wiring): the check-in closes its task and
+    keeps the garden's plan in step. A failure here never fails the check-in."""
+    data = getattr(request.app.state, "data", None)
+    if data is None:
+        return
+    try:
+        ctx = CareContext(data.repo, request.app.state.climate, request.app.state.leaf)
+        await checkin_loop(
+            ctx, request.app.state.queue, entry.id, entry.report, record, len(entry.checkins)
+        )
+    except Exception:  # noqa: BLE001
+        log.exception("could not update the garden after a check-in")
 
 
 if FRONTEND.exists():
@@ -1026,6 +1044,10 @@ if FRONTEND.exists():
         return FileResponse(
             FRONTEND / "manifest.webmanifest", media_type="application/manifest+json"
         )
+
+    @app.get("/season", include_in_schema=False)
+    async def season_page() -> FileResponse:
+        return FileResponse(FRONTEND / "season.html")
 
     @app.get("/identify", include_in_schema=False)
     async def identify_page() -> FileResponse:

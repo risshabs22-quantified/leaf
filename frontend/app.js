@@ -288,6 +288,42 @@ function drawDifferential(hyps) {
   });
 }
 
+// ------------------------------------------------------------------ Leaf Doctor -> garden
+
+// A garden on this device (from Today) can take the diagnosis: its steps become today's
+// tasks, a check-in is scheduled, and the season plan's next weeks are replanned.
+async function offerGarden(d) {
+  const box = $("to-garden");
+  box.hidden = true;
+  $("tg-state").textContent = "";
+  let g = null;
+  try { g = JSON.parse(localStorage.getItem("leaf.garden") || "null"); } catch {}
+  if (!d || !g || !g.id || !g.key) return;
+  let plants = [];
+  try {
+    const r = await fetch(`/api/gardens/${encodeURIComponent(g.id)}`, { headers: { "X-Leaf-Key": g.key } });
+    if (!r.ok) return;
+    plants = ((await r.json()).plants || []).filter((p) => p.status === "active");
+  } catch { return; }
+  if (!plants.length) return;
+  $("tg-plant").innerHTML = plants.map((p) => `<option value="${esc(p.id)}">${esc(p.nickname || p.common_name || p.species || "Plant")}</option>`).join("");
+  box.hidden = false;
+  $("tg-add").onclick = async () => {
+    $("tg-state").textContent = "Adding…";
+    try {
+      const r = await fetch(`/api/gardens/${encodeURIComponent(g.id)}/plants/${encodeURIComponent($("tg-plant").value)}/diagnosis`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "X-Leaf-Key": g.key },
+        body: JSON.stringify({ case_id: d.case_id, owner_token: d.owner_token }),
+      });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(out.detail || "Leaf could not add it. Try again.");
+      const when = new Date(`${out.checkin_on}T12:00:00`).toLocaleDateString([], { weekday: "long", day: "numeric", month: "short" });
+      $("tg-state").textContent = `Added to Today. Check-in photo due ${when}.` + (out.replan ? " Leaf is updating the next weeks of your season plan." : "");
+    } catch (err) { $("tg-state").textContent = err.message; }
+  };
+}
+
 // ------------------------------------------------------------------ render a result
 
 function render(d) {
@@ -315,6 +351,7 @@ function render(d) {
       checkin_days: d.plan.check_in_days, plant: (d.observation && d.observation.plant_guess) || "",
     });
   }
+  offerGarden(saved ? d : null);
   $("summary").textContent = d.summary || d.diagnosis.reasoning_summary;
   const byId = Object.fromEntries((d.evidence || []).map((e) => [e.id, e]));
   if (deep && d.differential && d.differential.length) {

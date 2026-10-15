@@ -130,9 +130,10 @@ Per-task budgets are listed below. `max_tokens` is the cap on one call's output,
 | `care_wording` (per garden per day) | Lightning → Nano | off | 1200 | 800 / 400 | 0.00014 | M4 |
 | `notify_text` | Lightning → Nano | off | 300 | 300 / 100 | 0.00004 | M4 |
 | `translate` | Lightning | off | 1500 | 600 / 600 | 0.0002 | M4 |
-| `season_plan` | Ultra → Super | on | 16000 | 8000 / 8000 | 0.032 | M5 |
-| `plan_verify` | Super → Ultra | on | 3000 | 10000 / 1500 | 0.0044 | M5 |
-| `replan` | Ultra → Super | on | 8000 | 6000 / 3000 | 0.015 | M5 |
+| `season_outline` (planting dates, 1 a plan) | Ultra → Super | on | 16000 | 3500 / 6600 (measured) | 0.023 | M5 |
+| `season_plan` (one month, 13 a plan) | Ultra → Super | on | 16000 | 2750 / 3050 (measured) | 0.012 | M5 |
+| `plan_verify` (25 items a call) | Super → Ultra | on | 8000 | 5300 / 5750 (measured) | 0.0068 | M5 |
+| `replan` (optional) | Ultra → Super | on | 8000 | 2450 / 2350 (measured) | 0.0095 | M5 |
 | `radar_extract` | Lightning → Super | off | 2000 | 4000 / 1000 | 0.0005 | M7 |
 
 Routing rules:
@@ -147,7 +148,7 @@ Routing rules:
 - **Shared work is computed once.** Forecasts are cached per 0.1° grid cell (about 11 km) per hour, and climatology per cell for good. Species profiles are cached per species for every user. Radar runs per region per week. Daily planning runs per cell, then per garden.
 - **The meter** records every model call (task, model, tokens, cost, latency, cache hit, trace id) in D1 in one batch per request. `GET /api/ops/usage` publishes the aggregates, with no personal data.
 - **Spend guard:** a hard daily cap, `LEAF_SPEND_CAP_USD`, defaulting to $3.00 per UTC day. It is restored from D1 when the container restarts.
-  - At 80% of the cap Leaf goes into *brownout*: optional tasks (`front_door`, `care_wording`, `notify_text`, `translate`) switch to rules and templates.
+  - At 80% of the cap Leaf goes into *brownout*: optional tasks (`front_door`, `care_wording`, `notify_text`, `translate`, `replan`) switch to rules and templates, or wait (a replan job retries later).
   - At 100% Leaf is in *rules-only* mode. Model calls are refused before they are sent, care and alerts keep working from code, and diagnosis says plainly that it is paused until 00:00 UTC.
   - The existing per-feature caps stay: 60 diagnoses and 20 Deep cases a day, and Tavily credits sized from the live balance.
 
@@ -155,18 +156,18 @@ Routing rules:
 
 An *active user* is one visitor, counted by a salted hash of their address, who opened a garden or made a request that used a model that day. A garden planned by a job without a visit will count too, from M4 on.
 
-The typical user here keeps 1 garden with 5 plants, sends 3 free-text messages a day, runs one diagnosis every two weeks and has two replans a month. The diagnosis cost is the measured Auto average; the other rows are estimated from the budgets above.
+The typical user here keeps 1 garden with 5 plants, sends 3 free-text messages a day, runs one diagnosis every two weeks and has two replans a month. The diagnosis, season plan and replan costs are measured; the other rows are estimated from the budgets above.
 
 | Item | Per user per day |
 | --- | --- |
 | Morning care wording (1 × `care_wording`) | $0.00014 |
 | 3 messages (front door + chat) | $0.00072 |
 | Diagnosis, Auto at $0.037 each, every 14 days | $0.00264 |
-| Season plan + verification ($0.036), once per 120-day season | $0.00030 |
-| 2 replans a month, with verification | $0.00129 |
+| Season plan, written and verified ($0.21 measured, 18 calls), once a year | $0.00058 |
+| 2 replans a month, with verification ($0.011 measured each) | $0.00073 |
 | Identify 5 plants ($0.0031 each), once in the first 30 days | $0.00052 |
 | Knowledge graph and Radar (shared across users) | < $0.0001 |
-| **Total** | **≈ $0.0057** |
+| **Total** | **≈ $0.0054** |
 
 A heavy user who diagnoses every day costs about $0.04 a day. Per-garden daily caps keep such users rare. Real numbers come from `/api/ops/usage` (`cost_per_active_user`), and the README reports measured values only.
 
@@ -209,6 +210,8 @@ The Worker's `scheduled()` handler only enqueues; the queue consumer wakes the c
 | `forecast` refresh | inside `plan_cell`, and on demand with a 1 h cache | per cell | `forecast:<cell>:<yyyymmddhh>` | M2 |
 | NWS alert check | `35 */3 * * *` in the Worker: fetch alerts for US cells and wake the container only for a **new** relevant alert ID (seen IDs kept in KV) | per cell | `alert:<cell>:<alert id>` | M4 |
 | `notify` | after `plan_garden` and on alerts; quiet hours via queue delay (up to 24 h) | per garden | `notify:<garden>:<date>:<kind>` | M4 |
+| `season_plan` (outline, months, Super, then current) | `POST /api/gardens/<id>/season` | per garden | `season_plan:<plan id>` | M5 |
+| `replan` (only the weeks a change touches) | from `plan_cell` (forecast frost or heat in a week with planting), a linked diagnosis, or a check-in that is spreading | per garden | `replan:<garden>:<frost|heat>:<week>`, `…:diagnosis:<case>:<plant>`, `…:checkin:<case>:<plant>:<n>` | M5 |
 | `radar` | `0 6 * * 1` | per region | `radar:<region>:<iso week>` | M7 |
 
 Container wake-ups are the only job cost that can exceed the plan. One daily housekeeping wake (about 30 minutes, because of `sleepAfter`) uses about 15 GiB-hours a month, inside the 25 included. Morning planning per populated timezone adds about $0.60 a month (approved). The afternoon check wakes the container only on frost or heat days, because the Worker's temperature prefilter runs without it. That prefilter is only a wake-up gate with wide margins; every decision is still made in `backend/climate/`.
@@ -217,7 +220,7 @@ Container wake-ups are the only job cost that can exceed the plan. One daily hou
 
 - **Input screen.** Code checks come first: length, control characters, known injection phrasing, any mention of the system prompt. Then a model screens the input: Lightning for live requests, Nano 3 for check-in notes (and, later, radar pages). Text that is unsafe gets a fixed reply, or is set aside with a note to the gardener, and no other model sees it. When the model is unavailable, the code checks still apply.
 - **Code rules.** Chemicals (`backend/actives.py`), the organic, pet, child and bee choices, verdict thresholds and escalation are enforced in code after every model step.
-- **Super verification.** Every season plan, replan and diagnosis is checked by Super against the code rules and the cited passages before a user sees it (M5; the diagnosis critic exists).
+- **Super verification.** Every season plan and replan is checked by Super against the code rules and the cited facts before a user sees it, and Super can only remove items (M5). Diagnoses have their critic.
 - **Untrusted web text.** Tavily and radar text is quoted as data inside delimiters and never changes instructions. Quotes are validated in code against the fetched passage.
 - **Secrets.** Secrets are never printed. VAPID keys and the Telegram token go straight into Cloudflare secrets from a private temp file.
 
@@ -264,7 +267,7 @@ Seven milestones in eight days leaves no slack. If any milestone runs over, the 
 | Outbound interception is new and could misbehave in production | Live check in M1. Fallback: a public Worker route signed with HMAC (one generated secret) |
 | Open-Meteo climatology costs about 780 weighted calls per cell | Built once per cell and kept for good; ≤ 8 new cells a day; a queue for the rest |
 | Open-Meteo is free only for non-commercial use | Leaf is free, with no ads; the attribution link is shown wherever its data is |
-| Long season plans as JSON from Nemotron | Written per month in chunks, checked by schema, verified by Super, then checked by code rules |
+| Long season plans as JSON from Nemotron | An outline call fixes every planting date, then one call per month (each schema-checked); code rules check every item, then Super verifies (it can only remove). Months are saved as they are written, so a timeout retry writes only what is missing |
 | Token Factory outage or slowness | Fallback chains; rules-only mode keeps care and alerts working |
 | A single container instance holds in-memory state | Spend and counters persist in D1. Jobs are idempotent and survive a restart |
 | KV is eventually consistent | Used only for caches and seen-alert IDs, never for counters |
@@ -473,7 +476,50 @@ Where a source does not say when to start counting, Leaf counts from January 1 a
 **Still to verify:** a push received on a real Android phone (Chrome) and on an iPhone after Add to Home Screen.
 
 ### M5 Season Plan
-- [ ] Ultra season plan, Super verification against code rules, living plan with replanning, calendar export and printable page, Doctor wiring
+- [x] Ultra season plan, Super verification against code rules, living plan with replanning, calendar export and printable page, Doctor wiring
+- [ ] Live: a production garden's plan written, verified and shown at `/season`, exported to a calendar (PRODUCTION_CHECK)
+
+**How a plan is written (`backend/season/`, job `season_plan`).** A plan covers the next 52 weeks from this week's Monday.
+1. **Outline (Ultra, one call):** every plant's sowing and planting-out weeks for the whole season, including succession sowings. Months are written separately, so the outline is what keeps them consistent; plantings come only from it.
+2. **Months (Ultra, one call each, 7 at a time):** feeding, pruning, protection, harvest, hardening off and pest checks around the outline. A month too cold for anything (normal high under 5 °C, no indoor plants, not within 12 weeks of the last frost) gets no call. Each month is saved as soon as it is written, so a retry after a timeout writes only what is missing.
+3. **Code rules** check every item after every model step:
+   - Shape: a plant of this garden, a known kind, a week of that month, sources only from Leaf's numbered list. An item without one says "General practice; no source cited".
+   - Frost dates: planting out is removed before the earliest date for the plant's class, and tender plants after the average first autumn frost. CSU Extension's guide (GardenNotes #720) sets the earliest dates relative to the average last spring frost: hardy 4 weeks before, semi-hardy 2 weeks before, tender on the date, very tender 2 weeks after. The class comes from that guide or from a sourced profile fact, whichever is more tender. A plant with neither is treated as tender, and the plan says so.
+   - Temperature limits: planting is removed in a month whose normal daytime high is under the class minimum (CSU: 40 °F hardy and semi-hardy, 55 °F tender, 60 °F very tender). The profile's minimum temperature, the 1-in-10 late frost and the crop's soil temperature for sowing add cautions.
+   - Organic and pet choices: through `backend/actives.py`, as in every diagnosis plan.
+   - Toxic plants in a pet or child garden: pruning and harvest carry a precaution with the source.
+   - Repeats: at most one pest check and two feeds per plant per month.
+   - A planting relabelled as another kind is still caught by its wording.
+4. **Super verifies** the checked items in chunks of 25, against the same rules and facts, and can only remove. If Super is unavailable, Ultra (its fallback) verifies and the page says which model did. If neither can, the plan stays hidden as `unverified` and the job retries the verification only.
+5. **Current:** the verified plan replaces the old one in one batch. During a rewrite the old plan stays on screen.
+
+**Living plan (job `replan`, optional at brownout).** Only the affected weeks (at most 4) are rewritten by Ultra, then checked by code and verified by Super. The plan's revision goes up, and the diff (added and removed per week) is computed in code. The week shows "Changed: why", the change is logged as an event and listed on the page, and the gardener gets a notification. Triggers:
+- **Forecast:** each morning's `plan_cell` looks for a forecast low of 2.2 °C or less (plants that are not hardy) or a high of 32.2 °C or more, in a week with planting. That week and the next are replanned, once per event and week.
+- **Diagnosis:** linking a Leaf Doctor report replans the plant's next 4 weeks with the report's code-checked care plan.
+- **Check-in:** a check-in that finds the problem spreading does the same.
+
+**Doctor wiring.** On a report, "Add to my garden" (garden key plus the report's owner token) does three things:
+- The care steps, re-checked with that garden's own organic and pet choices, become today's tasks.
+- A check-in photo task is due on the plan's check-in day.
+- The season plan is replanned.
+
+When a check-in is added to that report, the loop closes: the check-in task is marked done and the result is logged. Spreading adds the new steps as tasks, another check-in in 7 days, and a replan; stable or unclear adds another check-in; recovering ends the loop.
+
+**Export and print.** `/season` is printable: a print stylesheet, every item with its reason, cautions and sources, plus what the checks removed and why. `GET /api/gardens/<id>/season.ics` gives one all-day event per item on its week's Monday; CR and LF are escaped, so no item can add calendar fields. Today shows this week's items with their cautions.
+
+**Measured locally (2026-10-15), real services.** Minneapolis garden (cell 450_-933, 30-year climatology built live, average last spring frost Apr 21, first autumn frost Oct 23), with tomato, lettuce and a monstera indoors.
+- **First version (months written independently, no outline):** the tomato got "sow indoors" in four different months. That is why the outline exists. Super also failed at 3,000 tokens, with its reasoning using up the budget; the budget is now 8,000, with 25-item chunks.
+- **Current version:** 76 items in 110 s, from 18 calls (1 outline, 13 months, 4 Super chunks), at **$0.21**.
+  - Tomato sown indoors Mar 22, planted out May 10 (earliest May 5), first harvest in July.
+  - Lettuce sown from Mar 29 with successions, each followed by its harvest.
+  - Super removed 4 items with reasons, among them a July harvest of spring lettuce ("lettuce bolts in summer heat").
+- **Replan:** a test frost trigger (labelled TEST, local only) moved the tomato transplant a week later. Super verified it, the code diff was correct, and it cost $0.011 in 12 s.
+- **Prompt fix after this run:** Super had also removed hardening off before the earliest date. The rules now say that a few hours a day before planting out is fine. This has not been re-measured.
+
+**Limits.**
+- The plan does not roll forward: after 52 weeks the gardener writes a new one.
+- A rewrite in progress does not see replans made to the current plan meanwhile.
+- Pest scouting in the plan is a reminder from sourced facts, not the degree-day model; that one runs in daily care.
 
 ### M6 Connect
 - [ ] Telegram bot; REST API v1 with OpenAPI, keys, per-key limits; MCP server (streamable HTTP); Home Assistant webhook

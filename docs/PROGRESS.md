@@ -22,6 +22,7 @@ Keep it short: newest entries first.
 | Platform M2: climate engine (forecast per cell, 1991-2020 climatology, zone, frost dates, NWS, FAO-56 water balance, indoor model, GDD, sowing) | done | `docs/LEAF_PLATFORM.md` M2; 610 tests; five-city zone check |
 | Platform M3: knowledge graph (cited species profiles, verified facts), identify from a photo with one-tap confirm, plant-ID eval | done | `docs/LEAF_PLATFORM.md` M3; 663 tests; 40-photo eval |
 | Platform M4: Leaf Care (morning planner, Today, notifications service, Web Push PWA, 14:00 frost/heat check, NWS alerts, Nano triage) | done | `docs/LEAF_PLATFORM.md` M4; 703 tests; push accepted by FCM |
+| Platform M5: Season Plan (Ultra outline + monthly chunks, code rules, Super verification, replanning, calendar export, printable page, Doctor wiring) | done | `docs/LEAF_PLATFORM.md` M5; 731 tests; live plan $0.21 |
 | README final, video, Devpost draft | Devpost drafted (`docs/DEVPOST.md`); video todo | `/submission-check` |
 
 ## Next
@@ -38,6 +39,18 @@ Keep it short: newest entries first.
 | 2026-10-13 | 52 tune | Quick 52% / Deep 56% / Auto 58% | 75% / 73% / 73% | lab 6% / 38% / 25% | three verdicts, Auto, fitted thresholds; checklist off (48% with it) |
 
 ## Session log
+- 2026-10-15: **Leaf Platform M5, Season Plan** (`backend/season/`, `/season`). Details are in `docs/LEAF_PLATFORM.md` M5.
+  - **Writing:** one Ultra outline call fixes every planting date. Then one Ultra call per month, saved as each is written, so a timeout retry writes only what is missing.
+  - **Checking:** code rules on every item: frost dates and temperature minimums from CSU Extension's frost classes, organic and pet choices through `actives.py`, toxic-plant precautions, and caps on repeated jobs. Then Super verifies in chunks of 25 and can only remove. Nothing unverified is shown, and a rewrite keeps the current plan visible.
+  - **Replanning:** a forecast frost or heat in a week with planting, a linked diagnosis, or a spreading check-in rewrites only the affected weeks. The diff is computed in code, and the gardener sees "Changed: why" and gets a notification.
+  - **Doctor wiring:** "Add to my garden" on a report turns its code-checked steps into tasks, schedules a check-in and replans. Check-ins close that task and keep the loop going.
+  - **Export:** a printable `/season` page and a `.ics` calendar export.
+  - **Review:** the reviewer found 2 blockers. Each month was not saved as written, so a timeout retry rewrote the whole plan. Stored items pointed to plants by list position, so archiving a plant shifted them to the wrong one. Both are fixed, along with 7 should-fix items, each covered by a test.
+  - **Live, local:**
+    - The first run had the tomato sown indoors in four different months, and Super ran out of tokens. That led to the outline, and to an 8,000-token budget with 25-item chunks.
+    - Second run: 76 coherent items in 110 s, 18 calls, $0.21, verified by Super.
+    - A labelled test frost replan moved the tomato a week later, for $0.011.
+  - **Local dev DB:** `data/platform.db` had been built from an earlier draft of 0003 (no `species.started_at`). It was rebuilt locally; production D1 was not affected.
 - 2026-10-15: **Leaf Platform M4, Leaf Care** (`backend/care/`, `backend/notify/`, `/today`). Details are in `docs/LEAF_PLATFORM.md` M4.
   - **Planner (code):** each task has a reason, a due time and a source.
     - Water or skip per plant.

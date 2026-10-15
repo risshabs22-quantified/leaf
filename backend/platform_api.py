@@ -9,14 +9,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Query, Request, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, ValidationError
 
+from backend.calendar_file import ics_calendar
 from backend.care.service import CareContext, local_today, ordered, plan_garden
 from backend.climate import Climate, cell_center
 from backend.climate.crops import GENERAL_GDD_BASE_C, Crop, find_crop
@@ -54,6 +56,8 @@ from backend.knowledge.profile import profile_view
 from backend.notify import notify
 from backend.router import REFUSALS, front_door
 from backend.schemas import FrontDoorDecision, Intent, ModelCall
+from backend.season import calendar_events, monday
+from backend.season.service import PlanUnavailable, link_diagnosis, start_plan
 from backend.spray import plan_spray
 from backend.vision import prepare_image
 
@@ -722,9 +726,19 @@ async def today(request: Request, garden_id: str, key: Key = None) -> dict[str, 
             alerts = [a.model_dump() for a in nws.alerts]
         except AlertsUnavailable:
             pass
+    season = await _repo(request).get_season_plan(garden.id)
+    week: list[dict[str, Any]] = []
+    if season is not None:
+        this = monday(local_today(garden)).isoformat()
+        week = [
+            it
+            for w in await _repo(request).list_plan_weeks(season.id, this, this)
+            for it in w.items
+        ]
     return {
         "garden": garden.model_dump(),
         "date": day,
+        "season_week": week,
         "urgent": plan.urgent,
         "alerts": alerts,
         "tasks": [t.model_dump() for t in tasks],
@@ -860,3 +874,131 @@ async def set_location(
     except DataError as exc:
         log.warning("could not queue garden_ready for %s: %s", garden.id, exc)
     return {"garden": updated.model_dump()}
+
+
+# ---------- Season Plan (M5) ----------
+
+SEASON_WRITES_PER_DAY = 3  # each plan costs about $0.06 in model calls
+WRITING_STALE_S = 15 * 60  # a plan still 'writing' after this may be started again
+
+
+async def _season_view(request: Request, garden: Garden) -> dict[str, Any]:
+    repo = _repo(request)
+    plan = await repo.get_season_plan(garden.id)
+    latest = await repo.latest_season_plan(garden.id)
+    view: dict[str, Any] = {
+        "garden": {"id": garden.id, "name": garden.name, "has_place": bool(garden.cell)},
+        "this_week": monday(local_today(garden)).isoformat(),
+        "plan": None,
+        "pending": None,
+        "weeks": [],
+        "changes": [],
+    }
+    if latest is not None and latest.status != "ready":  # a write in progress, or failed
+        view["pending"] = {"status": latest.status, "note": latest.note, "at": latest.created_at}
+    if plan is None:
+        return view
+    view["plan"] = plan.model_dump(exclude={"trace_id"})
+    view["plan"]["basis"].pop("outline", None)  # its items are already in the weeks
+    view["weeks"] = [w.model_dump() for w in await repo.list_plan_weeks(plan.id)]
+    view["changes"] = [
+        {"at": e.created_at, **{k: e.payload.get(k) for k in ("trigger", "summary", "changes")}}
+        for e in await repo.list_events(garden.id, 200)
+        if e.kind == "replan" and e.payload.get("changes")
+    ][:10]
+    return view
+
+
+@router.get("/api/gardens/{garden_id}/season")
+async def season(request: Request, garden_id: str, key: Key = None) -> dict[str, Any]:
+    """The garden's season plan: the current verified plan, every week with its items
+    (reason, sources, cautions), what the checks removed and why, the latest replans, and a
+    rewrite in progress if there is one. Nothing unverified is ever returned."""
+    garden = await _open(request, garden_id, key)
+    return await _season_view(request, garden)
+
+
+@router.post("/api/gardens/{garden_id}/season", status_code=202)
+async def season_write(request: Request, garden_id: str, key: Key = None) -> dict[str, Any]:
+    """Write (or rewrite) the season plan in the background: an outline, then a month at a
+    time, then the code rules and Super. The current plan stays until the new one is ready.
+    Poll GET .../season until "pending" is gone or failed."""
+    garden = await _open(request, garden_id, key)
+    request.app.state.tool_limiter.check(_ip(request))
+    repo = _repo(request)
+    latest = await repo.latest_season_plan(garden.id)
+    busy = latest is not None and latest.status in ("writing", "unverified")
+    if busy and now_s() - latest.updated_at < WRITING_STALE_S:
+        return await _season_view(request, garden)
+    if await repo.count_events(garden.id, "season_plan", now_s() - 86400) >= SEASON_WRITES_PER_DAY:
+        raise HTTPException(429, "Leaf writes a garden's plan at most 3 times a day. Try tomorrow.")
+    ctx = REQUEST.get()
+    try:
+        await start_plan(
+            _care_ctx(request), request.app.state.queue, garden, ctx.trace_id if ctx else ""
+        )
+    except PlanUnavailable as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return await _season_view(request, garden)
+
+
+@router.get("/api/gardens/{garden_id}/season.ics")
+async def season_calendar(request: Request, garden_id: str, key: Key = None) -> Response:
+    """The verified plan as a calendar file: one all-day event per item, on its week's Monday."""
+    garden = await _open(request, garden_id, key)
+    repo = _repo(request)
+    plan = await repo.get_season_plan(garden.id)
+    if plan is None:
+        raise HTTPException(404, "This garden has no finished season plan yet.")
+    weeks = await repo.list_plan_weeks(plan.id)
+    name = f"Leaf: {garden.name or 'my garden'}"
+    settings = request.app.state.leaf.settings
+    text = ics_calendar(
+        calendar_events(weeks, name), name, settings.public_url or str(request.base_url), "/season"
+    )
+    return Response(
+        text,
+        media_type="text/calendar; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="leaf-season-plan.ics"'},
+    )
+
+
+class DiagnosisLink(BaseModel):
+    case_id: str = Field(..., min_length=4, max_length=64)
+    owner_token: str = Field(..., min_length=8, max_length=64)
+
+
+@router.post("/api/gardens/{garden_id}/plants/{plant_id}/diagnosis")
+async def link_case(
+    request: Request, garden_id: str, plant_id: str, body: DiagnosisLink, key: Key = None
+) -> dict[str, Any]:
+    """Leaf Doctor joins the garden: the report's treatment steps (re-checked with this
+    garden's choices) become today's tasks, a check-in is scheduled, and the season plan's
+    next weeks are replanned. Needs the garden's key and the report's owner token."""
+    garden = await _open(request, garden_id, key)
+    repo = _repo(request)
+    plant = await repo.get_plant(garden.id, plant_id)
+    if plant is None or plant.status != "active":
+        raise HTTPException(404, "That plant is not in this garden.")
+    try:
+        entry = await request.app.state.journal.get(body.case_id)
+    except Exception as exc:  # noqa: BLE001 - storage down or misconfigured
+        log.exception("could not read the journal")
+        raise HTTPException(
+            503, "Saved reports are unavailable right now. Try again later."
+        ) from exc
+    if entry is None or not secrets.compare_digest(body.owner_token, entry.owner_token):
+        raise HTTPException(404, "No report at that link, or it is not yours.")
+    ctx = REQUEST.get()
+    try:
+        return await link_diagnosis(
+            _care_ctx(request),
+            request.app.state.queue,
+            garden,
+            plant,
+            entry.id,
+            entry.report,
+            ctx.trace_id if ctx else "",
+        )
+    except PlanUnavailable as exc:
+        raise HTTPException(409, str(exc)) from exc

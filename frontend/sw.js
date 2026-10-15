@@ -28,8 +28,10 @@ self.addEventListener("notificationclick", (event) => {
   } catch {}
   event.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    const want = new URL(url).pathname;  // e.g. /today, or /season for a plan update
     for (const w of wins) {
-      if (new URL(w.url).pathname.startsWith("/today") || new URL(w.url).pathname.startsWith("/g/")) { await w.focus(); return; }
+      const at = new URL(w.url).pathname;
+      if (at === want || (want === "/today" && at.startsWith("/g/"))) { await w.focus(); return; }
     }
     await self.clients.openWindow(url);
   })());

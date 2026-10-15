@@ -110,9 +110,10 @@ ROUTES: dict[str, Route] = {
     "care_wording": Route((LIGHTNING, NANO), 1200, False, 800, 400, optional=True),
     "notify_text": Route((LIGHTNING, NANO), 300, False, 300, 100, optional=True),
     "translate": Route((LIGHTNING,), 1500, False, 600, 600, optional=True),
-    "season_plan": Route((ULTRA, SUPER), 16000, True, 8000, 8000),
-    "plan_verify": Route((SUPER, ULTRA), 3000, True, 10000, 1500),
-    "replan": Route((ULTRA, SUPER), 8000, True, 6000, 3000),
+    "season_outline": Route((ULTRA, SUPER), 16000, True, 5000, 4000),
+    "season_plan": Route((ULTRA, SUPER), 16000, True, 5000, 3000),
+    "plan_verify": Route((SUPER, ULTRA), 8000, True, 6000, 3000),
+    "replan": Route((ULTRA, SUPER), 8000, True, 6000, 3000, optional=True),
     "radar_extract": Route((LIGHTNING, SUPER), 2000, False, 4000, 1000),
 }
 

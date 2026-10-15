@@ -43,10 +43,14 @@ from backend.metering import Meter
 from backend.notify import deliver, notify
 from backend.schemas import ModelCall
 from backend.search import SearchPaused
+from backend.season.service import replan, replan_job, weather_replans, write_plan
 
 log = logging.getLogger("leaf.jobs")
 
 JOB_TIMEOUT_S = 240  # well under the 300 s lease, so a stuck run never overlaps a retry
+# A season plan's outline is one long Ultra call that may fall back to Super; it gets more
+# room, still inside the lease. Its months and checks are saved as they finish anyway.
+KIND_TIMEOUT_S = {"season_plan": 285}
 
 
 class JobMessage(BaseModel):
@@ -104,7 +108,8 @@ class JobRunner:
             return 409, {"status": "busy", "retry_after": max(30, min(left + 5, 3600))}
         with request_scope(RequestContext(trace_id=f"job-{row.key}"[:64])):
             try:
-                result = await asyncio.wait_for(handler(self.ctx, msg.payload), self.timeout_s)
+                timeout = KIND_TIMEOUT_S.get(msg.kind, self.timeout_s)
+                result = await asyncio.wait_for(handler(self.ctx, msg.payload), timeout)
             except Exception as exc:  # noqa: BLE001 - any failure is recorded and retried
                 log.exception("job %s failed (attempt %d)", msg.key, row.attempts)
                 await self.ctx.repo.fail_job(msg.key, f"{type(exc).__name__}: {exc}")
@@ -348,6 +353,19 @@ async def _reachable(ctx: JobContext, garden: Garden) -> bool:
     return "push" in settings.channels and bool(await ctx.repo.list_push(garden.id))
 
 
+async def _weather_replans(ctx: JobContext, care: CareContext, garden: Garden) -> list[str]:
+    """Queue a replan of the season plan's weeks a forecast frost or heat wave touches. The
+    job key carries the event, so each one replans once however many mornings show it."""
+    try:
+        triggers = await weather_replans(care, garden)
+        if triggers:
+            await ctx.queue.send([replan_job(garden, t) for t in triggers])
+        return [t["key"] for t in triggers]
+    except Exception:  # noqa: BLE001 - the morning plan never fails because of the season plan
+        log.exception("weather replan check failed for %s", garden.id)
+        return []
+
+
 @job("plan_cell")
 async def plan_cell(ctx: JobContext, payload: dict[str, Any]) -> dict[str, Any]:
     """Morning planning for every garden in a cell (05:00 local), then each garden's summary
@@ -359,6 +377,7 @@ async def plan_cell(ctx: JobContext, payload: dict[str, Any]) -> dict[str, Any]:
         if hour != garden.plan_hour_utc:
             await ctx.repo.set_plan_hour(garden.id, hour)
         await plan_garden(care, garden)
+        replans = await _weather_replans(ctx, care, garden)
         day = local_today(garden).isoformat()
         tasks = await ctx.repo.list_tasks(garden.id, day, day)
         status = "no_tasks"
@@ -376,7 +395,7 @@ async def plan_cell(ctx: JobContext, payload: dict[str, Any]) -> dict[str, Any]:
                     body=body,
                     dedupe_key=f"morning:{garden.id}:{day}",
                 )
-        done[garden.id] = {"tasks": len(tasks), "notify": status}
+        done[garden.id] = {"tasks": len(tasks), "notify": status, "replans": replans}
     return {"gardens": len(done), "results": done}
 
 
@@ -437,6 +456,45 @@ async def nws_alert(ctx: JobContext, payload: dict[str, Any]) -> dict[str, Any]:
             urgent=True,
         )
     return {"relevant": triage.relevant, "notified": sent}
+
+
+@job("season_plan")
+async def season_plan(ctx: JobContext, payload: dict[str, Any]) -> dict[str, Any]:
+    """Write, check and verify a garden's season plan (queued by POST .../season). Only the
+    newest write is worked on; a newer request supersedes it."""
+    garden = await ctx.repo.get_garden(str(payload.get("garden_id", "")))
+    if garden is None:
+        return {"skipped": "garden deleted"}
+    plan = await ctx.repo.get_plan(str(payload.get("plan_id", "")))
+    latest = await ctx.repo.latest_season_plan(garden.id)
+    if plan is None or latest is None or latest.id != plan.id:
+        return {"skipped": "superseded"}
+    if plan.status not in ("writing", "unverified"):
+        return {"skipped": plan.status}
+    return await write_plan(_care(ctx), garden, plan)
+
+
+@job("replan")
+async def replan_season(ctx: JobContext, payload: dict[str, Any]) -> dict[str, Any]:
+    """Replan the weeks a change touches (forecast, diagnosis, check-in) and tell the
+    gardener what changed and why."""
+    garden = await ctx.repo.get_garden(str(payload.get("garden_id", "")))
+    if garden is None:
+        return {"skipped": "garden deleted"}
+    trigger = payload.get("trigger") or {}
+    result = await replan(_care(ctx), garden, trigger, str(payload.get("context", "")))
+    if result.get("changed"):
+        body = f"{trigger.get('text', '')} {result.get('summary', '')}".strip()
+        result["notify"] = await _notify(
+            ctx,
+            garden,
+            kind="replan",
+            title="Season plan updated",
+            body=body[:160],
+            dedupe_key=f"replan:{garden.id}:{trigger.get('key', '')}"[:200],
+            url="/season",
+        )
+    return result
 
 
 @job("notify_send")

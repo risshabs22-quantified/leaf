@@ -37,7 +37,7 @@ function hhmm(ts, tz) {
 function sourceHtml(src) {
   if (!src) return "";
   if (src.heuristic) return `<span class="src">Leaf's own rule</span>`;
-  const url = safeUrl(src.url);
+  const url = safeUrl(src.url) || (/^\/c\/[\w-]+$/.test(String(src.url || "")) ? src.url : "");
   return url ? `<a class="src" href="${esc(url)}" target="_blank" rel="noopener">${esc(src.title || "Source")}</a>` : `<span class="src">${esc(src.title || "")}</span>`;
 }
 
@@ -111,6 +111,15 @@ async function refresh() {
     </li>`).join("");
   show("tasks-block");
   show("tasks-empty", !(d.tasks || []).length);
+
+  const week = d.season_week || [];
+  $("season-week").innerHTML = week.map((it) => `
+    <li class="task"><div class="task-head"><strong>${esc(it.action)}</strong> <span class="small">· ${esc(it.plant)}</span></div>
+      ${it.why ? `<p class="why">${esc(it.why)}</p>` : ""}
+      ${(it.cautions || []).length ? `<ul class="cautions caution-line">${it.cautions.map((c) => `<li>${esc(c.text)}${c.source && c.source.title ? ` ${sourceHtml(c.source)}` : ""}</li>`).join("")}</ul>` : ""}
+      <div class="task-foot">${(it.sources || []).map((s) => sourceHtml(s)).join(" · ") || `<span class="src">General practice; no source cited</span>`}</div></li>`).join("");
+  $("season-empty").textContent = week.length ? "" : "Nothing from the season plan this week. If you have no plan yet, Leaf can write one from your frost dates and plants.";
+  show("season-block");
 
   $("water").innerHTML = (d.water || []).map((w) => `
     <li data-plant="${esc(w.plant_id)}"><strong>${esc(w.name)}</strong>: ${esc(w.action === "skip" ? "no water needed" : w.action === "water" ? "water today" : "check the soil")}

@@ -208,6 +208,34 @@ class CallRow(BaseModel):
     created_at: int
 
 
+PlanStatus = Literal["writing", "unverified", "ready", "failed"]
+
+
+class SeasonPlan(BaseModel):
+    id: str
+    garden_id: str
+    revision: int = 0
+    status: PlanStatus = "writing"
+    first_week: str
+    last_week: str
+    basis: dict[str, Any] = Field(default_factory=dict)
+    checks: dict[str, Any] = Field(default_factory=dict)
+    note: str = ""
+    trace_id: str = ""
+    created_at: int
+    updated_at: int
+
+
+class PlanWeek(BaseModel):
+    plan_id: str
+    week: str
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    removed: list[dict[str, Any]] = Field(default_factory=list)
+    revision: int = 0
+    changed: str = ""
+    updated_at: int
+
+
 def _garden(row: dict[str, Any]) -> Garden:
     return Garden(**{**row, "prefs": GardenPrefs.model_validate(_load(row.get("prefs"), {}))})
 
@@ -1098,3 +1126,207 @@ class Repo:
             garden_id,
         )
         return await self.get_garden(garden_id)
+
+    # ---------- season plans (M5) ----------
+
+    def _season(self, r: dict[str, Any]) -> SeasonPlan:
+        return SeasonPlan(
+            **{**r, "basis": _load(r.get("basis"), {}), "checks": _load(r.get("checks"), {})}
+        )
+
+    async def get_season_plan(self, garden_id: str) -> SeasonPlan | None:
+        """The garden's current plan: its newest verified one."""
+        rows = await query(
+            self.db,
+            "SELECT * FROM season_plans WHERE garden_id = ? AND status = 'ready'"
+            " ORDER BY created_at DESC, rowid DESC LIMIT 1",
+            garden_id,
+        )
+        return self._season(rows[0]) if rows else None
+
+    async def latest_season_plan(self, garden_id: str) -> SeasonPlan | None:
+        """The newest write of any status (a rewrite in progress, or one that failed)."""
+        rows = await query(
+            self.db,
+            "SELECT * FROM season_plans WHERE garden_id = ? ORDER BY created_at DESC, rowid DESC"
+            " LIMIT 1",
+            garden_id,
+        )
+        return self._season(rows[0]) if rows else None
+
+    async def get_plan(self, plan_id: str) -> SeasonPlan | None:
+        rows = await query(self.db, "SELECT * FROM season_plans WHERE id = ?", plan_id)
+        return self._season(rows[0]) if rows else None
+
+    async def create_season_plan(
+        self, garden_id: str, first_week: str, last_week: str, basis: dict[str, Any], trace_id: str
+    ) -> SeasonPlan:
+        """A new write, 'writing' until verified. Earlier unfinished writes are dropped; the
+        verified plan stays current until this one is ready."""
+        now = now_s()
+        pid = new_id()
+        await self.db.batch(
+            [
+                (
+                    "DELETE FROM season_plans WHERE garden_id = ? AND status != 'ready'",
+                    (garden_id,),
+                ),
+                (
+                    "INSERT INTO season_plans (id, garden_id, status, first_week, last_week, basis,"
+                    " trace_id, created_at, updated_at) VALUES (?, ?, 'writing', ?, ?, ?, ?, ?, ?)",
+                    (pid, garden_id, first_week, last_week, _json(basis), trace_id, now, now),
+                ),
+            ]
+        )
+        plan = await self.get_plan(pid)
+        assert plan is not None
+        return plan
+
+    _DRAFT = (
+        "EXISTS (SELECT 1 FROM season_plans WHERE id = ? AND status IN ('writing', 'unverified'))"
+    )
+
+    async def set_plan_basis(self, plan: SeasonPlan, basis: dict[str, Any]) -> None:
+        await execute(
+            self.db,
+            "UPDATE season_plans SET basis = ?, updated_at = ? WHERE id = ?"
+            " AND status IN ('writing', 'unverified')",
+            _json(basis),
+            now_s(),
+            plan.id,
+        )
+
+    async def put_plan_weeks(
+        self, plan: SeasonPlan, weeks: dict[str, tuple[list[dict[str, Any]], list[dict[str, Any]]]]
+    ) -> None:
+        """Save written weeks of an unfinished plan ({week: (items, removed)}), so a retry
+        after a timeout only writes the months still missing."""
+        now = now_s()
+        stmts: list[Statement] = [
+            (
+                "INSERT OR REPLACE INTO plan_weeks (plan_id, week, items, removed, revision,"
+                f" changed, updated_at) SELECT ?, ?, ?, ?, 0, '', ? WHERE {self._DRAFT}",
+                (plan.id, week, _json(items), _json(removed), now, plan.id),
+            )
+            for week, (items, removed) in sorted(weeks.items())
+        ]
+        if stmts:
+            await write_chunked(self.db, stmts)
+
+    async def finish_season_plan(
+        self, plan: SeasonPlan, items: dict[str, list[dict[str, Any]]], checks: dict[str, Any]
+    ) -> bool:
+        """Store the verified items and make this plan current, in one batch; the garden's
+        older plans are deleted. False if the write was superseded meanwhile."""
+        now = now_s()
+        stmts: list[Statement] = [
+            (
+                f"UPDATE plan_weeks SET items = ?, updated_at = ? WHERE plan_id = ? AND week = ?"
+                f" AND {self._DRAFT}",
+                (_json(its), now, plan.id, week, plan.id),
+            )
+            for week, its in sorted(items.items())
+        ]
+        stmts += [
+            (
+                "UPDATE season_plans SET status = 'ready', checks = ?, note = '', updated_at = ?"
+                " WHERE id = ? AND status IN ('writing', 'unverified')",
+                (_json(checks), now, plan.id),
+            ),
+            (
+                "DELETE FROM season_plans WHERE garden_id = ? AND id != ? AND EXISTS"
+                " (SELECT 1 FROM season_plans WHERE id = ? AND status = 'ready')",
+                (plan.garden_id, plan.id, plan.id),
+            ),
+        ]
+        if len(stmts) > 200:  # one batch is one transaction; a season is about 53 weeks
+            raise ValueError("too many weeks for one batch")
+        res = await self.db.batch(stmts)
+        return res[-2].changes > 0
+
+    async def replan_weeks(
+        self,
+        plan: SeasonPlan,
+        items: dict[str, list[dict[str, Any]]],
+        *,
+        changed: str,
+        checks: dict[str, Any],
+    ) -> bool:
+        """Rewrite some weeks of the current plan as its next revision, only if no other
+        replan or rewrite got there first (one batch). False if the plan had moved on."""
+        now = now_s()
+        same = (
+            "EXISTS (SELECT 1 FROM season_plans WHERE id = ? AND revision = ? AND status = 'ready')"
+        )
+        rev = plan.revision + 1
+        stmts: list[Statement] = [
+            (
+                f"UPDATE plan_weeks SET items = ?, revision = ?, changed = ?, updated_at = ?"
+                f" WHERE plan_id = ? AND week = ? AND {same}",
+                (_json(its), rev, changed, now, plan.id, week, plan.id, plan.revision),
+            )
+            for week, its in sorted(items.items())
+        ]
+        stmts.append(
+            (
+                "UPDATE season_plans SET revision = ?, checks = ?, updated_at = ?"
+                " WHERE id = ? AND revision = ? AND status = 'ready'",
+                (rev, _json(checks), now, plan.id, plan.revision),
+            )
+        )
+        res = await self.db.batch(stmts)
+        return res[-1].changes > 0
+
+    async def set_season_status(self, plan: SeasonPlan, status: PlanStatus, note: str = "") -> bool:
+        """Mark an unfinished write 'unverified' or 'failed'."""
+        return (
+            await execute(
+                self.db,
+                "UPDATE season_plans SET status = ?, note = ?, updated_at = ?"
+                " WHERE id = ? AND status IN ('writing', 'unverified')",
+                status,
+                note,
+                now_s(),
+                plan.id,
+            )
+            > 0
+        )
+
+    async def list_plan_weeks(
+        self, plan_id: str, week_from: str = "", week_to: str = "9999-12-31"
+    ) -> list[PlanWeek]:
+        rows = await query(
+            self.db,
+            "SELECT * FROM plan_weeks WHERE plan_id = ? AND week >= ? AND week <= ? ORDER BY week",
+            plan_id,
+            week_from,
+            week_to,
+        )
+        return [
+            PlanWeek(
+                **{**r, "items": _load(r.get("items"), []), "removed": _load(r.get("removed"), [])}
+            )
+            for r in rows
+        ]
+
+    async def count_events(self, garden_id: str, kind: str, since: int) -> int:
+        rows = await query(
+            self.db,
+            "SELECT COUNT(*) AS n FROM events WHERE garden_id = ? AND kind = ? AND created_at >= ?",
+            garden_id,
+            kind,
+            since,
+        )
+        return int(rows[0]["n"]) if rows else 0
+
+    async def events_by_ref(self, kind: str, ref: str, limit: int = 20) -> list[Event]:
+        """Events of a kind about one thing, newest first (e.g. the gardens a case is in)."""
+        rows = await query(
+            self.db,
+            "SELECT * FROM events WHERE kind = ? AND ref = ? ORDER BY created_at DESC, id DESC"
+            " LIMIT ?",
+            kind,
+            ref,
+            limit,
+        )
+        return [Event(**{**r, "payload": _load(r.get("payload"), {})}) for r in rows]

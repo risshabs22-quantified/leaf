@@ -390,3 +390,99 @@ class AlertTriage(BaseModel):
     relevant: bool = True
     summary: str = Field("", max_length=600)
     act_by: str = ""
+
+
+# ---------- Season Plan (M5) ----------
+
+
+def _clip(limit: int):
+    def clip(v: Any) -> Any:
+        return v[:limit] if isinstance(v, str) else v
+
+    return clip
+
+
+def _first(n: int):
+    def first(v: Any) -> Any:
+        return v[:n] if isinstance(v, list) else []
+
+    return first
+
+
+class SeasonItemOut(BaseModel):
+    """One plan item as a model writes it; backend/season checks it in code."""
+
+    week: str = ""
+    plant: str = ""  # "p1" (the id Leaf gave the plant) or "garden"
+    kind: str = "other"
+    action: str = ""
+    why: str = ""
+    source_ids: list[int] = Field(default_factory=list)
+
+    _clip_action = field_validator("action", mode="before")(_clip(400))
+    _clip_why = field_validator("why", mode="before")(_clip(800))
+
+    @field_validator("week", "plant", "kind", mode="before")
+    @classmethod
+    def _text(cls, v: Any) -> Any:
+        return str(v)[:40] if v is not None else ""
+
+    @field_validator("source_ids", mode="before")
+    @classmethod
+    def _ids(cls, v: Any) -> Any:
+        items = v if isinstance(v, list) else [v] if v not in (None, "") else []
+        out = []
+        for x in items[:8]:
+            try:
+                out.append(int(str(x).strip("[] ")))
+            except ValueError:
+                continue
+        return out
+
+
+class SeasonMonth(BaseModel):
+    """The season-plan writer's output for one month (Nemotron Ultra)."""
+
+    items: list[SeasonItemOut] = Field(default_factory=list)
+
+    _cap = field_validator("items", mode="before")(_first(60))
+
+
+class SeasonOutline(BaseModel):
+    """The outline writer's output (Nemotron Ultra): every planting date of the season."""
+
+    milestones: list[SeasonItemOut] = Field(default_factory=list)
+
+    _cap = field_validator("milestones", mode="before")(_first(120))
+
+
+class PlanIssue(BaseModel):
+    id: str = ""
+    problem: str = ""
+
+    _clip_problem = field_validator("problem", mode="before")(_clip(600))
+
+
+class PlanVerdict(BaseModel):
+    """The verifier's output (Nemotron Super): items that break a rule or a fact."""
+
+    issues: list[PlanIssue] = Field(default_factory=list)
+
+    _cap = field_validator("issues", mode="before")(_first(200))
+
+
+class ReplanWeek(BaseModel):
+    week: str = ""
+    items: list[SeasonItemOut] = Field(default_factory=list)
+
+    _cap = field_validator("items", mode="before")(_first(30))
+
+
+class Replan(BaseModel):
+    """The replanner's output (Nemotron Ultra): the rewritten weeks and why."""
+
+    summary: str = ""
+    weeks: list[ReplanWeek] = Field(default_factory=list)
+
+    _clip_summary = field_validator("summary", mode="before")(_clip(600))
+    _cap = field_validator("weeks", mode="before")(_first(8))

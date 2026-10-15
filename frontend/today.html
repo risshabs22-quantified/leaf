@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=2026101702">
+<link rel="stylesheet" href="/static/style.css?v=2026101801">
 </head>
 <body class="calm">
 <canvas id="forest" aria-hidden="true"></canvas>
@@ -69,6 +69,13 @@
     <p id="tasks-empty" class="small" hidden>Nothing to do today. Leaf checks again tomorrow morning.</p>
   </section>
 
+  <section id="season-block" class="block" hidden aria-labelledby="season-h">
+    <h2 id="season-h">This week in your season plan</h2>
+    <ol id="season-week" class="tasks"></ol>
+    <p id="season-empty" class="small"></p>
+    <p><a class="textbtn" href="/season">Open the season plan</a></p>
+  </section>
+
   <section id="water-block" class="block" hidden aria-labelledby="water-h">
     <h2 id="water-h">Water</h2>
     <ul id="water" class="water"></ul>
@@ -113,7 +120,7 @@
   <span>Open source, MIT license. <a href="https://github.com/risshabs22-quantified/leaf">Code on GitHub</a> · <a href="https://open-meteo.com/">Weather data by Open-Meteo.com</a></span>
   <span>Leaf gives guidance, not certainty. For food crops and any chemical, follow the product label.</span>
 </footer>
-<script src="/static/today.js?v=2026101702"></script>
-<script src="/static/rainforest.js?v=2026101702"></script>
+<script src="/static/today.js?v=2026101801"></script>
+<script src="/static/rainforest.js?v=2026101801"></script>
 </body>
 </html>

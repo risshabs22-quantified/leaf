@@ -282,6 +282,31 @@ CROPS: dict[str, Crop] = {
     ]
 }
 
+# Frost class per crop, from CSU Extension's Vegetable Planting Guide (csu_planting, read
+# 2026-10-15): "Hardy ... As early as 2-4 weeks before the date of the average last spring
+# frost"; "Semi-Hardy ... 0-2 weeks before"; "Tender ... From seed: around the date of the
+# average last spring frost"; "Very Tender ... Typically 2+ weeks after". Summer squash is
+# tender, winter squash and pumpkins very tender; melon is the guide's cantaloupe and
+# watermelon. Crops the guide does not list (strawberry, garlic, fruit, lawns) have none.
+FROST_CLASS: dict[str, str] = {
+    "tomato": "very_tender",
+    "pepper": "very_tender",
+    "pumpkin": "very_tender",
+    "melon": "very_tender",
+    "bean": "tender",
+    "cucumber": "tender",
+    "sweet_corn": "tender",
+    "squash": "tender",
+    "carrot": "half_hardy",
+    "potato": "half_hardy",
+    "lettuce": "hardy",
+    "cabbage": "hardy",
+    "onion": "hardy",
+    "spinach": "hardy",
+    "broccoli": "hardy",
+    "pea": "hardy",
+}
+
 GENERAL_GDD_BASE_C = 10.0  # 50 F, the general base (NCEI / MRCC)
 
 

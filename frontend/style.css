@@ -367,3 +367,22 @@ textarea:focus, input:focus { outline: none; border-bottom-color: var(--green); 
 .quiet { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; align-items: end; }
 .quiet button { grid-column: 1 / -1; justify-self: start; margin-top: 10px; }
 #g-link { display: inline-block; width: calc(100% - 5em); }
+
+/* Season plan (M5) */
+.season-intro { margin-bottom: 8px; }
+.basis, .changes, .cautions { margin: 8px 0 0; padding-left: 1.2em; font-size: .9em; }
+.cautions { font-size: .82em; }
+.month h2 { font-size: 1.15em; }
+.week + .week { margin-top: 14px; }
+.week h3 { font: 600 .9em var(--sans); margin: 0; }
+.week.this-week h3 { color: var(--green, inherit); }
+.changed { color: var(--amber); }
+.season-item .kind { font: 500 .75em var(--sans); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; }
+@media print {
+  .no-print, #s-status { display: none !important; }
+  .season-page .block { break-inside: auto; border: 0; padding: 0; }
+  .week { break-inside: avoid; }
+  .season-page details { display: block; }
+}
+

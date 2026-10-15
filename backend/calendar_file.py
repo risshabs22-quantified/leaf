@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -42,10 +43,11 @@ class Reminder(BaseModel):
 
 def _escape(text: str) -> str:
     return (
-        text.replace("\\", "\\\\")
+        text.replace("\r\n", "\n")
+        .replace("\r", "\n")
+        .replace("\\", "\\\\")
         .replace(";", "\\;")
         .replace(",", "\\,")
-        .replace("\r\n", "\n")
         .replace("\n", "\\n")
     )
 
@@ -100,4 +102,44 @@ def ics(rem: Reminder, base_url: str, now: datetime | None = None) -> str:
             "END:VALARM",
         ]
     lines += ["END:VEVENT", "END:VCALENDAR"]
+    return "\r\n".join(_fold(line) for line in lines) + "\r\n"
+
+
+def ics_calendar(
+    events: list[dict[str, Any]],
+    name: str,
+    base_url: str,
+    path: str = "",
+    now: datetime | None = None,
+) -> str:
+    """A whole calendar of all-day events (the season plan): each event is
+    {uid, day: date, title, details}. `path` is a Leaf page added to every description."""
+    if path and not LEAF_PATH.fullmatch(path):
+        raise ValueError("path must be a Leaf page")
+    url = base_url.rstrip("/") + path if path else ""
+    stamp = _stamp(now or datetime.now(UTC))
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Leaf plant doctor//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        f"X-WR-CALNAME:{_escape(name[:80])}",
+    ]
+    for ev in events:
+        day: date = ev["day"]
+        uid = re.sub(r"[^A-Za-z0-9-]", "", str(ev["uid"]))[:64]
+        details = str(ev.get("details", ""))[:1500] + (f"\n\n{url}" if url else "")
+        lines += [
+            "BEGIN:VEVENT",
+            f"UID:{uid}@leaf",
+            f"DTSTAMP:{stamp}",
+            f"DTSTART;VALUE=DATE:{day.strftime('%Y%m%d')}",
+            f"DTEND;VALUE=DATE:{(day + timedelta(days=1)).strftime('%Y%m%d')}",
+            f"SUMMARY:{_escape(str(ev['title'])[:120])}",
+            f"DESCRIPTION:{_escape(details)}",
+            "TRANSP:TRANSPARENT",
+            "END:VEVENT",
+        ]
+    lines.append("END:VCALENDAR")
     return "\r\n".join(_fold(line) for line in lines) + "\r\n"

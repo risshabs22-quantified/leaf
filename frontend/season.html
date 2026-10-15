@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Season plan · Leaf</title>
+<meta name="description" content="Your garden's next twelve months, week by week: sowing, planting out, feeding, pruning, protection and harvest, built on your frost dates and checked before you see it.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M6 26C6 14 13 7 26 6c0 13-7 20-18 20z' fill='none' stroke='%2318793a' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M6 26C12 19 17 14 22 10' fill='none' stroke='%2318793a' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#18793a">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=2026101801">
+</head>
+<body class="calm">
+<canvas id="forest" aria-hidden="true"></canvas>
+<header class="site">
+  <a href="/" class="brand" aria-label="Leaf home">
+    <svg class="mark" viewBox="0 0 48 64" aria-hidden="true"><path d="M9 57C5 33 17 12 41 6c3 25-8 45-30 51" /><path d="M9 57C17 41 26 27 37 14" /></svg>
+    <span class="word">Leaf</span>
+  </a>
+  <nav class="nav" aria-label="Main">
+    <a class="wide" href="/#how">How it works</a>
+    <a class="wide" href="/#features">Features</a>
+    <a href="/today">Today</a>
+    <a href="/identify">Identify</a>
+    <a class="wide" href="/plants">My plants</a>
+    <a class="nav-cta" href="/app">Diagnose</a>
+  </nav>
+</header>
+
+<main class="page season-page">
+  <div class="season-intro">
+    <h1 class="page-title" id="s-title">Season plan</h1>
+    <p id="s-sub" class="lede small">Your garden's next twelve months, week by week.</p>
+  </div>
+  <p id="s-status" class="status" role="status" aria-live="polite"></p>
+
+  <section id="s-none" class="block" hidden aria-labelledby="s-none-h">
+    <h2 id="s-none-h">No garden on this device</h2>
+    <p class="small">Open your garden's private link first, or <a href="/today">set up a garden on Today</a>.</p>
+  </section>
+
+  <section id="s-start" class="block no-print" hidden aria-labelledby="s-start-h">
+    <h2 id="s-start-h">Write my season plan</h2>
+    <p class="small">Leaf plans every week of the next twelve months for your plants: sowing, planting out, feeding, pruning, protection and harvest. It is built on 30 years of your area's frost dates and each plant's sourced facts. Nemotron Ultra writes it a month at a time; code rules and Nemotron Super check every item before you see it. It takes a minute or two.</p>
+    <p><button id="s-write" class="cta" type="button"><span class="cta-text">Write my plan</span></button></p>
+  </section>
+
+  <section id="s-basis" class="block" hidden aria-labelledby="s-basis-h">
+    <h2 id="s-basis-h">Built on</h2>
+    <ul id="s-basis-list" class="basis"></ul>
+    <p class="no-print actions">
+      <button id="s-ics" class="textbtn" type="button">Add to my calendar (.ics)</button>
+      <button id="s-print" class="textbtn" type="button">Print</button>
+      <button id="s-rewrite" class="textbtn" type="button">Rewrite the plan</button>
+    </p>
+  </section>
+
+  <section id="s-changes" class="block" hidden aria-labelledby="s-changes-h">
+    <h2 id="s-changes-h">What changed and why</h2>
+    <ul id="s-changes-list" class="changes"></ul>
+  </section>
+
+  <div id="s-months"></div>
+
+  <section id="s-removed" class="block" hidden>
+    <details class="why-box">
+      <summary id="s-removed-sum">What the checks removed</summary>
+      <ul id="s-removed-list"></ul>
+    </details>
+  </section>
+</main>
+
+<footer class="foot">
+  <span>Open source, MIT license. <a href="https://github.com/risshabs22-quantified/leaf">Code on GitHub</a> · <a href="https://open-meteo.com/">Weather data by Open-Meteo.com</a></span>
+  <span>Leaf gives guidance, not certainty. For food crops and any chemical, follow the product label.</span>
+</footer>
+<script src="/static/season.js?v=2026101801"></script>
+<script src="/static/rainforest.js?v=2026101801"></script>
+</body>
+</html>

@@ -36,6 +36,10 @@ from backend.prompts import (
     LOOK_CLOSER_SYSTEM,
     PLAN_DEEP_SYSTEM,
     PLAN_SYSTEM,
+    PLAN_VERIFY_SYSTEM,
+    REPLAN_SYSTEM,
+    SEASON_OUTLINE_SYSTEM,
+    SEASON_PLAN_SYSTEM,
     VISION_CHECKLIST_SYSTEM,
     VISION_SYSTEM,
 )
@@ -109,6 +113,10 @@ def step_of(messages: list[dict[str, Any]]) -> str:
         IDENTIFY_CHECK_SYSTEM: "identify_check",
         CARE_WORDING_SYSTEM: "care_wording",
         JOB_TRIAGE_SYSTEM: "job_triage",
+        SEASON_OUTLINE_SYSTEM: "season_outline",
+        SEASON_PLAN_SYSTEM: "season_plan",
+        PLAN_VERIFY_SYSTEM: "plan_verify",
+        REPLAN_SYSTEM: "replan",
     }.get(system, "repair")
 
 

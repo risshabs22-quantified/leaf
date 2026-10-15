@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=2026101702">
+<link rel="stylesheet" href="/static/style.css?v=2026101801">
 </head>
 <body class="calm">
 <canvas id="forest" aria-hidden="true"></canvas>
@@ -124,6 +124,11 @@
       <p id="auto-why" class="small muted" hidden></p>
     </div>
     <p id="share" class="small muted" hidden>Saved for 30 days and added to <a href="/plants">My plants</a>. <a id="share-link" href="#">Open your report</a>; keep that link, it lets you add check-ins with new photos. <button type="button" id="copy" class="textbtn">Copy a read-only link to share</button></p>
+    <div id="to-garden" class="to-garden small" hidden>
+      <label class="field"><span class="field-label">Add this to my garden: which plant is it?</span><select id="tg-plant"></select></label>
+      <button type="button" id="tg-add" class="textbtn">Add to my garden</button>
+      <p id="tg-state" role="status"></p>
+    </div>
     <p id="confidence" class="confidence" hidden></p>
     <details id="confidence-why" class="why-box" hidden>
       <summary>How Leaf worked out its confidence</summary>
@@ -246,8 +251,8 @@
   <span>Built with NVIDIA Nemotron on Nebius Token Factory and Tavily search</span>
   <span><a href="https://open-meteo.com/" target="_blank" rel="noopener">Weather data by Open-Meteo.com</a></span>
 </footer>
-<script src="/static/remind.js?v=2026101702"></script>
-<script src="/static/app.js?v=2026101702"></script>
-<script src="/static/rainforest.js?v=2026101702"></script>
+<script src="/static/remind.js?v=2026101801"></script>
+<script src="/static/app.js?v=2026101801"></script>
+<script src="/static/rainforest.js?v=2026101801"></script>
 </body>
 </html>

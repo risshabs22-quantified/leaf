@@ -47,7 +47,7 @@ def local_today(garden: Garden, now: datetime | None = None) -> date:
     return (now or datetime.now(UTC)).astimezone(ZoneInfo(garden.timezone)).date()
 
 
-async def _states(ctx: CareContext, garden: Garden) -> list[PlantState]:
+async def plant_states(ctx: CareContext, garden: Garden) -> list[PlantState]:
     tz = ZoneInfo(garden.timezone)
     out = []
     for plant in await ctx.repo.list_plants(garden.id):
@@ -106,7 +106,7 @@ async def plan_garden(
     skipped status) are kept. Safe to call as often as needed."""
     now = now or datetime.now(UTC)
     today = local_today(garden, now)
-    states = await _states(ctx, garden)
+    states = await plant_states(ctx, garden)
     fc = alerts = season = None
     if garden.cell:
         try:
