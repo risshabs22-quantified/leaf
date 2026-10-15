@@ -52,6 +52,10 @@ Keep it short: newest entries first.
     - Confirm checks the garden key first.
     - A negated toxicity quote is rejected in code; reference data needs the right species.
     - "Checked" requires sources; web titles are sanitised in prompts; only http(s) links are rendered.
+  - **Production check:**
+    - A hosta photo on `/identify` (375 px) gave *Hosta plantaginea* at 72%; the two other hostas were ruled out with sourced reasons.
+    - One tap built the profile in about 30 s: 6 verified facts, 4 rejected, pets toxic, children unknown, 9 fields listed as unsourced.
+    - 4 knowledge credits were counted in D1; zero console errors.
   - 663 tests.
 - 2026-10-15: **Leaf Platform M2, climate engine** (`backend/climate/`). Details are in `docs/LEAF_PLATFORM.md` M2.
   - **Sources:** two researchers fetched FAO-56 Tables 12, 19 and 22 and the Chapter 8 equations and Examples 36 and 38, plus the USDA PHZM method, NWS frost and wind criteria, Rutgers heat, the OSU/UC ANR germination tables and the MRCC/USBR degree-day methods. Every value cites one; where none exists, the value is labelled a heuristic.

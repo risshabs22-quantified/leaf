@@ -360,9 +360,9 @@ None of the five matched exactly, and all five were within one half zone (four c
 **Departure from a literal reading of FAO-56:** water applied early in the day drains before that day's ETc, as FAO's Example 38 table does. Eq. 88 read literally would take ETc first.
 
 ### M3 Knowledge graph and identify
-- [ ] Species profiles from Tavily sources (Lightning extracts, Super verifies, unsourced facts marked)
-- [ ] Identify from a photo (vision proposes, Super checks, the user confirms); plant-ID eval on 40 licensed photos
-- [ ] Live: a profile built and an identification confirmed on production
+- [x] Species profiles from Tavily sources (Lightning extracts, Super verifies, unsourced facts marked)
+- [x] Identify from a photo (vision proposes, Super checks, the user confirms); plant-ID eval on 40 licensed photos
+- [x] Live: a profile built and an identification confirmed on production (hosta photo: *Hosta plantaginea* 72%, other hostas ruled out with sourced reasons; one tap; profile ready in about 30 s with 6 verified facts, pets toxic, children unknown; 4 knowledge credits; zero console errors)
 
 **Species profiles (`backend/knowledge/profile.py`).** A profile is built once per species by the `species_profile` job and shared by every user. It costs 3 Tavily credits and about $0.003 in models.
 - **Sources:** one search for care (light, water, soil, feeding, temperature, pests, diseases, timing) is followed by a batched extract of the top five pages, extension and university pages first. A separate search covers toxicity to pets and children, and its result snippets become passages too.
