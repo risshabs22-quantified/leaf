@@ -9,11 +9,14 @@ import { WAKING_HTML } from "./waking";
 export { ContainerProxy } from "@cloudflare/containers";
 
 // Worker secrets (deployed with `--secrets-file`), passed to the container and nowhere else.
-const SECRETS = ["NEBIUS_API_KEY", "TAVILY_API_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "VAPID_PRIVATE_KEY"] as const;
+const SECRETS = ["NEBIUS_API_KEY", "TAVILY_API_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "VAPID_PRIVATE_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_WEBHOOK_SECRET"] as const;
 // Plain settings from `vars` in wrangler.jsonc.
 const SETTINGS = [
   "LEAF_DAILY_CAP",
   "LEAF_DEEP_DAILY_CAP",
+  "LEAF_SEASON_DAILY_CAP",
+  "LEAF_VISION_MODEL",
+  "LEAF_SEARCH_RESERVE",
   "LEAF_TAVILY_DAILY_CAP",
   "LEAF_TRUSTED_PROXY_HOPS",
   "LEAF_JOURNAL_BUCKET",
@@ -167,7 +170,7 @@ const CRON_HOUSEKEEPING = "17 7 * * *";
 const CRON_HOURLY = "5 * * * *"; // morning planning at 05:00 local, frost/heat check at 14:00
 const CRON_NWS = "35 */3 * * *"; // new NWS alerts for US cells
 const CRON_RADAR = "0 6 * * MON-FRI"; // weekdays: Radar for states with gardens not yet read this week
-const MAX_RADAR_REGIONS = 2; // four Tavily credits each; the container also holds a daily cap
+const MAX_RADAR_REGIONS = 1; // four Tavily credits each; the container also holds a daily cap of four
 const EVENING_OFFSET_H = 9; // 14:00 local is 9 hours after the 05:00 planning hour
 const FROST_C = 3; // the prefilter only decides whether to wake the container;
 const HEAT_C = 32; // the climate engine makes the real call with each plant's limits
@@ -207,13 +210,15 @@ async function hourlyJobs(env: Env, at: Date): Promise<Job[]> {
   const jobs: Job[] = [];
   // Gardens without a location are planned too (indoor plants, cycles): one job each.
   const morning = await env.DB.prepare(
-    "SELECT DISTINCT IFNULL(cell, 'g:' || id) AS cell FROM gardens WHERE plan_hour_utc = ? LIMIT ?",
+    "SELECT IFNULL(cell, 'g:' || id) AS cell FROM gardens WHERE plan_hour_utc = ?" +
+      " GROUP BY IFNULL(cell, 'g:' || id) ORDER BY MAX(last_seen) DESC LIMIT ?",
   ).bind(hour, MAX_CELLS_PER_RUN).all<{ cell: string }>();
   for (const r of morning.results ?? []) {
     jobs.push({ kind: "plan_cell", key: `plan_cell:${r.cell}:${day}`, payload: { cell: r.cell } });
   }
   const evening = await env.DB.prepare(
-    "SELECT DISTINCT c.cell, c.lat, c.lon FROM gardens g JOIN cells c ON c.cell = g.cell WHERE g.plan_hour_utc = ? LIMIT ?",
+    "SELECT c.cell, c.lat, c.lon FROM gardens g JOIN cells c ON c.cell = g.cell WHERE g.plan_hour_utc = ?" +
+      " GROUP BY c.cell ORDER BY MAX(g.last_seen) DESC LIMIT ?",
   ).bind((hour - EVENING_OFFSET_H + 24) % 24, MAX_CELLS_PER_RUN).all<CellRow>();
   for (const c of evening.results ?? []) {
     try {

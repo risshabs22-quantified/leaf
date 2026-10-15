@@ -45,6 +45,26 @@ async def test_the_budget_pauses_search_for_the_rest_of_the_day_then_resets():
     assert budget.used == 1 and budget.cap == 33
 
 
+async def test_a_restart_keeps_the_days_allowance_instead_of_sizing_a_new_one():
+    from backend.data.kv import MemoryKV
+
+    kv, used_now = MemoryKV(), [290]
+
+    async def balance():
+        return 1000, used_now[0]
+
+    day = lambda: date(2026, 10, 13)  # noqa: E731
+    first = CreditBudget(balance, today=day)
+    first.store = kv
+    for _ in range(10):
+        await first.take()
+    used_now[0] = 300  # Tavily's own counter now includes today's ten credits
+    restarted = CreditBudget(balance, today=day)  # the container woke up again
+    restarted.store = kv
+    assert await restarted.remaining() == 22  # 32 for the day, ten already spent
+    assert restarted.cap == 32
+
+
 async def test_a_ceiling_and_an_unreadable_balance_both_keep_the_cap_small():
     async def balance():
         return 100_000, 0

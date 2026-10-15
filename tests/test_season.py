@@ -777,6 +777,23 @@ def test_rewrites_are_limited_to_three_a_day(settings):
         assert r.status_code == 429
 
 
+def test_all_gardens_together_get_a_daily_plan_budget(settings):
+    with api(settings) as client:
+        cap = app.state.leaf.settings.season_daily_cap
+        assert cap >= 1
+        for _ in range(cap):
+            g, h = new_garden(client)
+            with_climate(client, g)
+            client.post(f"/api/gardens/{g['id']}/plants", headers=h, json={"common_name": "tomato"})
+            assert client.post(f"/api/gardens/{g['id']}/season", headers=h).status_code == 202
+        g, h = new_garden(client)
+        with_climate(client, g)
+        client.post(f"/api/gardens/{g['id']}/plants", headers=h, json={"common_name": "tomato"})
+        r = client.post(f"/api/gardens/{g['id']}/season", headers=h)
+        assert r.status_code == 429 and "across all gardens" in r.json()["detail"]
+        assert len([j for j in app.state.queue.sent if j.kind == "season_plan"]) == cap
+
+
 def test_ready_plan_shows_weeks_today_and_exports_a_calendar(settings):
     with api(settings, GOOD) as client:
         g, h = new_garden(client)

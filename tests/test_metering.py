@@ -179,6 +179,13 @@ def test_usage_endpoint_reports_cost_per_active_user_and_no_personal_data(settin
         assert "testclient" not in str(u) and "203." not in text
 
 
+def test_usage_endpoint_is_rate_limited_like_the_platform_one(settings):
+    with api(settings, RESP) as (client, _):
+        app.state.ops_limiter = RateLimiter(per_ip_per_hour=2, daily_cap=100)
+        codes = [client.get("/api/ops/usage").status_code for _ in range(3)]
+        assert codes == [200, 200, 429]
+
+
 def test_health_shows_the_front_door_model_and_platform(settings):
     with api(settings, RESP) as (client, _):
         h = client.get("/api/health").json()

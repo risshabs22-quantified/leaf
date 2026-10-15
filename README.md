@@ -47,7 +47,7 @@ flowchart LR
     GR[Guardrails: code rules, Super verification, quote checks]
     MT[Meter, spend guard, trace ids]
   end
-  TF[(Nebius Token Factory: Nemotron Ultra, Super, Lightning, Nano; one vision model)]
+  TF[(Nebius Token Factory: Nemotron Ultra, Super, Lightning, Nano, Super VL)]
   D1[(D1)]
   KV[(KV)]
   Q[(Queue)]
@@ -73,8 +73,8 @@ Every model call goes through `backend/models.py` to Nebius Token Factory. The r
 | **Nemotron 3 Ultra** (550B, reasoning on) | Reasoner and writer of long plans | The diagnosis and the investigator agent; the season plan (an outline of every planting date, then one call per month); replans |
 | **Nemotron 3 Super** (120B) | Verifier and fallback | Verifies every season plan and replan against the code rules and cited facts, and can only remove items; checks plant identification and species facts; the second opinion in Deep; Ultra's fallback |
 | **Nemotron 3.5 Lightning** | Fast volume work | The live front door (routing and the input safety screen, about 0.4 s), the care plan, claim check, chat, morning notification wording, species fact extraction, Radar's report extraction |
-| **Nemotron Nano 3** | Background screening | Screens check-in notes and fetched web pages for instructions aimed at an AI reader, and triages weather alerts. It is slower than Lightning on Token Factory at the same price (1.4 s against 0.4 s median on the 65-message router eval), so nothing a user waits for uses it |
-| **Kimi K2.6** | Reads photos | Token Factory serves no public NVIDIA vision model (Oct 2026); Leaf picks an image model at startup and prefers an NVIDIA one when it appears |
+| **Nemotron Nano 3** | Background screening | Screens check-in notes and fetched web pages for instructions aimed at an AI reader, and triages weather alerts. It is slower than Lightning on Token Factory at the same price (1.6 s against 0.4 s median on the 65-message router eval), so nothing a user waits for uses it |
+| **Nemotron 3.5 Super VL** | Reads photos | Token Factory now serves this NVIDIA vision model, so Leaf's whole pipeline runs on NVIDIA models. Leaf picks an image model at startup, prefers an NVIDIA one, and keeps Kimi K2.6 as a fallback. The tune-split runs below (13 October) used Kimi K2.6; the held-out runs (15 October) used Nemotron 3.5 Super VL, so the two splits differ in vision model as well as in photos |
 
 ## Numbers (measured unless it says estimated)
 
@@ -96,7 +96,8 @@ Every model call goes through `backend/models.py` to Nebius Token Factory. The r
 
 | Test | Result |
 | --- | --- |
-| Diagnosis, 52 licensed photos (tune split, so optimistic) | Auto right first time 58%, in the top three 73%; when it said Confident it was right 14 of 16 times. Details below |
+| **Diagnosis, 24 held-out photos** (never tuned on, one run) | Auto right first time **33%**, in the top three **50%**; when it said Confident it was right **6 of 9** times; 10 of 24 went to a lab and 9 of those were warranted. Quick: 33% and 46%, but Confident only 3 of 7. Details below |
+| Diagnosis, 52 licensed photos (tune split: tuned on, so optimistic) | Auto right first time 58%, in the top three 73%; Confident right 14 of 16 |
 | Plant identification, 40 licensed photos | 92.5% right with the vision model alone, 95% after the check against sources. Well-lit, well-framed Commons photos likely seen in training, so a ceiling rather than what a phone photo gets |
 | Front-door router, 65 labelled messages (attacks, toxicity questions, real garden questions) | 0 false refusals, 0 of 6 harmful requests missed, 0 to 1 of 7 prompt injections missed, intent 97% (Lightning) |
 | Hardiness zone from 30 years of ERA5-Land, five US cities | Within half a zone of the USDA map in all five, exact in none |
@@ -145,7 +146,16 @@ flowchart TD
 
 The investigator's tools are all read-only: `look_closer`, `get_conditions` (14 days from Open-Meteo through published rules: TOMCAST for tomato; Hutton, Smith and Wallin for potato, each threshold cited in `backend/disease_rules.py`), `search_sources`, `read_source` (only URLs this case's own searches returned; no URL a model writes is ever fetched), `check_alerts`, `ask_user` and `update_differential`/`finish`. **Enforced in code:** 8 counted tool calls, per-tool caps, a dollar budget, a hard 90-second clock with a forced finish, an Ultra-to-Super fallback per turn, and a fall back to Quick if the investigation fails. Probabilities are capped at 0.9.
 
-**Accuracy, 52 licensed photos** (31 diseases, 15 abiotic problems, 6 pests; `evals/README.md`). These were used to tune Leaf, including the verdict thresholds, so the numbers are optimistic; a held-out split of our own phone photos is still being collected and nothing has been tuned on it. One run per mode, 13 October 2026:
+**Held-out accuracy, 24 photos** (12 diseases, 6 pests, 6 nutrient, weather or other problems; `evals/README.md` lists every photo, author, licence and the rules that keep the split clean). Nothing was tuned on these, and each mode was run once on 15 October 2026 (Auto was started once with too small a search allowance, stopped before any result was written, and run again with 80 credits; no result from the first start was seen). Deep was not run on this split, to keep Tavily credits for live diagnoses.
+
+| Mode | Top-1 | Top-3 | When it said Confident | Likely right | Sent to a lab | Brier | Cost / case | Time / case |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Quick | 33% (8 of 24) | 46% | right 3 of 7 | 4 of 16 | 1 (4%) | 0.363 | $0.007 | 10.5 s |
+| **Auto** | **33%** (8 of 24) | **50%** | **right 6 of 9** | 1 of 5 | 10 (42%; 9 warranted) | **0.183** | $0.031 | 27 s |
+
+Read plainly: Leaf gets about a third of these hard photos right first time and half within three answers, much lower than on the photos it was tuned on. Auto's edge is not accuracy (a tie on the first answer) but honesty: it is far better calibrated (Brier 0.18 against 0.36), its "Confident" held up more often than Quick's (6 of 9 against 3 of 7), and it sent the cases it got wrong to a lab (in 9 of its 10 lab referrals the top answer was wrong). Auto investigated 67% of the photos and spent 1.1 Tavily credits per case on average. By group, Auto was right first time on 4 of 12 diseases, 3 of 6 pests and 1 of 6 other problems. Answers are scored by name, so some near-misses count as wrong ("Iron deficiency" for iron chlorosis, "Septoria" for cercospora); the scoring was not changed after seeing results. 24 photos is small: one photo is about 4 points.
+
+**Tune split, 52 licensed photos** (31 diseases, 15 abiotic problems, 6 pests). These were used to tune Leaf, including the verdict thresholds, so the numbers are optimistic. One run per mode, 13 October 2026:
 
 | Mode | Top-1 | Top-3 | When it said Confident | Likely right | Sent to a lab | Brier | Cost / case | Time / case |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -153,7 +163,7 @@ The investigator's tools are all read-only: `look_closer`, `get_conditions` (14 
 | Deep | 56% | 73% | right 7 of 8 | 14 of 24 (top-3: 18) | 20 (38%) | 0.210 | $0.054 | 40 s |
 | **Auto** | **58%** | 73% | **right 14 of 16** | 10 of 23 | 13 (25%) | **0.204** | $0.037 | 31 s |
 
-Auto's row is live; Quick's and Deep's verdict columns replay their logged runs through the final thresholds, which were fitted on those same runs, so they flatter Quick and Deep slightly. Read plainly: Auto is the default because it beat Quick on this split (58% against 52%, better calibrated, about four times the cost), but on 52 cases one case is about 2 points and repeat runs vary by several, so that is a modest lead, not a proven one. "Confident" means something (14 of 16 in Auto). "Likely" is where the misses are, which is why it comes with what to watch for. Late blight is Leaf's most common miss: Auto once said Confident: powdery mildew on a late blight leaf, because the vision model reported a white coating that was not there. A structured symptom checklist in the vision step did not help (48% with it, 52% without), so it is off. `scripts/eval.py` reruns all of this; `docs/ACCURACY_AUDIT.md` examines every miss.
+Auto's row is live; Quick's and Deep's verdict columns replay their logged runs through the final thresholds, which were fitted on those same runs, so they flatter Quick and Deep slightly. Read plainly, on the tune split: Auto is the default because it beat Quick there (58% against 52%, better calibrated, about four times the cost), but on 52 cases one case is about 2 points and repeat runs vary by several, so that is a modest lead, not a proven one. "Confident" means something (14 of 16 in Auto). "Likely" is where the misses are, which is why it comes with what to watch for. Late blight is Leaf's most common miss: Auto once said Confident: powdery mildew on a late blight leaf, because the vision model reported a white coating that was not there. A structured symptom checklist in the vision step did not help (48% with it, 52% without), so it is off. `scripts/eval.py` reruns all of this; `docs/ACCURACY_AUDIT.md` examines every miss.
 
 ## After the diagnosis, and the plant journal
 
@@ -196,7 +206,7 @@ A report nudges a diagnosis only through `backend/radar/prior.py`: two points pe
 - **Jobs**: the Worker's crons fan work out per region and enqueue it; the queue consumer wakes the container only when there is work. Every job is idempotent, retried with backoff, and recorded in D1. The schedule is in `docs/LEAF_PLATFORM.md`.
 - **Cost engineering**: forecasts are cached per 0.1° cell per hour, climatology once per cell for good, species profiles once per species for every user, Radar once per state per week. Open-Meteo's free allowance is counted in D1 and Leaf stays under 8,000 of the 10,000 daily units; Tavily credits are sized each day from the live monthly balance. Every model call is metered by task, model, tokens, cost and latency under a trace id.
 - **Guardrails**: code rules for chemicals, organic, pet, child and bee choices, verdict thresholds and escalation; Super verifies plans; web text is untrusted data inside delimiters and checked in code (quotes must be on the page; nothing a model writes is fetched); the front door screens every message (code first, then a model).
-- **Free services only**: Open-Meteo (CC BY 4.0), NWS, Tavily within its credits, Cloudflare on the current plan.
+- **Free data and services**: Open-Meteo (CC BY 4.0), NWS and Tavily within its credits cost nothing. Hosting is Cloudflare Workers Paid (Containers require it), which is the one paid plan; model calls use the hackathon's Token Factory credits.
 
 ## Nebius and NVIDIA usage
 
@@ -256,7 +266,7 @@ The full write-up, with reproduction steps, impact and a suggestion for each ite
 - **Do not combine `tools` with `response_format`**: Ultra silently stops calling tools.
 - **The thinking switch differs by model family**: Nemotron reads `enable_thinking`, Kimi reads `thinking`. The right key made our vision step 3x faster and 4x cheaper.
 - **The public catalog listed Super as `error`** while it answered every request.
-- **No NVIDIA vision, guard, embedding or reranker model is served**, so Leaf's photo step cannot run on NVIDIA.
+- **No NVIDIA guard, embedding or reranker model is served.** (An NVIDIA vision model, Nemotron 3.5 Super VL, was first noticed on Token Factory on 15 October; the 13 October runs used Kimi K2.6.)
 - **Reasoning tokens count toward `max_tokens`**, which returns empty or truncated JSON unless budgets are generous (a 3,000-token budget for Super's verification ran out while it reasoned; 8,000 with smaller chunks fixed it).
 - **Nemotron 3.5 Lightning returned an empty list for a clear sighting** in Radar's extraction until the prompt carried a worked example; Super found it without one.
 - `tool_choice="required"` produced duplicate calls; Nemotron sometimes answers in prose or invents tool names mid-agent; run-to-run variance at temperature 1.0 is large; there is no cached-input price for agent loops.

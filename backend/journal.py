@@ -143,7 +143,7 @@ class SQLiteJournal:
 
 
 class S3Journal:
-    """One JSON object per entry in an S3-compatible bucket (Nebius Object Storage).
+    """One JSON object per entry in an S3-compatible bucket (Cloudflare R2).
 
     Credentials, endpoint and region come from the standard AWS_* environment variables, so
     none of them live in code. Each object carries its expiry as metadata: expired entries are

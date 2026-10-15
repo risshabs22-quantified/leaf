@@ -229,6 +229,13 @@ async def main() -> int:
         help="Quick without Tavily: diagnosis and confidence come before the search, "
         "so scores are unchanged and no search credits are spent",
     )
+    ap.add_argument(
+        "--credits",
+        type=int,
+        default=0,
+        help="Tavily credits this run may spend (replaces the production daily allowance, "
+        "which would starve a whole split)",
+    )
     args = ap.parse_args()
 
     cases = load_cases(args.cases, args.split, args.limit)
@@ -239,6 +246,10 @@ async def main() -> int:
     if args.no_seed:
         settings = dataclasses.replace(settings, deep_seed=False)
     leaf = await build_leaf(settings)
+    if args.credits and getattr(leaf.searcher, "budget", None) is not None:
+        from backend.search import CreditBudget
+
+        leaf.searcher.budget = CreditBudget(None, max_daily=args.credits)
     if args.no_search:
         from backend.search import NullSearcher
 

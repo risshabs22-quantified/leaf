@@ -24,6 +24,7 @@ from backend.schemas import Garden as GardenPrefs
 PHOTO_DAYS = 30
 METER_DAYS = 30
 JOB_DAYS = 14
+IDLE_GARDEN_DAYS = 120  # a garden nobody has opened for this long is deleted with its data
 TOUCH_EVERY_S = 3600  # how often opening a garden updates last_seen (saves D1 writes)
 RADAR_KEEP_DAYS = 120
 CELL_DEG = 0.1  # grid cell for shared forecasts and climatology (~11 km, ERA5-Land's grid)
@@ -817,6 +818,7 @@ class Repo:
                     ((today - timedelta(days=RADAR_KEEP_DAYS)).isoformat(),),
                 ),
                 ("DELETE FROM radar_pages WHERE checked_at < ?", (now_s() - 60 * 86400,)),
+                ("DELETE FROM gardens WHERE last_seen < ?", (now_s() - IDLE_GARDEN_DAYS * 86400,)),
                 (
                     "DELETE FROM radar_runs WHERE week < ?",
                     (
@@ -840,6 +842,7 @@ class Repo:
             "telegram_links",
             "radar_reports",
             "radar_pages",
+            "idle_gardens",
             "radar_runs",
         ]
         return {n: r.changes for n, r in zip(names, res, strict=True)}
@@ -1443,6 +1446,16 @@ class Repo:
             self.db,
             "SELECT COUNT(*) AS n FROM events WHERE garden_id = ? AND kind = ? AND created_at >= ?",
             garden_id,
+            kind,
+            since,
+        )
+        return int(rows[0]["n"]) if rows else 0
+
+    async def count_events_all(self, kind: str, since: int) -> int:
+        """Events of one kind across every garden (a global daily cap)."""
+        rows = await query(
+            self.db,
+            "SELECT COUNT(*) AS n FROM events WHERE kind = ? AND created_at >= ?",
             kind,
             since,
         )

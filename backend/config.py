@@ -31,9 +31,9 @@ DEFAULT_PRICES_PER_TOKEN = {
     "moonshotai/Kimi-K2.6": (0.95e-6, 4.00e-6),
 }
 
-# Token Factory has no public NVIDIA vision model right now (Nemotron Nano 2 VL was
-# disabled Apr 13, 2026). Leaf auto-detects an image-capable model and prefers NVIDIA
-# ones if any appear. Override with LEAF_VISION_MODEL.
+# Leaf auto-detects an image-capable model and prefers NVIDIA ones (Nemotron 3.5 Super VL was
+# first noticed on Oct 15, 2026; Kimi did the job on Oct 13). The list below
+# is the fallback order when no NVIDIA one is served. Override with LEAF_VISION_MODEL.
 VISION_PREFERENCE = [
     "moonshotai/Kimi-K2.6",
     "zai-org/GLM-5.3-Flash",
@@ -156,6 +156,8 @@ class Settings:
     daily_cap: int = field(default_factory=lambda: _env_int("LEAF_DAILY_CAP", 60))
     # Tavily credits per day: sized daily from the real monthly balance; this is a ceiling.
     tavily_daily_cap: int = field(default_factory=lambda: _env_int("LEAF_TAVILY_DAILY_CAP", 0))
+    # Credits kept back each month so diagnoses never run dry (see backend/search.py).
+    search_reserve: int = field(default_factory=lambda: _env_int("LEAF_SEARCH_RESERVE", 100))
     request_timeout_s: int = field(default_factory=lambda: _env_int("LEAF_TIMEOUT_S", 120))
     # Whole-request budget for one diagnosis or chat, across every model fallback.
     deadline_s: int = field(default_factory=lambda: _env_int("LEAF_DEADLINE_S", 100))
@@ -163,6 +165,9 @@ class Settings:
     max_concurrent: int = field(default_factory=lambda: _env_int("LEAF_MAX_CONCURRENT", 8))
     # Deep mode (the investigator agent). Limits are enforced in code.
     deep_daily_cap: int = field(default_factory=lambda: _env_int("LEAF_DEEP_DAILY_CAP", 20))
+    # Season plans cost about $0.21 each; this caps all gardens together so a script cannot
+    # use the day's model budget before anyone has diagnosed a plant.
+    season_daily_cap: int = field(default_factory=lambda: _env_int("LEAF_SEASON_DAILY_CAP", 8))
     deep_max_calls: int = field(default_factory=lambda: _env_int("LEAF_DEEP_MAX_CALLS", 8))
     deep_wall_s: int = field(default_factory=lambda: _env_int("LEAF_DEEP_WALL_S", 90))
     deep_budget_usd: float = field(default_factory=lambda: _env_float("LEAF_DEEP_BUDGET_USD", 0.10))

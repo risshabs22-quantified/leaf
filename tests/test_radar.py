@@ -750,6 +750,20 @@ def seed_mn(client):
     client.portal.call(go)
 
 
+def test_a_run_with_no_reports_is_not_shown_publicly(settings):
+    with api() as client:
+        from backend.data.repo import RadarRun
+
+        repo = app.state.data.repo
+        run = RadarRun(
+            region="WI", week="2026-W42", status="done", searched=9, read=7, relevant=0,
+            reports=0, credits=4, created_at=1,
+        )  # fmt: skip
+        client.portal.call(repo.record_radar_run, run)
+        v = client.get("/api/radar?region=WI").json()
+        assert v["reports"] == [] and v["last_run"] is None and v["runs"] == []  # no garden hint
+
+
 def test_radar_endpoints_pages_and_privacy(settings):
     with api() as client:
         assert client.get("/radar").status_code == 200 and client.get("/ops").status_code == 200
@@ -771,7 +785,7 @@ def test_radar_endpoints_pages_and_privacy(settings):
         assert (
             plat["data"]["radar_reports"] == 1 and "radar" not in plat
         )  # counts, not which states have gardens
-        assert plat["allowances"]["tavily:radar"] == 8
+        assert plat["allowances"]["tavily:radar"] == 4
         flat = json.dumps(plat)
         assert "garden" not in flat.replace('"gardens"', "") and "key" not in flat.replace(
             "api_keys", ""

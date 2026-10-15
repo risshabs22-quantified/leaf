@@ -177,6 +177,16 @@ def test_client_ip_only_trusts_the_configured_number_of_proxies(hops, expected):
     assert client_ip(Request(scope), hops) == expected
 
 
+def test_every_address_in_an_ipv6_64_shares_one_rate_limit():
+    def ip(addr):
+        headers = [(b"x-forwarded-for", addr.encode())]
+        return client_ip(Request({"type": "http", "headers": headers, "client": ("x", 1)}), 1)
+
+    assert ip("2001:db8:1:2::1") == ip("2001:db8:1:2:aaaa:bbbb:cccc:dddd")
+    assert ip("2001:db8:1:2::1") != ip("2001:db8:1:3::1")
+    assert ip("203.0.113.9") == "203.0.113.9"
+
+
 def test_a_spoofed_forwarded_header_cannot_dodge_the_limit_when_there_is_no_proxy(settings):
     direct = Settings(nebius_api_key="t", vision_model="x/v", trusted_proxy_hops=0)
     with api(direct) as (client, _):

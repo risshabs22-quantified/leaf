@@ -16,6 +16,8 @@ Early plant problems look alike. A fungal leaf spot, a nutrient deficiency and s
 
 ## What it does
 
+Leaf is a garden platform with a plant doctor inside it. **Today** tells you each morning what to water, protect or check, from your own weather and plants, and warns you by push notification about frost, heat, wind and floods. A **season plan** writes 52 weeks of sowing, planting, feeding and protection around your frost dates, checked by code rules and a second model. **Radar** shows what university extension services say is being seen in your state this week, each report with the page's own sentence and link. **Connect** gives you an API, an MCP server (so Claude can ask your garden questions), Home Assistant moisture readings and an optional Telegram bot. The doctor is the part that works the case when a plant goes wrong:
+
 You upload up to three photos of a struggling plant, add a note and your town if you like, and Leaf:
 
 - reads the photos and ranks the likely causes with a probability for each;
@@ -25,7 +27,7 @@ You upload up to three photos of a struggling plant, add a note and your town if
 - writes a short care plan where every step cites a passage Leaf actually read, and drops steps it cannot support;
 - ends with one of three verdicts decided in code: **Confident**, **Likely** (with what to watch for and when to send a sample), or **Send a sample to a lab** (with a printable case summary and your state's plant diagnostic lab).
 
-Serious conditions such as late blight, citrus greening and sudden oak death always go to a lab, because a wrong guess there hurts more than one garden.
+Serious conditions such as late blight, citrus greening and sudden oak death are sent to a lab whenever Leaf gives them a real chance (15% or more in the top two, or 20% anywhere), because a wrong guess there hurts more than one garden.
 
 There are three modes. **Auto** (the default) takes a quick look first and investigates further only when it is not sure, and tells you why. **Quick** takes about 15 seconds and costs under a cent. **Deep** runs an investigator agent with tools, streamed live to the page, in about 40 seconds for about 5 cents.
 
@@ -44,7 +46,7 @@ After the diagnosis, three tools help you act on it:
 - **NVIDIA Nemotron 3 Ultra** (`nvidia/Nemotron-3-Ultra-550b-a55b`): the first differential and the Deep investigator, with reasoning on and native tool calling.
 - **NVIDIA Nemotron 3 Super** (`nvidia/nemotron-3-super-120b-a12b`): the fallback for every reasoning step and the second opinion.
 - **NVIDIA Nemotron 3.5 Lightning** (`nvidia/Nemotron-3_5-Lightning`): the care plan, the claim check, chat, check-in advice and JSON repair.
-- **Kimi K2.6** (`moonshotai/Kimi-K2.6`) reads the photos, because Token Factory serves no NVIDIA vision model yet. Leaf picks the vision model at startup and would switch to an NVIDIA one if it appeared.
+- **NVIDIA Nemotron 3.5 Super VL** (`nvidia/Nemotron-3.5-Super-VL`) reads the photos. We first noticed it on Token Factory on 15 October; the 13 October runs used Kimi K2.6, which Leaf keeps as a fallback. The tune-split accuracy numbers were measured with Kimi, the held-out ones with Super VL.
 
 **The investigator** is Nemotron 3 Ultra calling read-only tools: `look_closer` (crops a photo region in code and asks a targeted question), `get_conditions` (Open-Meteo weather and the cited disease-risk rules), `search_sources` and `read_source` (Tavily), `check_alerts` (Tavily news), `ask_user` (up to three questions that would separate the top two causes) and `finish`. Limits are enforced in code: 8 counted tool calls, per-tool caps, a dollar budget, a hard 90-second clock with a forced finish, and a fall back to Quick if anything fails.
 
@@ -56,7 +58,7 @@ After the diagnosis, three tools help you act on it:
 
 **Hosting:** FastAPI and a static frontend in one container on Cloudflare Containers behind a small Worker, with reports in a Cloudflare R2 bucket. The container sleeps when idle; a visitor sees a "Leaf is waking up" page for a few seconds instead of a blank screen.
 
-**Testing:** 422 offline tests with fake models and search, and an evaluation harness that scores top-1 and top-3 accuracy, each verdict, lab referrals, calibration (Brier score), cost and time per case.
+**Testing:** more than 800 offline tests with fake models and search, and an evaluation harness that scores top-1 and top-3 accuracy, each verdict, lab referrals, calibration (Brier score), cost and time per case.
 
 ## Challenges we ran into
 
@@ -71,16 +73,16 @@ Details and suggestions for the platform teams are in `docs/FEEDBACK.md`.
 
 ## Accomplishments that we're proud of
 
-On 52 licensed photos (31 diseases, 15 abiotic problems, 6 pests), one run per mode. These photos were also used for tuning, so the numbers are optimistic; a held-out test set of our own photos is still being collected.
+**Held-out:** 24 photos Leaf was never tuned on (12 diseases, 6 pests, 6 nutrient, weather or other problems), one run per mode on 15 October. Details and the rules that keep the split clean are in `evals/README.md`.
 
 | Mode | Top-1 | Top-3 | When it said Confident | Sent to a lab | Cost per case | Time per case |
 | --- | --- | --- | --- | --- | --- | --- |
-| Quick | 52% | 75% | right 11 of 12 | 6% | $0.009 | 16 s |
-| Deep | 56% | 73% | right 7 of 8 | 38% | $0.054 | 40 s |
-| Auto | 58% | 73% | right 14 of 16 | 25% | $0.037 | 31 s |
+| Quick | 33% | 46% | right 3 of 7 | 4% | $0.007 | 10.5 s |
+| Auto | 33% | 50% | right 6 of 9 | 42% | $0.031 | 27 s |
 
-- "Confident" means something: in Auto it was right 14 of 16 times.
-- 9 of Auto's 13 lab referrals were warranted (the top answer was wrong, or the condition was late blight).
+These are hard photos (fruit close-ups, insects, odd problems) and the first answer is right only a third of the time. What Leaf does well is know when it is unsure: Auto is far better calibrated than Quick (Brier 0.18 against 0.36), and 9 of its 10 lab referrals were cases where the top answer was wrong. Deep was not run on this split. On the 52 photos we tuned on, Auto scored 58% (top-3 73%, Confident right 14 of 16), but those numbers are optimistic. The tune runs used Kimi K2.6 for the photo step and the held-out runs used Nemotron 3.5 Super VL.
+
+- Saying "send a sample" is measured, not just claimed: on held-out photos Auto's "Confident" was right 6 of 9 times, against 3 of 7 for Quick.
 - Every care-plan step cites a passage Leaf read, and unsupported steps are removed before you see them.
 - The whole case is visible: the differential re-ranking live, the weather, the sources and the second opinion.
 
@@ -92,8 +94,8 @@ On 52 licensed photos (31 diseases, 15 abiotic problems, 6 pests), one run per m
 
 ## What's next
 
-- Finish the held-out test set of our own phone photos and report it without tuning on it.
-- Switch the vision step to an NVIDIA vision model as soon as Token Factory serves one.
+- Grow the held-out set with our own phone photos, and report it without tuning on it.
+- Re-tune the verdict thresholds for Super VL on a bigger held-out set (they were fitted with Kimi's readings).
 - Spray windows that also respect a product's pre-harvest interval, read from its label.
 - A targeted close-up question for late blight's tell-tale signs (water-soaked margins, white growth on the underside) to fix its most common miss.
 

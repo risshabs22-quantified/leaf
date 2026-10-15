@@ -268,6 +268,7 @@ def refusal_for(decision: FrontDoorDecision) -> str:
 async def usage(request: Request, days: int = Query(1, ge=1, le=7)) -> dict[str, Any]:
     """Cost, tokens, latency, model mix, cache hit rate and cost per active user. No personal
     data: counts and sums only."""
+    request.app.state.ops_limiter.check(_ip(request))
     meter = request.app.state.meter
     await meter.flush()
     today = datetime.now(UTC).date()
@@ -929,7 +930,7 @@ async def set_location(
 
 # ---------- Season Plan (M5) ----------
 
-SEASON_WRITES_PER_DAY = 3  # each plan costs about $0.06 in model calls
+SEASON_WRITES_PER_DAY = 3  # per garden; each plan costs about $0.21 in model calls
 WRITING_STALE_S = 15 * 60  # a plan still 'writing' after this may be started again
 
 
@@ -988,6 +989,13 @@ async def start_season(request: Request, garden: Garden) -> dict[str, Any]:
         return await season_view(request, garden)
     if await repo.count_events(garden.id, "season_plan", now_s() - 86400) >= SEASON_WRITES_PER_DAY:
         raise HTTPException(429, "Leaf writes a garden's plan at most 3 times a day. Try tomorrow.")
+    day_cap = request.app.state.leaf.settings.season_daily_cap
+    if await repo.count_events_all("season_plan", now_s() - 86400) >= day_cap:
+        raise HTTPException(
+            429,
+            f"Leaf writes at most {day_cap} season plans a day across all gardens, to keep "
+            "the day's budget for diagnoses. Please try again tomorrow.",
+        )
     ctx = REQUEST.get()
     try:
         await start_plan(

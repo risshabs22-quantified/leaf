@@ -27,7 +27,9 @@ def _run_view(run: Any) -> dict[str, Any]:
     return run.model_dump() | {"checked_at": run.created_at}
 
 
-async def region_view(request: Request, region: str) -> dict[str, Any]:
+async def region_view(request: Request, region: str, public: bool = False) -> dict[str, Any]:
+    """`public` hides run details when there is nothing to show: a run on its own would say
+    that someone in that state has a garden."""
     repo = request.app.state.data.repo
     since = (datetime.now(UTC).date() - timedelta(days=WINDOW_DAYS)).isoformat()
     try:
@@ -35,6 +37,8 @@ async def region_view(request: Request, region: str) -> dict[str, Any]:
         runs = await repo.radar_runs(region, 4)
     except DataError as exc:
         raise HTTPException(503, "Leaf's storage is unavailable. Please try again.") from exc
+    if public and not reports:
+        runs = []
     return {
         "region": region,
         "name": regions.name(region),
@@ -75,7 +79,7 @@ async def radar_for_region(
     code = region.upper()
     if code not in regions.NAMES:
         raise HTTPException(404, "Radar covers US states only.")
-    return await region_view(request, code)
+    return await region_view(request, code, public=True)
 
 
 @router.get("/api/gardens/{garden_id}/radar")

@@ -6,6 +6,7 @@ Run locally:  uvicorn backend.app:app --reload
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
 import secrets
@@ -156,6 +157,18 @@ class DailyCap:
         return max(0, self.cap - self.count) if date.today() == self.day else self.cap
 
 
+def ip_key(addr: str) -> str:
+    """The key a rate limit counts: an IPv6 address stands for its whole /64, because one
+    household or host is handed billions of them and each would otherwise get its own allowance."""
+    try:
+        ip = ipaddress.ip_address(addr)
+    except ValueError:
+        return addr
+    if ip.version == 6:
+        return str(ipaddress.ip_network(f"{ip}/64", strict=False).network_address)
+    return str(ip)
+
+
 def client_ip(request: Request, hops: int = 1) -> str:
     """Counting from the right, the `hops`-th X-Forwarded-For entry is the one our own
     proxy appended; anything further left is client-supplied and can be spoofed to dodge
@@ -164,8 +177,8 @@ def client_ip(request: Request, hops: int = 1) -> str:
         parts = [p.strip() for p in request.headers.get("x-forwarded-for", "").split(",")]
         parts = [p for p in parts if p]
         if len(parts) >= hops:
-            return parts[-hops]
-    return request.client.host if request.client else "?"
+            return ip_key(parts[-hops])
+    return ip_key(request.client.host) if request.client else "?"
 
 
 class BodyTooLarge(HTTPException):
@@ -236,7 +249,11 @@ async def build_leaf(settings: Settings) -> Leaf:
     llm = TokenFactory(settings)
     if settings.tavily_api_key:
         key = settings.tavily_api_key
-        budget = CreditBudget(lambda: tavily_balance(key), max_daily=settings.tavily_daily_cap)
+        budget = CreditBudget(
+            lambda: tavily_balance(key),
+            max_daily=settings.tavily_daily_cap,
+            reserve=settings.search_reserve,
+        )
         searcher: Searcher = TavilySearcher(key, budget)
     else:
         searcher = NullSearcher()
@@ -263,20 +280,41 @@ async def lifespan(app: FastAPI):
     s = app.state.leaf.settings
     if getattr(app.state, "journal", None) is None:
         app.state.journal = open_journal(s.journal_path, s.journal_bucket)
-    try:
-        removed = await app.state.journal.purge()
-    except Exception:  # noqa: BLE001 - a storage hiccup must not stop the app starting
-        log.exception("journal purge failed; expired entries are still hidden on read")
-        removed = 0
-    if removed:
-        log.info("journal: removed %d expired entries", removed)
+    # Purging lists the bucket and reads every report, so it runs beside the first requests
+    # instead of holding them up as reports accumulate.
+    background = [asyncio.create_task(_purge_journal(app.state.journal))]
+    if not app.state.leaf.vision_model:
+        background.append(asyncio.create_task(_find_vision_model(app.state.leaf)))
     flusher = asyncio.create_task(_flush_meter_forever(app.state.meter))
     try:
         yield
     finally:
         await drain_telegram()  # messages still being answered get a moment to finish
         flusher.cancel()
+        for task in background:
+            task.cancel()
         await app.state.meter.flush()
+
+
+async def _purge_journal(journal) -> None:
+    try:
+        removed = await journal.purge()
+    except Exception:  # noqa: BLE001 - a storage hiccup must not stop the app
+        log.exception("journal purge failed; expired entries are still hidden on read")
+        return
+    if removed:
+        log.info("journal: removed %d expired entries", removed)
+
+
+VISION_RETRY_S = 30
+
+
+async def _find_vision_model(leaf: Leaf) -> None:
+    """A model-list call that failed at startup must not switch photos off until the next
+    restart: try again until a vision model is found."""
+    while not leaf.vision_model:
+        await asyncio.sleep(VISION_RETRY_S)
+        leaf.vision_model = await discover_vision_model(leaf.llm, leaf.settings)
 
 
 METER_FLUSH_S = 15  # streamed Deep cases make calls after their response has started
@@ -304,6 +342,9 @@ async def start_platform(app: FastAPI, s: Settings) -> None:
     else:
         leaf.llm = MeteredLLM(leaf.llm, meter)
     app.state.cache = SharedCache(data.kv, meter)
+    budget = getattr(leaf.searcher, "budget", None)
+    if budget is not None:
+        budget.store = data.kv  # the day's allowance survives container restarts
     if getattr(app.state, "climate", None) is None or app.state.climate.repo is not data.repo:
         app.state.climate = Climate(data.repo, app.state.cache)
     weather = getattr(app.state, "weather", None)

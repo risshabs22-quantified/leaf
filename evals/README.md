@@ -4,16 +4,25 @@
 
 ## Splits
 
-- **test**: the held-out split we report. These are the maintainers' own labelled phone photos (added to `evals/images/`). Never tune prompts or weights on them.
-- **tune**: used while building and tuning Leaf. The images below come from Wikimedia Commons under licences that allow reuse.
+- **test**: the held-out split we report: 24 photos, one per condition, listed in the second table below. Never tune prompts, weights or thresholds on them, and run each mode on them once. They are Wikimedia Commons photos chosen under the leak rules below, not the maintainers' own phone photos (which we did not have in time).
+- **tune**: used while building and tuning Leaf (52 photos, first table).
 
-The tune photos are archival, so their weather is unknown: their cases carry no region, and the weather tool reports that no location was given. Lab-style and curated photos flatter any model compared with real phone photos, which is why the test split is our own.
+The photos are archival, so their weather is unknown: their cases carry no region, and the weather tool reports that no location was given. Lab-style and curated photos flatter any model compared with real phone photos, so even the test split is likely better than what a phone photo gets for some conditions, and harder for others (fruit close-ups, macro insects).
+
+### Leak rules for the test split
+
+1. No file, uploader or author appears in the tune split or the plant-identification set (checked by name in code), and no file matches one of those images by SHA-1 or by a near-duplicate perceptual hash.
+2. At most one photo per author and per series, and one photo per condition.
+3. Labels come only from the uploader's own file title or description, recorded in `evals/test_candidates.jsonl` as `label_text`. No label comes from a model.
+4. No photo carries an overlay, caption or label card that names the condition.
+5. Only CC0, public domain, CC BY and CC BY-SA files.
+6. The images were never used to write or tune a prompt, rule or threshold, and `scripts/eval.py --split test` was run once per mode (Quick: `--no-search`, which spends no search credits and leaves scores unchanged; Auto: with an 80-credit allowance). Results: `summary_test_heldout-quick.json`, `summary_test_heldout-auto.json` and `results.jsonl`.
 
 ## Licences (tune split)
 
 **The images in `evals/images/` are not covered by Leaf's MIT licence.** Each file keeps its own licence, listed below with its author, source link and the changes made. Only CC0, public domain, CC BY and CC BY-SA files are used; anything NonCommercial, NoDerivatives or without a clear licence is excluded. If you reuse a file, follow its licence: credit the author, link the licence, say it was changed, and share CC BY-SA files (including our resized copies) under CC BY-SA.
 
-All images were retrieved from Wikimedia Commons on 2026-10-12 and 2026-10-13. Licence and author were read from the Commons API metadata (each licence was checked again at download time); each label is stated by the uploader in the file title or description. Changes made: downscaled to at most 1600 px on the long side where larger (the second batch was fetched as Commons' 1280 px thumbnails, as Wikimedia asks of bulk downloads), and re-encoded as JPEG (quality 85).
+All tune images were retrieved from Wikimedia Commons on 2026-10-12 and 2026-10-13. Licence and author were read from the Commons API metadata (each licence was checked again at download time); each label is stated by the uploader in the file title or description. Changes made: downscaled to at most 1600 px on the long side where larger (the second batch was fetched as Commons' 1280 px thumbnails, as Wikimedia asks of bulk downloads), and re-encoded as JPEG (quality 85).
 
 | File | Condition | Crop | Author | Licence | Source | Changes |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -88,7 +97,7 @@ Put each photo in `evals/images/test/` and add a line such as:
 
 ## Plant identification set (M3)
 
-`plant_id.jsonl` lists 40 photos of 40 common garden plants and houseplants (`images/plant_id/`), used by `scripts/eval_plant_id.py` (`make eval-plant-id`). The label is the species the uploader named in the file title, description or categories; synonyms accepted in scoring are listed in `plant_id.jsonl`. They come from Wikimedia Commons under CC0, public domain, CC BY or CC BY-SA, retrieved on 2026-10-16. Licence and author were read from the Commons API metadata; where a file has no author field, the uploader is named and marked as such. Photos were chosen by eye from the first licensed candidates, skipping illustrations, paintings, herbarium sheets and market scenes. Commons photos are mostly well lit and well framed, which flatters any model compared with a phone photo.
+`plant_id.jsonl` lists 40 photos of 40 common garden plants and houseplants (`images/plant_id/`), used by `scripts/eval_plant_id.py` (`make eval-plant-id`). The label is the species the uploader named in the file title, description or categories; synonyms accepted in scoring are listed in `plant_id.jsonl`. They come from Wikimedia Commons under CC0, public domain, CC BY or CC BY-SA, retrieved on 2026-10-15. Licence and author were read from the Commons API metadata; where a file has no author field, the uploader is named and marked as such. Photos were chosen by eye from the first licensed candidates, skipping illustrations, paintings, herbarium sheets and market scenes. Commons photos are mostly well lit and well framed, which flatters any model compared with a phone photo.
 
 **These images are not covered by Leaf's MIT licence.** Each keeps its own licence, listed below.
 
@@ -134,3 +143,34 @@ Put each photo in `evals/images/test/` and add a line such as:
 | `ilex_aquifolium.jpg` | *Ilex aquifolium* | holly | RVB38 | CC BY-SA 4.0 | [Commons](https://commons.wikimedia.org/wiki/File:Hust_-_Ilex_aquifolium.jpg) | resized 3024x4032 to 1200x1600, re-encoded as JPEG q85 |
 | `rosa_rugosa.jpg` | *Rosa rugosa* | rugosa rose | Homoarborea | CC BY-SA 4.0 | [Commons](https://commons.wikimedia.org/wiki/File:Rosa_rugosa_in_de_herfst.jpg) | resized 4288x2848 to 1600x1063, re-encoded as JPEG q85 |
 | `allium_sativum.jpg` | *Allium sativum* | garlic | Ermell | CC BY-SA 4.0 | [Commons](https://commons.wikimedia.org/wiki/File:Knoblauch_(Allium_sativum)-20200621-RM-085344.jpg) | resized 5182x3886 to 1600x1200, re-encoded as JPEG q85 |
+
+## Licences (test split)
+
+The same licence terms apply as above (these files are not covered by Leaf's MIT licence; credit the author, link the licence, say it was changed, share CC BY-SA files under CC BY-SA). The files are in `evals/images/test/`. Licence and author were read from the Commons API metadata at download time on 2026-10-15; each label is the uploader's own file title or description (`evals/test_candidates.jsonl`, field `label_text`, some in German or Polish). Changes: downscaled to at most 1280 px and re-encoded as JPEG (quality 85).
+
+| File | Condition | Crop | Author | Licence | Source | Changes |
+| --- | --- | --- | --- | --- | --- | --- |
+| `01.jpg` | powdery mildew | pumpkin | Jeff Kubina | Public domain | [Commons](https://commons.wikimedia.org/wiki/File:Powdery_mildew_on_pumpkin_leaves_1.jpg) | resized 3024x1998 to 1280x846, re-encoded as JPEG q85 |
+| `02.jpg` | rust | hollyhock | Cricket Raspet | CC BY 4.0 | [Commons](https://commons.wikimedia.org/wiki/File:Puccinia_malvacearum_170925661.jpg) | resized 2048x1536 to 1280x960, re-encoded as JPEG q85 |
+| `03.jpg` | apple scab | apple | Bill Kasman | CC0 | [Commons](https://commons.wikimedia.org/wiki/File:Diseased_apple.jpg) | resized 4608x3456 to 1280x960, re-encoded as JPEG q85 |
+| `04.jpg` | cercospora | spinach | Plant pests and diseases | CC0 | [Commons](https://commons.wikimedia.org/wiki/File:Spinach-_Cercospora_leaf_spot_-_5.jpg) | resized 3601x4974 to 927x1280, re-encoded as JPEG q85 |
+| `05.jpg` | anthracnose | hot pepper (fruit) | DannykhorskhiLXII | CC BY-SA 4.0 | [Commons](https://commons.wikimedia.org/wiki/File:Pepper_Disease_in_Tropical_Bonakanda.jpg) | resized 3608x2136 to 1280x758, re-encoded as JPEG q85 |
+| `06.jpg` | fire blight | apple | Sebastian Stabinger | CC BY-SA 3.0 | [Commons](https://commons.wikimedia.org/wiki/File:Apple_tree_with_fire_blight.jpg) | resized 3072x2048 to 1280x853, re-encoded as JPEG q85 |
+| `07.jpg` | late blight | tomato | Schneebiene | CC0 | [Commons](https://commons.wikimedia.org/wiki/File:Unreife_Tomaten_mit_Kraut-_und_Braunfäule.jpg) | resized 3648x2736 to 1280x960, re-encoded as JPEG q85 |
+| `08.jpg` | boxwood blight | boxwood | m.borden | CC BY-SA 2.0 | [Commons](https://commons.wikimedia.org/wiki/File:Boxwood_blight_-_51938015182.jpg) | resized 4032x3024 to 1280x960, re-encoded as JPEG q85 |
+| `09.jpg` | mosaic virus | cucumber | DieterO | Public domain | [Commons](https://commons.wikimedia.org/wiki/File:Gurkenmosaikvirus.JPG) | resized 1289x1022 to 1280x1015, re-encoded as JPEG q85 |
+| `10.jpg` | gray mold | rose | Flowersabc | CC BY-SA 2.0 | [Commons](https://commons.wikimedia.org/wiki/File:Botrytis_cinerea_-_5775778185.jpg) | resized 1600x1200 to 1280x960, re-encoded as JPEG q85 |
+| `11.jpg` | black spot | rose | giantcicada | CC BY 4.0 | [Commons](https://commons.wikimedia.org/wiki/File:Diplocarpon_rosae_123701039.jpg) | resized 2048x1536 to 1280x960, re-encoded as JPEG q85 |
+| `12.jpg` | early blight | tomato (fruit) | Stok | CC BY-SA 4.0 | [Commons](https://commons.wikimedia.org/wiki/File:Alternaria_solani_2.jpg) | re-encoded as JPEG q85 (kept 1017x757) |
+| `13.jpg` | aphids | rose | S. Rae from Scotland, UK | CC BY 2.0 | [Commons](https://commons.wikimedia.org/wiki/File:Aphids_on_rose_-_Flickr_-_S._Rae.jpg) | resized 2332x1887 to 1280x1036, re-encoded as JPEG q85 |
+| `14.jpg` | scale insects | ivy | Himbear | CC BY-SA 4.0 | [Commons](https://commons.wikimedia.org/wiki/File:Aspidiotus_hedericola_1.jpg) | resized 4032x3024 to 1280x960, re-encoded as JPEG q85 |
+| `15.jpg` | leaf miner | champak | SKsiddhartthan | CC BY-SA 4.0 | [Commons](https://commons.wikimedia.org/wiki/File:Leaf_miner_track.jpg) | resized 4160x3120 to 1280x960, re-encoded as JPEG q85 |
+| `16.jpg` | chewing insects | tomato | Ljessee123 | CC BY-SA 4.0 | [Commons](https://commons.wikimedia.org/wiki/File:Tomato_Hornworm_eating_tomato_plant.jpg) | resized 3264x2448 to 1280x960, re-encoded as JPEG q85 |
+| `17.jpg` | spider mites | unspecified (houseplant/legume) | Mokkie | CC BY-SA 3.0 | [Commons](https://commons.wikimedia.org/wiki/File:Spider_mites.jpg) | resized 4032x3024 to 1280x960, re-encoded as JPEG q85 |
+| `18.jpg` | box tree moth | boxwood | Sikander Iqbal | CC BY-SA 4.0 | [Commons](https://commons.wikimedia.org/wiki/File:Cydalima_perspectalis_-_Box_tree_moth_caterpillar_-_20240721_-_01.jpg) | resized 3072x4080 to 964x1280, re-encoded as JPEG q85 |
+| `19.jpg` | iron chlorosis | bitter orange (citrus) | Eiku en exil | CC BY-SA 4.0 | [Commons](https://commons.wikimedia.org/wiki/File:Chlorose_ferrique_sur_Citrus_aurantium.jpg) | resized 2304x4096 to 720x1280, re-encoded as JPEG q85 |
+| `20.jpg` | potassium deficiency | potato | Simranpreetsidhu | CC BY-SA 4.0 | [Commons](https://commons.wikimedia.org/wiki/File:Potassium_deficiency_in_potatoes.jpg) | resized 6000x4000 to 1280x853, re-encoded as JPEG q85 |
+| `21.jpg` | blossom end rot | tomato (fruit) | Zemxer | CC BY-SA 4.0 | [Commons](https://commons.wikimedia.org/wiki/File:Çiçek_burnu_çürüklüğü.jpg) | resized 3000x4000 to 960x1280, re-encoded as JPEG q85 |
+| `22.jpg` | cold injury | bay laurel | Victor M. Vicente Selvas | CC BY-SA 3.0 | [Commons](https://commons.wikimedia.org/wiki/File:Gelada_a_llorer_21012.JPG) | resized 3072x2304 to 1280x960, re-encoded as JPEG q85 |
+| `23.jpg` | sunscald | strawberry (fruit) | Hayan Alhasan | CC BY-SA 4.0 | [Commons](https://commons.wikimedia.org/wiki/File:Strawberry_sunscald_disease_in_Umm_Haratayn_al-Gharbiyah_Spring_2024.jpg) | resized 3456x4608 to 960x1280, re-encoded as JPEG q85 |
+| `24.jpg` | edema | fiddle-leaf fig | BezierBaby | CC BY-SA 4.0 | [Commons](https://commons.wikimedia.org/wiki/File:Edema_on_a_Ficus_lyrata_leaf.jpg) | resized 3024x4032 to 960x1280, re-encoded as JPEG q85 |

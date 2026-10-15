@@ -43,6 +43,17 @@ def test_rank_sources_prefers_extension_pages():
     assert [s.id for s in out] == [1, 2]
 
 
+def test_rank_sources_drops_links_that_are_not_web_pages():
+    out = rank_sources(
+        [
+            {"url": "javascript:alert(1)", "title": "x", "content": "", "score": 0.9},
+            {"url": "data:text/html,<b>x", "title": "y", "content": "", "score": 0.9},
+            {"url": "HTTPS://extension.psu.edu/x", "title": "PSU", "content": "", "score": 0.1},
+        ]
+    )
+    assert [s.url for s in out] == ["HTTPS://extension.psu.edu/x"]
+
+
 async def test_diagnose_happy_path_routes_models(settings):
     leaf, llm, searcher = make_leaf(settings, {"vision": OBS, "diagnose": DIAG_HIGH, "plan": PLAN})
     res = await leaf.diagnose(image_b64="abc", notes="spots", region="Ohio")

@@ -12,9 +12,9 @@ Keep it short: newest entries first.
 | Backend hardening | done | two audits, 85 offline tests, each fix mutation-checked; live: bomb 400, oversize 413, injection, photo 5/5 |
 | Photo path live | done | synthetic leaf through vision, Ultra, Lightning; chat follow-up works |
 | Real Token Factory calls | done | `make smoke-all`: Ultra 627 ms, Super fallback 788 ms, Lightning 477 ms |
-| Vision model confirmed | done | `make smoke` picks `moonshotai/Kimi-K2.6` (no NVIDIA vision model listed) |
+| Vision model | done | Oct 15: Token Factory lists `nvidia/Nemotron-3.5-Super-VL`, and production uses it (Kimi K2.6 stays as fallback; the Oct 13 tune runs used Kimi) |
 | Tavily live | done | `make smoke-all` OK; live `/api/diagnose` returned 6 sources |
-| Eval set | tune split done (52 Commons photos); test split waiting on the user's phone photos | `evals/README.md`, `docs/ACCURACY_AUDIT.md` |
+| Eval set | tune split (52 photos) and held-out test split (24 photos, leak rules in `evals/README.md`) done; held-out Quick and Auto run once | `evals/summary_test_heldout-*.json` |
 | Three verdicts and Auto mode (Auto is the default) | done | README "Quick, Deep and Auto (measured)" |
 | Deployed on Cloudflare Containers (every model call goes to Nebius Token Factory) | done | https://leafathon.site; live: health OK, Quick, Auto, lab handoff, share link from R2 |
 | Landing page, organic and pet-safe plans, spray windows, My plants | done | `/`, `/app`, `/plants`; 422 tests |
@@ -28,9 +28,19 @@ Keep it short: newest entries first.
 | README final, video, Devpost draft | Devpost drafted (`docs/DEVPOST.md`); video todo | `/submission-check` |
 
 ## Next
-0. **Test split:** the user's own phone photos into `evals/images/test/`, then one run per mode (never tune on them).
+0. **Test split:** done on Oct 15 (24 Commons photos, run once). Do not tune on it. The user's own phone photos can be added later as a second held-out set.
 1. **Hosting:** keep the Worker up until judging ends (Dec 15), then `npx --prefix cloudflare wrangler delete leaf`. Redeploy with `make deploy-cloudflare`; it ships the secrets with the version.
 2. Late blight is the most-missed condition (the vision model reports a powdery coating on its lesions); a targeted `look_closer` question for sporulation or water-soaked margins is the next accuracy lead.
+
+## Release-candidate checklist (Oct 15)
+- [x] `make check` green (829 tests, lint, Worker `tsc`)
+- [x] Held-out split built under written leak rules; Quick and Auto run once; README, landing and Devpost lead with the held-out numbers
+- [x] Whole-platform review run; blockers and should-fix items fixed or listed above
+- [x] Judge simulation at 375 and 1280 px on production; top issues fixed
+- [x] Temporary files removed (`/tmp/leaf-m7`, `/tmp/leaf-m6`, `/tmp/leafwork`, `.playwright-mcp/`)
+- [ ] Pushed and deployed (`make deploy-cloudflare`), then one real-browser pass on production
+- [ ] Real-device checks by the maintainer: push on a phone, Telegram with a bot token, Claude Code MCP (steps in the final report of this session)
+- [ ] Freeze Oct 22; submission by Oct 30, 10:00 AM PT; demo video; Devpost
 
 ## Blockers
 - None yet.
@@ -39,8 +49,15 @@ Keep it short: newest entries first.
 | Date | Cases | Top-1 | Top-3 | Escalated | Change |
 | --- | --- | --- | --- | --- | --- |
 | 2026-10-13 | 52 tune | Quick 52% / Deep 56% / Auto 58% | 75% / 73% / 73% | lab 6% / 38% / 25% | three verdicts, Auto, fitted thresholds; checklist off (48% with it) |
+| 2026-10-15 | 24 held-out test | Quick 33% / Auto 33% | 46% / 50% | lab 4% / 42% | first run on the held-out split; vision model was Nemotron 3.5 Super VL (tune runs: Kimi). Auto Confident right 6 of 9, Quick 3 of 7 |
 
 ## Session log
+- 2026-10-15: **Release-candidate pass** (no new features). Judge simulation, whole-platform review, held-out accuracy.
+  - **Balances:** Tavily 749 of 1,000 used (251 left) before the held-out runs; Auto spent about 26 credits and Quick none. Token Factory: production meter $0.43 over 95 calls (Oct 15) and the local dev meter $0.65; Nebius has no balance API, so credit left is read in the console (Billing, then Usage). Reserve for diagnoses: production keeps 20 credits back (`LEAF_SEARCH_RESERVE`), Radar takes 4 a day (one state).
+  - **Held-out accuracy** (24 photos, never tuned on, one run each): Quick 33% top-1, 46% top-3, Confident right 3 of 7; Auto 33%, 50%, Confident right 6 of 9, 10 of 24 sent to a lab (9 warranted), Brier 0.18 against 0.36. Far below the tuned 58%: hard photos, and the vision model changed from Kimi K2.6 to Nemotron 3.5 Super VL between the two runs. README, landing page and Devpost now lead with these; tune numbers are labelled as tune.
+  - **Judge simulation** (new user in headless Chromium at 375 and 1280 px on production: landing, three plants, Today, season plan 75 s, diagnosis, report page, check-in, notifications, Radar, ops, Connect): no console errors or failed requests; every page under 1 s except the model steps. Found and fixed: the season plan wait said nothing about how long it takes; the notification error read "Registration failed - permission denied"; Today had no way to delete a garden; Radar's empty state implied which states have gardens; a landing claim about location rounding was wrong for gardens; the landing "always go to a lab" wording overstated the rule. One phone-width run of the diagnosis step never produced a result in my script while a repeat worked (and the site made no model call in the failed one); not reproduced, recheck below.
+  - **Whole-platform review (opus):** nothing disqualifying (no secrets in 58 commits; CSP; NVIDIA-only text models; Tavily only in `search.py`). Fixed: a global daily cap on season plans (8, `LEAF_SEASON_DAILY_CAP`) so a script cannot spend the day's $3 before anyone diagnoses a plant; per-IP limits count an IPv6 /64 as one client; Telegram secrets now reach the container (the bot could never have turned on); the Tavily day allowance is stored in KV so a restart cannot size a second one; vision discovery retries after a failed start; the journal purge runs beside the first requests; `safeUrl` on source links and non-web URLs dropped from sources (stored XSS path); `/api/ops/usage` rate limit; cron picks recently used gardens first; gardens unseen for 120 days are deleted; `scripts/deploy_nebius.sh` and `make deploy` removed (Nebius hosting is forbidden); README and Devpost claims corrected (free services, test count, Devpost now describes the whole platform). Left open: IPv6/WAF rules at Cloudflare, HSTS (zone setting), a cap on junk species names, R2 photo cleanup beyond the startup purge.
+  - **Tests:** 829 pass (7 new).
 - 2026-10-15: **Leaf Platform M7, Radar, ops and story** (`backend/radar/`, `/radar`, `/ops`). Details are in `docs/LEAF_PLATFORM.md` M7.
   - **Radar:** a weekly job per US state with gardens searches that state's extension hosts, reads pages, dates them in code, screens (Nano 3), extracts (Lightning) and checks every report in code: quote on the page, names the pest, says it was seen, not negated, not another year, not another state. A capped regional prior (at most 5 points) reaches Quick and Deep; the verdict is the more cautious of the raw and boosted decisions.
   - **`/ops`:** counts and sums only. **README and landing page** rewritten as a platform with measured numbers and honest limits.

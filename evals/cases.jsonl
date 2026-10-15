@@ -58,3 +58,27 @@
 {"image": "evals/images/tune/rust_4.jpg", "expected": ["rust"], "condition": "rust", "crop": "rose", "notes": "", "region": "", "split": "tune", "tag": "clear"}
 {"image": "evals/images/tune/gray_mold_1.jpg", "expected": ["gray mold", "grey mould", "botrytis"], "condition": "gray_mold", "crop": "tomato", "notes": "", "region": "", "split": "tune", "tag": "clear"}
 {"image": "evals/images/tune/mosaic_virus_1.jpg", "expected": ["mosaic"], "condition": "mosaic_virus", "crop": "tomato", "notes": "", "region": "", "split": "tune", "tag": "clear"}
+{"image": "evals/images/test/01.jpg", "expected": ["powdery mildew"], "crop": "pumpkin", "notes": "", "region": "", "split": "test", "tag": "clear"}
+{"image": "evals/images/test/02.jpg", "expected": ["rust"], "crop": "hollyhock", "notes": "", "region": "", "split": "test", "tag": "clear"}
+{"image": "evals/images/test/03.jpg", "expected": ["apple scab"], "crop": "apple", "notes": "", "region": "", "split": "test", "tag": "clear"}
+{"image": "evals/images/test/04.jpg", "expected": ["cercospora leaf spot"], "crop": "spinach", "notes": "", "region": "", "split": "test", "tag": "clear"}
+{"image": "evals/images/test/05.jpg", "expected": ["anthracnose"], "crop": "hot pepper (fruit)", "notes": "", "region": "", "split": "test", "tag": "clear"}
+{"image": "evals/images/test/06.jpg", "expected": ["fire blight"], "crop": "apple", "notes": "", "region": "", "split": "test", "tag": "clear"}
+{"image": "evals/images/test/07.jpg", "expected": ["late blight"], "crop": "tomato", "notes": "", "region": "", "split": "test", "tag": "clear"}
+{"image": "evals/images/test/08.jpg", "expected": ["boxwood blight"], "crop": "boxwood", "notes": "", "region": "", "split": "test", "tag": "clear"}
+{"image": "evals/images/test/09.jpg", "expected": ["cucumber mosaic virus"], "crop": "cucumber", "notes": "", "region": "", "split": "test", "tag": "clear"}
+{"image": "evals/images/test/10.jpg", "expected": ["gray mold"], "crop": "rose", "notes": "", "region": "", "split": "test", "tag": "clear"}
+{"image": "evals/images/test/11.jpg", "expected": ["black spot"], "crop": "rose", "notes": "", "region": "", "split": "test", "tag": "clear"}
+{"image": "evals/images/test/12.jpg", "expected": ["early blight"], "crop": "tomato (fruit)", "notes": "", "region": "", "split": "test", "tag": "clear"}
+{"image": "evals/images/test/13.jpg", "expected": ["aphids"], "crop": "rose", "notes": "", "region": "", "split": "test", "tag": "pest"}
+{"image": "evals/images/test/14.jpg", "expected": ["scale insects"], "crop": "ivy", "notes": "", "region": "", "split": "test", "tag": "pest"}
+{"image": "evals/images/test/15.jpg", "expected": ["leaf miner"], "crop": "champak", "notes": "", "region": "", "split": "test", "tag": "pest"}
+{"image": "evals/images/test/16.jpg", "expected": ["tomato hornworm"], "crop": "tomato", "notes": "", "region": "", "split": "test", "tag": "pest"}
+{"image": "evals/images/test/17.jpg", "expected": ["spider mites"], "crop": "unspecified (houseplant/legume)", "notes": "", "region": "", "split": "test", "tag": "pest"}
+{"image": "evals/images/test/18.jpg", "expected": ["box tree moth"], "crop": "boxwood", "notes": "", "region": "", "split": "test", "tag": "pest"}
+{"image": "evals/images/test/19.jpg", "expected": ["iron chlorosis"], "crop": "bitter orange (citrus)", "notes": "", "region": "", "split": "test", "tag": "abiotic"}
+{"image": "evals/images/test/20.jpg", "expected": ["potassium deficiency"], "crop": "potato", "notes": "", "region": "", "split": "test", "tag": "abiotic"}
+{"image": "evals/images/test/21.jpg", "expected": ["blossom end rot"], "crop": "tomato (fruit)", "notes": "", "region": "", "split": "test", "tag": "abiotic"}
+{"image": "evals/images/test/22.jpg", "expected": ["frost damage"], "crop": "bay laurel", "notes": "", "region": "", "split": "test", "tag": "abiotic"}
+{"image": "evals/images/test/23.jpg", "expected": ["sunscald"], "crop": "strawberry (fruit)", "notes": "", "region": "", "split": "test", "tag": "abiotic"}
+{"image": "evals/images/test/24.jpg", "expected": ["edema"], "crop": "fiddle-leaf fig", "notes": "", "region": "", "split": "test", "tag": "abiotic"}

@@ -23,7 +23,7 @@ function show(v) {
   const run = v.last_run;
   $("r-run").textContent = run
     ? `${run.status === "done" ? "Checked" : run.status === "skipped" ? "Skipped" : "Tried"} ${new Date(run.checked_at * 1000).toLocaleDateString([], { day: "numeric", month: "short" })} (week ${run.week.split("-W")[1]}): ${run.searched} pages found, ${run.read} read, ${run.relevant} reported something current, ${run.reports} report${run.reports === 1 ? "" : "s"} kept${run.undated ? `, ${run.undated} with no date skipped` : ""}.${run.note ? ` ${run.note}` : ""}`
-    : `Radar has not run for ${name} yet. It runs on weekday mornings for states that have gardens, each state once a week.`;
+    : `No current report for ${name}. Radar checks states each week and keeps a report only when a university page dates a sighting; it shows nothing rather than guess.`;
   $("r-list").innerHTML = v.reports.map((x) => {
     const url = safeUrl(x.source_url);
     return `<li><strong>${esc(x.pest)}</strong>${x.hosts.length ? ` on ${esc(x.hosts.join(", "))}` : ""}${x.place ? `, ${esc(x.place)}` : ""}

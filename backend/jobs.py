@@ -532,9 +532,9 @@ async def replan_season(ctx: JobContext, payload: dict[str, Any]) -> dict[str, A
 RADAR_SERVICE = "tavily:radar"
 # Tavily's plan is 1,000 credits a month and Leaf spreads what is left over the days left, so
 # the daily cap can be as low as 10. Radar takes at most 8 of them: two regions a day.
-RADAR_CREDITS_PER_DAY = 8
+RADAR_CREDITS_PER_DAY = 4  # one region a day: the rest of the allowance is for diagnoses
 RADAR_RUN_CREDITS = 4  # two searches and, for up to ten pages, two page reads
-DIAGNOSIS_RESERVE = 4  # Tavily credits left for diagnoses before Radar may run
+DIAGNOSIS_RESERVE = 6  # Tavily credits left for diagnoses before Radar may run
 RADAR_RUN_TIMEOUT_S = 200  # inside the queue runner's own limit
 
 

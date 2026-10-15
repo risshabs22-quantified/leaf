@@ -47,7 +47,7 @@ $("g-locate").addEventListener("click", () => {
   if (!navigator.geolocation) { $("g-where").textContent = "Location is not available in this browser."; return; }
   $("g-where").textContent = "Finding you…";
   navigator.geolocation.getCurrentPosition(
-    (p) => { place = { lat: p.coords.latitude, lon: p.coords.longitude, label: "your location" }; $("g-where").textContent = "Using your location."; },
+    (p) => { place = { lat: Math.round(p.coords.latitude * 100) / 100, lon: Math.round(p.coords.longitude * 100) / 100, label: "your location" };  // about 1 km $("g-where").textContent = "Using your location."; },
     () => { $("g-where").textContent = "Leaf could not get your location; type a town instead."; },
     { maximumAge: 600000, timeout: 10000 },
   );
@@ -135,6 +135,7 @@ async function refresh() {
   show("notify-block");
   show("connect-block");
   show("link-block");
+  show("delete-block");
   $("g-link").value = `${location.origin}/g/${garden.id}#k=${garden.key}`;
   loadNotify();
 }
@@ -221,7 +222,12 @@ $("n-enable").addEventListener("click", async () => {
     const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) });
     await api(`/api/gardens/${encodeURIComponent(garden.id)}/push`, { method: "POST", body: JSON.stringify(sub.toJSON()) });
     await loadNotify();
-  } catch (err) { $("n-state").textContent = err.message || "Could not turn on notifications."; }
+  } catch (err) {
+    const m = String(err && err.message || "");
+    $("n-state").textContent = /permission denied|not allowed|denied/i.test(m)
+      ? "This browser would not allow notifications. Check that they are allowed for this site in its settings (and that this is not a private window), then try again."
+      : m || "Could not turn on notifications.";
+  }
 });
 
 $("n-test").addEventListener("click", async () => {
@@ -245,6 +251,16 @@ $("where-form").addEventListener("submit", async (e) => {
     await api(`/api/gardens/${encodeURIComponent(garden.id)}/location`, { method: "POST", body: JSON.stringify({ lat: g.lat, lon: g.lon }) });
     await refresh();
   } catch (err) { status(err.message); }
+});
+
+$("g-delete").addEventListener("click", async () => {
+  if (!garden || !confirm("Delete this garden, its plants, tasks and season plan? This cannot be undone.")) return;
+  $("g-delete").disabled = true;
+  try {
+    await api(`/api/gardens/${encodeURIComponent(garden.id)}`, { method: "DELETE" });
+    try { localStorage.removeItem(STORE); } catch {}
+    location.href = "/today";
+  } catch (err) { $("g-delete-state").textContent = err.message; $("g-delete").disabled = false; }
 });
 
 $("g-copy").addEventListener("click", async () => {

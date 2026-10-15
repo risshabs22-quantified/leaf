@@ -56,7 +56,9 @@ class SearchPaused(RuntimeError):
     """Today's Tavily credit allowance is used up. Callers answer without fresh sources."""
 
 
-DEV_RESERVE_CREDITS = 100  # kept back each month for development and evals
+# Kept back each month so diagnoses keep working however the daily shares are spent.
+# Development has stopped, so production runs with a small reserve (LEAF_SEARCH_RESERVE).
+DEV_RESERVE_CREDITS = 100
 FALLBACK_DAILY_CAP = 30  # when the balance cannot be read
 
 
@@ -102,21 +104,40 @@ class CreditBudget:
         self.day: date | None = None
         self.cap = 0
         self.used = 0
+        # Optional shared store (the platform KV). A container restart then picks up the
+        # day's allowance where it was instead of sizing a fresh one from what is left.
+        self.store: Any = None
+
+    async def _day_start_usage(self, today: date, used_now: int) -> int:
+        """Credits already used when today began: the first reading of the day, kept."""
+        if self.store is None:
+            return used_now
+        key = f"tavily-day-start:{today.isoformat()}"
+        try:
+            saved = await self.store.get(key)
+            if saved is not None:
+                return min(int(saved), used_now)
+            await self.store.put(key, str(used_now), 2 * 86400)
+        except Exception as exc:  # noqa: BLE001 - the allowance still works without the store
+            log.warning("Tavily day-start store unavailable (%s)", exc)
+        return used_now
 
     async def _refresh(self) -> None:
         today = self._today()
         if self.day == today:
             return
-        cap = self.max_daily or FALLBACK_DAILY_CAP
+        cap, used_today = self.max_daily or FALLBACK_DAILY_CAP, 0
         if self._balance is not None:
             try:
                 limit, used = await self._balance()
-                cap = size_daily_cap(limit, used, today, self.reserve)
+                start = await self._day_start_usage(today, used)
+                cap = size_daily_cap(limit, start, today, self.reserve)
+                used_today = max(0, used - start)
                 if self.max_daily:
                     cap = min(cap, self.max_daily)
             except Exception as exc:  # noqa: BLE001 - never block Leaf on the usage endpoint
                 log.warning("Tavily balance unavailable (%s); daily cap %d", exc, cap)
-        self.day, self.cap, self.used = today, cap, 0
+        self.day, self.cap, self.used = today, cap, used_today
         log.info("Tavily daily credit cap for %s: %d", today, cap)
 
     async def remaining(self) -> int:
@@ -303,7 +324,7 @@ def rank_sources(results: list[dict[str, Any]], limit: int = 6) -> list[Source]:
     seen: dict[str, dict[str, Any]] = {}
     for r in results:
         url = r.get("url")
-        if url and url not in seen:
+        if url and url.lower().startswith(("http://", "https://")) and url not in seen:
             seen[url] = r
     ordered = sorted(
         seen.values(), key=lambda r: (_trust(r["url"]), r.get("score", 0.0)), reverse=True

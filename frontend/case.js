@@ -1,6 +1,7 @@
 // Leaf report page: read-only view of a saved report, plus check-ins. Everything is escaped.
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const safeUrl = (u) => (/^https?:\/\//i.test(String(u || "")) ? String(u) : "");
 const pct = (p) => `${Math.round((p || 0) * 100)}%`;
 const caseId = decodeURIComponent(location.pathname.split("/").filter(Boolean).pop() || "");
 const STATUS = { spreading: "Spreading", stable: "Stable", recovering: "Recovering", unclear: "Unclear" };
@@ -57,7 +58,7 @@ function draw(v) {
   $("removed").innerHTML = (d.plan.removed || []).length
     ? `<summary>Leaf removed ${d.plan.removed.length} step${d.plan.removed.length === 1 ? "" : "s"} for this garden's preferences</summary><ul class="small">${d.plan.removed.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : "";
   $("removed").hidden = !(d.plan.removed || []).length;
-  $("sources").innerHTML = d.sources.map((s) => `<li id="src${s.id}"><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)}</a></li>`).join("") || `<li class="muted">No web sources.</li>`;
+  $("sources").innerHTML = d.sources.map((s) => `<li id="src${s.id}">${safeUrl(s.url) ? `<a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener">${esc(s.title)}</a>` : esc(s.title)}</li>`).join("") || `<li class="muted">No web sources.</li>`;
   $("no-checkins").hidden = v.checkins.length > 0;
   $("checkin-form").hidden = !owner;
   if (!owner) $("no-checkins").textContent = v.checkins.length ? "" : "No check-ins yet. Only the person who created this report can add them.";

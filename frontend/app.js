@@ -2,6 +2,7 @@
 // (esc() or textContent), never inserted as raw HTML.
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const safeUrl = (u) => (/^https?:\/\//i.test(String(u || "")) ? String(u) : "");
 const pct = (p) => `${Math.round((p || 0) * 100)}%`;
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -386,7 +387,7 @@ function render(d) {
   renderPlan(d);
   renderEvidence(d);
   $("sources").innerHTML = d.sources.length
-    ? d.sources.map((s) => `<li id="src${s.id}"><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)}</a></li>`).join("")
+    ? d.sources.map((s) => `<li id="src${s.id}">${safeUrl(s.url) ? `<a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener">${esc(s.title)}</a>` : esc(s.title)}</li>`).join("")
     : `<li class="muted">No web sources this time.</li>`;
   renderHandoff(d);
 
@@ -610,7 +611,7 @@ function renderWeather(d) {
   $("weather-strip").setAttribute("aria-label", "Bars show humid hours per day, dots show rain");
   $("weather-indices").innerHTML = (x.indices || []).map((i) => {
     const value = i.last_7_days !== undefined ? `${i.last_7_days} in the last 7 days, ${i.last_14_days} in 14` : `${i.count} in 14 days`;
-    const links = (i.sources || []).map((u, n) => `<a href="${esc(u)}" target="_blank" rel="noopener">source${i.sources.length > 1 ? " " + (n + 1) : ""}</a>`).join(" ");
+    const links = (i.sources || []).filter(safeUrl).map((u, n) => `<a href="${esc(u)}" target="_blank" rel="noopener">source${i.sources.length > 1 ? " " + (n + 1) : ""}</a>`).join(" ");
     return `<li><strong>${esc(i.name)}</strong> (${esc(i.applies_to)}): ${esc(value)}. ${esc(i.meaning)} ${links}</li>`;
   }).join("") || (x.note ? `<li>${esc(x.note)}</li>` : "");
   $("weather-caveat").textContent = x.caveat || "";
@@ -621,11 +622,11 @@ function renderHandoff(d) {
   $("handoff").hidden = !h;
   if (!h) return;
   $("handoff-reason").textContent = h.reason;
-  $("handoff-lab").href = h.lab_url;
+  $("handoff-lab").href = safeUrl(h.lab_url) || "#";
   $("handoff-lab").textContent = h.lab_state ? `Find a plant diagnostic lab in ${h.lab_state}` : "Find your state's plant diagnostic lab";
   $("handoff-notice").textContent = h.lab_notice;
   $("handoff-steps").innerHTML = h.sampling.map((s) => `<li>${esc(s)}</li>`).join("");
-  $("handoff-sources").innerHTML = h.sampling_sources.map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(new URL(u).hostname.replace(/^www\./, ""))}</a>`).join(", ");
+  $("handoff-sources").innerHTML = h.sampling_sources.filter(safeUrl).map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(new URL(u).hostname.replace(/^www\./, ""))}</a>`).join(", ");
   // Photos for the printout come from this page, never from the server.
   $("handoff-photos").innerHTML = "";
   photoFiles.forEach((f, i) => {

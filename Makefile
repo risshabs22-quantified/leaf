@@ -2,7 +2,7 @@
 PY := .venv/bin/python
 PIP := .venv/bin/pip
 
-.PHONY: help setup smoke smoke-all test lint fmt check worker-check migrate-local eval-router eval-plant-id run docker-build docker-run deploy deploy-cloudflare eval clean
+.PHONY: help setup smoke smoke-all test lint fmt check worker-check migrate-local eval-router eval-plant-id run docker-build docker-run deploy-cloudflare eval clean
 
 help:  ## List targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-13s %s\n", $$1, $$2}'
@@ -44,9 +44,6 @@ docker-build:  ## Build the container
 
 docker-run:  ## Run the container with your .env
 	docker run --rm -p 8000:8000 --env-file .env -e LEAF_PLATFORM_URL= leaf:dev
-
-deploy:  ## Deploy to a Nebius Serverless Endpoint (needs IMAGE; DRY_RUN=1 validates only)
-	./scripts/deploy_nebius.sh
 
 deploy-cloudflare:  ## Deploy to Cloudflare Containers (DRY_RUN=1 validates only)
 	./scripts/deploy_cloudflare.sh

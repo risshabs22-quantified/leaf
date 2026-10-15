@@ -12,7 +12,7 @@ from datetime import date
 import httpx
 import pytest
 
-from backend.data.driver import Bridge, D1Driver, DataError, SqliteDriver, query
+from backend.data.driver import Bridge, D1Driver, DataError, SqliteDriver, execute, query
 from backend.data.kv import BridgeKV, MemoryKV
 from backend.data.migrate import apply, migration_files, pending
 from backend.data.repo import (
@@ -277,6 +277,16 @@ async def test_purge_drops_old_meter_rows_salts_and_finished_jobs(repo: Repo):
     out = await repo.purge(today=date(2026, 10, 14))
     assert out["model_calls"] == 1 and out["day_salts"] == 1
     assert [r["day"] for r in await query(repo.db, "SELECT day FROM model_calls")] == ["2026-10-14"]
+
+
+async def test_purge_deletes_gardens_nobody_has_opened_for_four_months(repo: Repo):
+    (idle, _), (fresh, _) = await make_garden(repo), await make_garden(repo)
+    await repo.add_plant(idle.id, PlantIn(common_name="tomato"))
+    await execute(repo.db, "UPDATE gardens SET last_seen = ? WHERE id = ?", 1, idle.id)
+    out = await repo.purge()
+    assert out["idle_gardens"] == 1
+    assert [r["id"] for r in await query(repo.db, "SELECT id FROM gardens")] == [fresh.id]
+    assert await query(repo.db, "SELECT id FROM plants WHERE garden_id = ?", idle.id) == []
 
 
 # ---------- the bridge clients (a fake Worker) ----------

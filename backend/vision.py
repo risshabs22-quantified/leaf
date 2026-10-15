@@ -1,7 +1,7 @@
 """Photo -> structured Observation.
 
-Token Factory has no public NVIDIA vision model right now, so Leaf discovers an
-image-capable model at startup and prefers NVIDIA ones if they come back.
+Leaf discovers an image-capable model at startup and prefers NVIDIA ones (Nemotron 3.5 Super
+VL, seen on Oct 15, 2026), falling back to the models in VISION_PREFERENCE.
 """
 
 from __future__ import annotations

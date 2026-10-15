@@ -51,7 +51,7 @@ function render(v) {
   $("s-title").textContent = `Season plan${v.garden.name ? `: ${v.garden.name}` : ""}`;
   show("s-start", !p && (!pend || pend.status === "failed"));
   if (pend && (pend.status === "writing" || pend.status === "unverified")) {
-    const what = pend.status === "writing" ? "Nemotron Ultra is writing your plan: first the planting dates, then a month at a time…" : "Waiting for Nemotron Super to check your plan…";
+    const what = pend.status === "writing" ? "Nemotron Ultra is writing your plan: first the planting dates, then a month at a time. This takes about a minute and a half, and you can leave this page; the plan will be here when you return…" : "Waiting for Nemotron Super to check your plan…";
     status(p ? `${what} Your current plan stays below until the new one is ready.` : what);
     clearTimeout(timer);
     if (polls++ < 120) timer = setTimeout(load, 5000);
