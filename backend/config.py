@@ -19,6 +19,7 @@ US_CENTRAL_BASE_URL = "https://api.tokenfactory.us-central1.nebius.com/v1/"
 NEMOTRON_ULTRA = "nvidia/Nemotron-3-Ultra-550b-a55b"
 NEMOTRON_SUPER = "nvidia/nemotron-3-super-120b-a12b"
 NEMOTRON_LIGHTNING = "nvidia/Nemotron-3_5-Lightning"
+NEMOTRON_NANO = "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
 
 # Fallback prices in dollars per token (input, output), from the Token Factory catalog,
 # Oct 2026. At startup the live prices from GET /models replace these.
@@ -26,6 +27,7 @@ DEFAULT_PRICES_PER_TOKEN = {
     NEMOTRON_ULTRA: (1.00e-6, 3.00e-6),
     NEMOTRON_SUPER: (0.30e-6, 0.90e-6),
     NEMOTRON_LIGHTNING: (0.06e-6, 0.24e-6),
+    NEMOTRON_NANO: (0.06e-6, 0.24e-6),
     "moonshotai/Kimi-K2.6": (0.95e-6, 4.00e-6),
 }
 
@@ -53,6 +55,62 @@ def thinking_key(model: str) -> str:
     return DEFAULT_THINKING_KEY
 
 
+# Roles in the NVIDIA stack. Settings maps each to a model ID (env overrides per role).
+ULTRA, SUPER, LIGHTNING, NANO, VISION = "ultra", "super", "lightning", "nano", "vision"
+
+
+@dataclass(frozen=True)
+class Route:
+    """How one task is served: its model chain (first choice, then fallbacks) and budget.
+
+    `max_tokens` caps one call's output, reasoning included (the client doubles it once when a
+    reply is truncated, never past 16,000). `est_in`/`est_out` are typical tokens per call, for
+    the cost model in docs/LEAF_PLATFORM.md. `optional` tasks switch to rules or templates when
+    the day's spend reaches the brownout level; core tasks run until the hard cap.
+    """
+
+    chain: tuple[str, ...]
+    max_tokens: int
+    thinking: bool
+    est_in: int = 0
+    est_out: int = 0
+    optional: bool = False
+
+
+# The routing table: every model call names one of these tasks (its trace step). Tasks for
+# later milestones are listed so the plan and the cost model have one source of truth.
+ROUTES: dict[str, Route] = {
+    # Front door: one Nano call routes the request and screens it.
+    "front_door": Route((NANO, LIGHTNING), 300, False, 400, 80, optional=True),
+    # Doctor (exists).
+    "vision": Route((VISION,), 4000, False, 1500, 600),
+    "look_closer": Route((VISION,), 4000, False, 1200, 400),
+    "diagnose": Route((ULTRA, SUPER, LIGHTNING), 6000, True, 3000, 2000),
+    "first_differential": Route((ULTRA, SUPER), 6000, True, 3000, 2000),
+    "investigate": Route((ULTRA, SUPER), 4096, True, 6000, 800),
+    "critic": Route((SUPER, LIGHTNING), 3000, True, 4000, 1500),
+    "plan": Route((LIGHTNING, SUPER), 2500, False, 3000, 1200),
+    "claim_check": Route((LIGHTNING,), 1500, False, 2000, 400),
+    "checkin_compare": Route((VISION,), 1500, False, 1500, 400),
+    "checkin_plan": Route((LIGHTNING, SUPER), 1500, False, 1500, 600),
+    "chat": Route((LIGHTNING, SUPER), 800, False, 1500, 400),
+    "json_repair": Route((LIGHTNING,), 2048, False, 1500, 800),
+    # Later milestones (docs/LEAF_PLATFORM.md).
+    "orchestrate": Route((ULTRA, SUPER), 4000, True, 3000, 1500),
+    "fact_extract": Route((LIGHTNING, SUPER), 2000, False, 4000, 1000),
+    "fact_verify": Route((SUPER, ULTRA), 2000, True, 3000, 500),
+    "identify": Route((VISION,), 4000, False, 1500, 600),
+    "identify_check": Route((SUPER, ULTRA), 1500, True, 2500, 400),
+    "care_wording": Route((LIGHTNING, NANO), 1200, False, 800, 400, optional=True),
+    "notify_text": Route((LIGHTNING, NANO), 300, False, 300, 100, optional=True),
+    "translate": Route((LIGHTNING,), 1500, False, 600, 600, optional=True),
+    "season_plan": Route((ULTRA, SUPER), 16000, True, 8000, 8000),
+    "plan_verify": Route((SUPER, ULTRA), 3000, True, 10000, 1500),
+    "replan": Route((ULTRA, SUPER), 8000, True, 6000, 3000),
+    "radar_extract": Route((LIGHTNING, SUPER), 2000, False, 4000, 1000),
+}
+
+
 def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
 
@@ -73,13 +131,15 @@ def _env_float(name: str, default: float) -> float:
 
 @dataclass(frozen=True)
 class Settings:
-    nebius_api_key: str = field(default_factory=lambda: _env("NEBIUS_API_KEY"))
-    tavily_api_key: str = field(default_factory=lambda: _env("TAVILY_API_KEY"))
+    # Secrets never appear in repr(), so a logged or printed Settings cannot leak them.
+    nebius_api_key: str = field(default_factory=lambda: _env("NEBIUS_API_KEY"), repr=False)
+    tavily_api_key: str = field(default_factory=lambda: _env("TAVILY_API_KEY"), repr=False)
     base_url: str = field(default_factory=lambda: _env("NEBIUS_BASE_URL", GLOBAL_BASE_URL))
     # Per-role model overrides.
     reason_model: str = field(default_factory=lambda: _env("LEAF_REASON_MODEL", NEMOTRON_ULTRA))
     fallback_model: str = field(default_factory=lambda: _env("LEAF_FALLBACK_MODEL", NEMOTRON_SUPER))
     fast_model: str = field(default_factory=lambda: _env("LEAF_FAST_MODEL", NEMOTRON_LIGHTNING))
+    nano_model: str = field(default_factory=lambda: _env("LEAF_NANO_MODEL", NEMOTRON_NANO))
     vision_model: str = field(default_factory=lambda: _env("LEAF_VISION_MODEL"))
     # Some models are only served from a regional base URL (e.g. us-central1).
     # Format: "model_id=base_url;model_id=base_url"
@@ -119,6 +179,42 @@ class Settings:
     public_url: str = field(default_factory=lambda: _env("LEAF_PUBLIC_URL", ""))
     # Proxies in front of Leaf that append to X-Forwarded-For (0 = none, trust the socket).
     trusted_proxy_hops: int = field(default_factory=lambda: _env_int("LEAF_TRUSTED_PROXY_HOPS", 1))
+    # Platform data: in production the Worker serves D1, KV and the job queue to the container
+    # at this address (outbound interception, cloudflare/src/index.ts). Empty = local SQLite
+    # at platform_db ("memory" keeps it in this process, for tests).
+    platform_url: str = field(default_factory=lambda: _env("LEAF_PLATFORM_URL", ""))
+    platform_db: str = field(default_factory=lambda: _env("LEAF_PLATFORM_DB", "data/platform.db"))
+    # Hard daily model spend (UTC day). At brownout x cap, optional tasks use rules or
+    # templates; at the cap every model call is refused and Leaf runs rules-only.
+    spend_cap_usd: float = field(default_factory=lambda: _env_float("LEAF_SPEND_CAP_USD", 3.0))
+    brownout: float = field(default_factory=lambda: _env_float("LEAF_BROWNOUT", 0.8))
+
+    def role_model(self, role: str) -> str:
+        """The model ID behind a role. Vision is discovered at startup, so it is "" here
+        unless LEAF_VISION_MODEL pins it."""
+        return {
+            ULTRA: self.reason_model,
+            SUPER: self.fallback_model,
+            LIGHTNING: self.fast_model,
+            NANO: self.nano_model,
+            VISION: self.vision_model,
+        }[role]
+
+    def models(self, task: str) -> list[str]:
+        """The task's model chain from ROUTES, first choice first, without duplicates."""
+        out: list[str] = []
+        for role in ROUTES[task].chain:
+            model = self.role_model(role)
+            if model and model not in out:
+                out.append(model)
+        return out
+
+    def budget(self, task: str) -> int:
+        return ROUTES[task].max_tokens
+
+    @property
+    def repair_model(self) -> str:
+        return self.models("json_repair")[0]
 
     def base_url_for(self, model: str) -> str:
         for pair in filter(None, self.model_base_urls.split(";")):

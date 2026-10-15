@@ -221,7 +221,7 @@ async def write_plan(
     plan = await complete_json(
         llm,
         step="plan",
-        models=[settings.fast_model, settings.fallback_model],
+        models=settings.models("plan"),
         messages=[
             {"role": "system", "content": PLAN_DEEP_SYSTEM},
             {"role": "user", "content": user},
@@ -229,9 +229,9 @@ async def write_plan(
         schema=CarePlan,
         trace=trace,
         thinking=False,
-        max_tokens=2500,
+        max_tokens=settings.budget("plan"),
         temperature=0.6,
-        repair_model=settings.fast_model,
+        repair_model=settings.repair_model,
     )
     return clear_code_fields(plan)
 
@@ -297,7 +297,7 @@ async def judge(
         out = await complete_json(
             llm,
             step="claim_check",
-            models=[settings.fast_model],
+            models=settings.models("claim_check"),
             messages=[
                 {"role": "system", "content": CLAIM_CHECK_SYSTEM},
                 {
@@ -308,7 +308,7 @@ async def judge(
             schema=_Verdicts,
             trace=trace,
             thinking=False,
-            max_tokens=1500,
+            max_tokens=settings.budget("claim_check"),
             temperature=0.2,
         )
     except ModelError as exc:

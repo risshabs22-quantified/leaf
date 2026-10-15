@@ -211,7 +211,7 @@ async def _look_closer(args: LookCloserArgs, ctx: ToolContext) -> ToolOutcome:
     trace: list = []
     try:
         ans = await look_closer(
-            ctx.llm, ctx.vision_model, crop, args.question, trace, ctx.settings.fast_model
+            ctx.llm, ctx.vision_model, crop, args.question, trace, ctx.settings.repair_model
         )
     finally:
         for call in trace:

@@ -14,7 +14,7 @@ from typing import Any, Literal
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, Field, field_validator
 
-from backend.config import VISION_PREFERENCE, Settings
+from backend.config import ROUTES, VISION_PREFERENCE, Settings
 from backend.models import LLM, ModelError, complete_json
 from backend.prompts import (
     LOOK_CLOSER_SYSTEM,
@@ -30,7 +30,7 @@ MAX_SIDE = 1024  # downscale before sending: cheaper, faster, enough detail for 
 # Describing a photo needs no long reasoning: with thinking on, Kimi spent 1.4k-2.4k tokens
 # thinking for a ~300-token reply. It runs with thinking off; the budget keeps headroom in
 # case a model ignores the switch (reasoning counts toward max_tokens).
-VISION_MAX_TOKENS = 4000
+VISION_MAX_TOKENS = ROUTES["vision"].max_tokens
 MAX_PIXELS = 40_000_000  # decoded size cap; a tiny file can declare a huge canvas
 
 

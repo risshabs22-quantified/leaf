@@ -660,3 +660,10 @@ async def test_failed_attempts_are_billed_in_the_trace(settings):
             trace=trace,
         )
     assert trace[0].cost_usd == 0.012 and trace[0].note == "failed"
+
+
+def test_settings_repr_never_shows_secrets():
+    from backend.config import Settings
+
+    text = repr(Settings(nebius_api_key="nb-secret-1", tavily_api_key="tvly-secret-2"))
+    assert "nb-secret-1" not in text and "tvly-secret-2" not in text

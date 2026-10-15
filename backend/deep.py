@@ -352,7 +352,7 @@ class DeepLeaf:
                 complete_json(
                     self.leaf.llm,
                     step="first_differential",
-                    models=[s.reason_model, s.fallback_model],
+                    models=s.models("first_differential"),
                     messages=[
                         {"role": "system", "content": DIAGNOSE_SYSTEM},
                         {"role": "user", "content": context},
@@ -360,8 +360,8 @@ class DeepLeaf:
                     schema=Diagnosis,
                     trace=trace,
                     thinking=True,
-                    max_tokens=6000,
-                    repair_model=s.fast_model,
+                    max_tokens=s.budget("first_differential"),
+                    repair_model=s.repair_model,
                 ),
                 budget,
             )
@@ -398,7 +398,7 @@ class DeepLeaf:
                 "image/jpeg",
                 case.notes,
                 t,
-                self.leaf.settings.fast_model,
+                self.leaf.settings.repair_model,
                 checklist=self.leaf.settings.checklist,
             )
             for p, t in zip(todo, traces, strict=True)

@@ -23,7 +23,8 @@ from pydantic import ValidationError
 from backend.case import Case, StepRecord
 from backend.conditions import WeatherClient
 from backend.config import Settings
-from backend.models import LLM, CallResult, ModelError, ToolCall
+from backend.context import task_scope
+from backend.models import LLM, CallResult, ModelError, SpendCapReached, ToolCall
 from backend.prompts import AGENT_SYSTEM, sanitize
 from backend.schemas import ModelCall
 from backend.search import Searcher, SearchPaused
@@ -286,7 +287,7 @@ class Investigator:
         # offering finish as the only tool with "auto" is the fallback.
         choices: list[Any] = [FORCE_FINISH, "auto"] if forced else ["auto"]
         errors = []
-        for i, model in enumerate([s.reason_model, s.fallback_model]):
+        for i, model in enumerate(s.models("investigate")):
             for choice in choices:
                 left = deadline - self.clock()
                 # Forced: give each attempt part of what is left, so a hang on Ultra still
@@ -298,17 +299,20 @@ class Investigator:
                     errors.append("out of time")
                     break
                 try:
-                    res = await asyncio.wait_for(
-                        self.llm.complete_tools(
-                            model=model,
-                            messages=case.messages,
-                            tools=tools,
-                            tool_choice=choice,
-                            thinking=True,
-                            max_tokens=4096,
-                        ),
-                        timeout=budget,
-                    )
+                    with task_scope("investigate"):
+                        res = await asyncio.wait_for(
+                            self.llm.complete_tools(
+                                model=model,
+                                messages=case.messages,
+                                tools=tools,
+                                tool_choice=choice,
+                                thinking=True,
+                                max_tokens=s.budget("investigate"),
+                            ),
+                            timeout=budget,
+                        )
+                except SpendCapReached:
+                    raise
                 except (ModelError, TimeoutError) as exc:
                     log.warning("investigator turn failed on %s: %s", model, exc)
                     case.add_trace(

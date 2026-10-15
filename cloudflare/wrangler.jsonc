@@ -25,12 +25,44 @@
     "bindings": [{ "name": "LEAF", "class_name": "LeafContainer" }]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["LeafContainer"] }],
+  // Platform data (docs/LEAF_PLATFORM.md). The container reaches these through the bridge in
+  // src/index.ts (outbound interception), never directly. Migrations are the same SQL files
+  // the Python side applies locally; the deploy script applies them before every deploy.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "leaf-platform",
+      "database_id": "af08d677-6725-43a5-bf50-8dc65c6b6936",
+      "migrations_dir": "../backend/data/migrations"
+    }
+  ],
+  // Shared caches only (one write per second per key, eventually consistent).
+  "kv_namespaces": [{ "binding": "KV", "id": "ecbfc2b43c264b8a9a7e96bdb9f0e1bf" }],
+  "queues": {
+    "producers": [{ "binding": "JOBS", "queue": "leaf-jobs" }],
+    "consumers": [
+      {
+        "queue": "leaf-jobs",
+        // One container instance: a few at a time, one batch at a time. 3 jobs x 240 s stays
+        // inside the consumer's 15-minute limit.
+        "max_batch_size": 3,
+        "max_batch_timeout": 5,
+        "max_concurrency": 1,
+        "max_retries": 5,
+        "dead_letter_queue": "leaf-jobs-dlq"
+      }
+    ]
+  },
+  // UTC. Each run wakes the container only when there is work (docs/LEAF_PLATFORM.md, "Jobs").
+  "triggers": { "crons": ["17 7 * * *"] },
   // Not secret. API keys are Worker secrets, set by the deploy script from .env.
   "vars": {
     "LEAF_DAILY_CAP": "60",
     "LEAF_TRUSTED_PROXY_HOPS": "1",
     "LEAF_JOURNAL_BUCKET": "leaf-journal",
     "LEAF_PUBLIC_URL": "https://leafathon.site",
+    "LEAF_PLATFORM_URL": "http://leaf-platform.internal",
+    "LEAF_SPEND_CAP_USD": "3",
     "AWS_ENDPOINT_URL": "https://a5df400bbbb2f6a57594bc84d3d11c56.r2.cloudflarestorage.com",
     "AWS_REGION": "auto"
   }

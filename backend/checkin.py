@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from backend.actives import apply_garden, garden_prompt
 from backend.claims import CHEMICAL, FOLLOW_LABEL, unsourced_amounts
-from backend.config import Settings
+from backend.config import ROUTES, Settings
 from backend.journal import MAX_CHECKINS, CheckIn, JournalEntry, thumbnail
 from backend.models import LLM, ModelError, complete_json
 from backend.prompts import CHECKIN_PLAN_SYSTEM, CHECKIN_VISION_SYSTEM, sanitize
@@ -74,7 +74,7 @@ async def compare(
         schema=Progress,
         trace=trace,
         thinking=False,
-        max_tokens=1500,
+        max_tokens=ROUTES["checkin_compare"].max_tokens,
         temperature=0.3,
     )
 
@@ -120,7 +120,7 @@ async def check_in(
         advice = await complete_json(
             llm,
             step="checkin_plan",
-            models=[settings.fast_model, settings.fallback_model],
+            models=settings.models("checkin_plan"),
             messages=[
                 {"role": "system", "content": CHECKIN_PLAN_SYSTEM},
                 {
@@ -132,7 +132,7 @@ async def check_in(
             schema=_Advice,
             trace=trace,
             thinking=False,
-            max_tokens=1500,
+            max_tokens=settings.budget("checkin_plan"),
             temperature=0.5,
         )
     except ModelError:

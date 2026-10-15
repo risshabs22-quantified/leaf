@@ -24,14 +24,23 @@ from pydantic import BaseModel, Field
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from backend.actives import apply_garden
+from backend.cache import SharedCache
 from backend.calendar_file import Reminder, ics
 from backend.checkin import check_in
 from backend.conditions import ConditionsError, WeatherClient
-from backend.config import Settings, get_settings
+from backend.config import NANO, ULTRA, Settings, get_settings
+from backend.context import REQUEST, RequestContext
+from backend.data import open_data
+from backend.data.driver import DataError
 from backend.deep import CaseStateError, DeepLeaf, DeepResponse
+from backend.jobs import BridgeQueue, JobContext, JobRunner, LocalQueue, S3Objects
 from backend.journal import JournalEntry, open_journal, public_view, thumbnail
-from backend.models import ModelError, TokenFactory
+from backend.metering import Meter, MeteredLLM
+from backend.models import ModelError, SpendCapReached, TokenFactory
 from backend.pipeline import Leaf
+from backend.platform_api import refusal_for
+from backend.platform_api import router as platform_router
+from backend.router import front_door
 from backend.schemas import ChatRequest, ChatResponse, DiagnoseResponse, Garden
 from backend.search import (
     CreditBudget,
@@ -53,6 +62,15 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_DEEP_PHOTOS = 3
 PHOTO_LABELS = {"whole plant", "close-up", "underside", "photo"}
 MAX_LIMITER_KEYS = 10_000
+# The front door costs a tiny Nano call; garden creation writes to D1. Both have own limits.
+ROUTE_PER_IP_PER_HOUR, ROUTE_DAILY_CAP = 60, 3000
+GARDEN_PER_IP_PER_HOUR, GARDEN_DAILY_CAP = 10, 500
+# Every garden request reads or writes D1 and keeps the container awake.
+GARDEN_USE_PER_IP_PER_HOUR, GARDEN_USE_DAILY_CAP = 600, 50_000
+SPEND_CAP_MESSAGE = (
+    "Leaf has used today's model budget, so diagnosis is paused until 00:00 UTC. "
+    "Care reminders and weather alerts keep working."
+)
 T = TypeVar("T")
 
 CSP = (
@@ -215,6 +233,7 @@ async def lifespan(app: FastAPI):
     app.state.slots = asyncio.Semaphore(settings.max_concurrent)
     if not getattr(app.state, "leaf", None):
         app.state.leaf = await build_leaf(settings)
+    await start_platform(app, app.state.leaf.settings)  # before anything holds leaf.llm
     deep = getattr(app.state, "deep", None)
     if deep is None or deep.leaf is not app.state.leaf:
         app.state.deep = DeepLeaf(app.state.leaf, MemoryCaseStore())
@@ -229,10 +248,63 @@ async def lifespan(app: FastAPI):
         removed = 0
     if removed:
         log.info("journal: removed %d expired entries", removed)
-    yield
+    flusher = asyncio.create_task(_flush_meter_forever(app.state.meter))
+    try:
+        yield
+    finally:
+        flusher.cancel()
+        await app.state.meter.flush()
+
+
+METER_FLUSH_S = 15  # streamed Deep cases make calls after their response has started
+
+
+async def _flush_meter_forever(meter: Meter) -> None:
+    while True:
+        await asyncio.sleep(METER_FLUSH_S)
+        try:
+            await meter.flush()
+        except Exception:  # noqa: BLE001 - the meter must never take the app down
+            log.exception("meter flush failed")
+
+
+async def start_platform(app: FastAPI, s: Settings) -> None:
+    """Data, meter, cache, queue and job runner, and the meter around every model call."""
+    data = await open_data(s)
+    if data.schema_pending:
+        log.error("D1 is missing migrations %s; run the deploy script", data.schema_pending)
+    meter = Meter(s.spend_cap_usd, s.brownout, data.repo)
+    await meter.restore()
+    leaf: Leaf = app.state.leaf
+    if isinstance(leaf.llm, MeteredLLM):
+        leaf.llm.meter = meter
+    else:
+        leaf.llm = MeteredLLM(leaf.llm, meter)
+    queue = BridgeQueue(data.bridge) if data.bridge else LocalQueue()
+    objects = S3Objects(s.journal_bucket) if s.journal_bucket else None
+    runner = JobRunner(JobContext(data.repo, queue, s, meter, objects))
+    if isinstance(queue, LocalQueue):
+        queue.runner = runner
+    app.state.data, app.state.meter, app.state.queue, app.state.runner = data, meter, queue, runner
+    app.state.cache = SharedCache(data.kv, meter)
+    app.state.route_limiter = RateLimiter(ROUTE_PER_IP_PER_HOUR, ROUTE_DAILY_CAP)
+    app.state.garden_limiter = RateLimiter(GARDEN_PER_IP_PER_HOUR, GARDEN_DAILY_CAP)
+    app.state.garden_use_limiter = RateLimiter(GARDEN_USE_PER_IP_PER_HOUR, GARDEN_USE_DAILY_CAP)
 
 
 app = FastAPI(title="Leaf", version="0.1.0", lifespan=lifespan)
+app.include_router(platform_router)
+
+
+@app.exception_handler(DataError)
+async def data_unavailable(request: Request, exc: DataError) -> JSONResponse:
+    """Garden storage (D1 through the bridge) is down: a clear 503, never a bare 500."""
+    log.error("data error on %s: %s", request.url.path, exc)
+    return JSONResponse(
+        {"detail": "Leaf's garden storage is unavailable. Please try again."}, status_code=503
+    )
+
+
 app.add_middleware(
     BodyLimitMiddleware,
     limits={
@@ -264,6 +336,48 @@ async def security_headers(request: Request, call_next):
     return response
 
 
+_background: set[asyncio.Task] = set()
+
+
+@app.middleware("http")
+async def trace_context(request: Request, call_next):
+    """A trace id for every request (X-Leaf-Trace), stored with each model call it makes."""
+    ctx = RequestContext()
+    meter: Meter | None = getattr(request.app.state, "meter", None)
+    api = request.url.path.startswith("/api/") and meter is not None
+    if api:
+        ip = client_ip(request, request.app.state.leaf.settings.trusted_proxy_hops)
+        try:
+            ctx.visitor = await meter.visitor(ip)  # one D1 read a day, then cached
+        except DataError as exc:
+            log.warning("visitor id unavailable: %s", exc)
+    token = REQUEST.set(ctx)
+    try:
+        response = await call_next(request)
+    finally:
+        REQUEST.reset(token)
+    response.headers["X-Leaf-Trace"] = ctx.trace_id
+    if api:
+        task = asyncio.create_task(_after_request(meter, ctx))
+        _background.add(task)
+        task.add_done_callback(_background.discard)
+    return response
+
+
+async def _after_request(meter: Meter, ctx: RequestContext) -> None:
+    """Count the active user, then write the meter to D1 off the request path.
+
+    One person is one visitor id (a salted hash of their address), whether they opened a
+    garden or used a model (the meter counts model users as it records each call); counting
+    the garden as well would count them twice and flatter the cost per user."""
+    try:
+        if ctx.actor:
+            meter.active(ctx.visitor)
+        await meter.flush()
+    except DataError as exc:
+        log.warning("after-request metering failed: %s", exc)
+
+
 def check_limits(request: Request) -> None:
     if request.app.state.slots.locked():  # shed load first so a 503 costs the user nothing
         raise HTTPException(503, "Leaf is busy right now. Please try again in a minute.")
@@ -290,6 +404,9 @@ async def run_limited(
         except TimeoutError as exc:
             log.error("request exceeded %ss deadline", deadline)
             raise HTTPException(504, "That took too long. Please try again.") from exc
+        except SpendCapReached as exc:
+            log.warning("spend cap: %s", exc)
+            raise HTTPException(503, SPEND_CAP_MESSAGE) from exc
         except ModelError as exc:
             log.error("model pipeline failed: %s", exc)
             raise HTTPException(502, "Leaf's models are busy right now. Please try again.") from exc
@@ -306,6 +423,13 @@ async def health(request: Request) -> dict:
             "reason": s.reason_model,
             "fallback": s.fallback_model,
             "fast": s.fast_model,
+            "front_door": s.role_model(NANO),
+            "orchestrator": s.role_model(ULTRA),
+        },
+        "platform": {
+            "data": request.app.state.data.db.name,
+            "schema_pending": list(request.app.state.data.schema_pending),
+            "guard": request.app.state.meter.snapshot(),
         },
         "search": type(leaf.searcher).__name__,
         "search_paused": search_paused(leaf.searcher),
@@ -401,7 +525,21 @@ async def calendar_file(request: Request, body: Reminder) -> Response:
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: Request, body: ChatRequest) -> ChatResponse:
     check_limits(request)
-    return await run_limited(request, lambda: request.app.state.leaf.chat(body))
+    leaf: Leaf = request.app.state.leaf
+
+    async def work() -> ChatResponse:
+        # The front door screens the message first (one Nano call, or code alone); a message
+        # it stops gets a fixed reply and never reaches the chat model.
+        door = await front_door(
+            leaf.llm, leaf.settings, body.message, request.app.state.cache, intent=None
+        )
+        if not door.safe:
+            return ChatResponse(reply=refusal_for(door), trace=door.trace)
+        resp = await leaf.chat(body)
+        resp.trace = door.trace + resp.trace
+        return resp
+
+    return await run_limited(request, work)
 
 
 async def _read_photos(
@@ -647,6 +785,8 @@ def _event_stream(
                         "detail": "That took too long. Please try again.",
                     }
                 )
+            except SpendCapReached:
+                await queue.put({"type": "error", "status": 503, "detail": SPEND_CAP_MESSAGE})
             except ModelError:
                 await queue.put(
                     {

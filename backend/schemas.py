@@ -283,3 +283,36 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     trace: list[ModelCall]
+
+
+Intent = Literal["doctor", "care", "planner", "research", "concierge"]
+Risk = Literal["none", "prompt_injection", "harmful", "off_topic"]
+
+
+class FrontDoorOut(BaseModel):
+    """What Nano returns at the front door (prompts.FRONT_DOOR_SYSTEM)."""
+
+    intent: Intent = "concierge"
+    multi_step: bool = False
+    safe: bool = True
+    risk: Risk = "none"
+    confidence: float = Field(0.5, ge=0, le=1)
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _clamp(cls, v: Any) -> float:
+        try:
+            return min(1.0, max(0.0, float(v)))
+        except (TypeError, ValueError):
+            return 0.5
+
+
+class FrontDoorDecision(FrontDoorOut):
+    """The routing decision. `agent` handles the request; `orchestrator` is Ultra when the
+    request needs several steps. `source` says how it was decided: explicit (the UI said),
+    rules (code only), cache, or model."""
+
+    agent: str
+    orchestrator: str = ""
+    source: Literal["explicit", "rules", "cache", "model"]
+    trace: list[ModelCall] = Field(default_factory=list)

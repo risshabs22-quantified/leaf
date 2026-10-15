@@ -23,6 +23,8 @@ Flow: photo → vision model → Nemotron 3 Ultra diagnosis → Tavily sources �
 - `cloudflare/`: the Worker and Wrangler config that host Leaf
 - `docs/LEAF_PLAYBOOK.md`: full reference
 - `docs/PROGRESS.md`: session log
+- `docs/LEAF_PLATFORM.md`: the platform plan (architecture, routing table, data model, jobs, cost, cut list, milestone checkboxes). Read it at the start of every platform session
+- Platform code: `backend/data/` (D1 or SQLite repository, migrations, KV), `metering.py` (meter, spend guard), `router.py` (Nano front door), `jobs.py`, `cache.py`, `platform_api.py`; `ROUTES` in `config.py` is the routing table
 - `docs/AGENT_V2.md`: Leaf v2 investigator-agent plan, verified facts, tool schemas, milestone checkboxes (planned files: `backend/agent.py`, `critic.py`, `tools.py`, `store.py`). Read it at the start of every v2 session
 
 ## Commands

@@ -27,7 +27,8 @@ from openai import (
 )
 from pydantic import BaseModel, ValidationError
 
-from backend.config import DEFAULT_PRICES_PER_TOKEN, Settings, thinking_key
+from backend.config import DEFAULT_PRICES_PER_TOKEN, ROUTES, Settings, thinking_key
+from backend.context import task_scope
 from backend.schemas import ModelCall
 
 log = logging.getLogger("leaf.models")
@@ -48,6 +49,13 @@ class ModelError(RuntimeError):
     def __init__(self, message: str = "", cost_usd: float = 0.0):
         super().__init__(message)
         self.cost_usd = cost_usd
+
+
+class SpendCapReached(ModelError):
+    """The day's model budget is used up (or this optional task is paused in brownout).
+
+    Raised before anything is sent, so it costs nothing. Callers fall back to rules; fallback
+    chains stop at once instead of trying the next model."""
 
 
 @dataclass
@@ -151,7 +159,9 @@ class TokenFactory:
                 continue
 
     def cost(self, model: str, prompt_tokens: int | None, completion_tokens: int | None) -> float:
-        price_in, price_out = self.prices.get(model, (0.0, 0.0))
+        # A model with no known price is charged at the dearest known one, so the spend guard
+        # never treats an unpriced model as free.
+        price_in, price_out = self.prices.get(model) or max(self.prices.values(), key=sum)
         return round((prompt_tokens or 0) * price_in + (completion_tokens or 0) * price_out, 6)
 
     async def _send(
@@ -398,14 +408,18 @@ async def complete_json(
     for i, model in enumerate(models):
         note = "fallback" if i else ""
         try:
-            res = await llm.complete(
-                model=model,
-                messages=messages,
-                json_mode=True,
-                thinking=thinking,
-                max_tokens=max_tokens,
-                temperature=temperature,
-            )
+            with task_scope(step):
+                res = await llm.complete(
+                    model=model,
+                    messages=messages,
+                    json_mode=True,
+                    thinking=thinking,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+        except SpendCapReached:
+            trace.append(ModelCall(step=step, model=model, latency_ms=0, note="spend cap"))
+            raise
         except ModelError as exc:
             log.warning("%s call failed: %s", step, exc)  # detail stays server-side
             trace.append(
@@ -444,17 +458,20 @@ async def _repair(
         f"{json.dumps(schema.model_json_schema())}\n\nText:\n{body[:6000]}"
     )
     try:
-        res = await llm.complete(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            json_mode=True,
-            thinking=False,
-            max_tokens=2048,
-            temperature=0.2,
-        )
+        with task_scope("json_repair"):
+            res = await llm.complete(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                json_mode=True,
+                thinking=False,
+                max_tokens=ROUTES["json_repair"].max_tokens,
+                temperature=0.2,
+            )
         parsed = schema.model_validate(extract_json(res.text))
         trace.append(res.to_trace(step, "json repair"))
         return parsed
+    except SpendCapReached:
+        raise
     except (ModelError, json.JSONDecodeError, ValidationError):
         return None
 

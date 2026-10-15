@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 
 os.environ["LEAF_JOURNAL_PATH"] = "memory"  # tests never write a journal file
+os.environ["LEAF_PLATFORM_DB"] = "memory"  # nor a platform database
+os.environ.pop("LEAF_PLATFORM_URL", None)  # and never reach a bridge
 
 import copy
 import itertools
@@ -24,6 +26,7 @@ from backend.prompts import (
     CLAIM_CHECK_SYSTEM,
     CRITIC_SYSTEM,
     DIAGNOSE_SYSTEM,
+    FRONT_DOOR_SYSTEM,
     LOOK_CLOSER_SYSTEM,
     PLAN_DEEP_SYSTEM,
     PLAN_SYSTEM,
@@ -93,6 +96,7 @@ def step_of(messages: list[dict[str, Any]]) -> str:
         CLAIM_CHECK_SYSTEM: "claim_check",
         CHECKIN_VISION_SYSTEM: "checkin_compare",
         CHECKIN_PLAN_SYSTEM: "checkin_plan",
+        FRONT_DOOR_SYSTEM: "front_door",
     }.get(system, "repair")
 
 

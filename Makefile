@@ -2,7 +2,7 @@
 PY := .venv/bin/python
 PIP := .venv/bin/pip
 
-.PHONY: help setup smoke smoke-all test lint fmt check run docker-build docker-run deploy deploy-cloudflare eval clean
+.PHONY: help setup smoke smoke-all test lint fmt check worker-check migrate-local run docker-build docker-run deploy deploy-cloudflare eval clean
 
 help:  ## List targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-13s %s\n", $$1, $$2}'
@@ -27,7 +27,14 @@ lint:  ## Ruff lint
 fmt:  ## Ruff format + autofix
 	.venv/bin/ruff format . -q && .venv/bin/ruff check . --fix -q
 
-check: lint test  ## Lint + tests (run before every commit)
+check: lint test worker-check  ## Lint + tests + Worker type check (run before every commit)
+
+worker-check:  ## Type-check the Cloudflare Worker
+	@test -d cloudflare/node_modules || (cd cloudflare && npm ci --no-fund --no-audit --silent)
+	cd cloudflare && npx tsc --noEmit
+
+migrate-local:  ## Apply platform migrations to the local SQLite database (data/platform.db)
+	$(PY) -m backend.data.migrate data/platform.db
 
 run:  ## Run locally at http://localhost:8000
 	.venv/bin/uvicorn backend.app:app --reload --port 8000

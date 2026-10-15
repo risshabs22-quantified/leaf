@@ -107,7 +107,7 @@ async def second_opinion(
         opinion = await complete_json(
             llm,
             step="critic",
-            models=[settings.fallback_model, settings.fast_model],
+            models=settings.models("critic"),
             messages=[
                 {"role": "system", "content": CRITIC_SYSTEM},
                 {"role": "user", "content": user},
@@ -115,8 +115,8 @@ async def second_opinion(
             schema=CriticOpinion,
             trace=trace,
             thinking=True,
-            max_tokens=3000,
-            repair_model=settings.fast_model,
+            max_tokens=settings.budget("critic"),
+            repair_model=settings.repair_model,
         )
     except ModelError as exc:
         log.warning("second opinion unavailable: %s", exc)

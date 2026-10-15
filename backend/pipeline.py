@@ -16,7 +16,8 @@ import re
 
 from backend.actives import apply_garden, clear_code_fields, garden_prompt
 from backend.config import Settings
-from backend.models import LLM, ModelError, complete_json
+from backend.context import task_scope
+from backend.models import LLM, ModelError, SpendCapReached, complete_json
 from backend.prompts import CHAT_SYSTEM, DIAGNOSE_SYSTEM, PLAN_SYSTEM, sanitize
 from backend.schemas import (
     CarePlan,
@@ -73,7 +74,7 @@ class Leaf:
                 mime,
                 notes,
                 trace,
-                s.fast_model,
+                s.repair_model,
                 checklist=s.checklist,
             )
         elif image_b64:
@@ -94,7 +95,7 @@ class Leaf:
         diagnosis = await complete_json(
             self.llm,
             step="diagnose",
-            models=[s.reason_model, s.fallback_model, s.fast_model],
+            models=s.models("diagnose"),
             messages=[
                 {"role": "system", "content": DIAGNOSE_SYSTEM},
                 {"role": "user", "content": context},
@@ -102,8 +103,8 @@ class Leaf:
             schema=Diagnosis,
             trace=trace,
             thinking=True,
-            max_tokens=6000,
-            repair_model=s.fast_model,
+            max_tokens=s.budget("diagnose"),
+            repair_model=s.repair_model,
         )
         diagnosis.candidates.sort(key=lambda c: c.confidence, reverse=True)
         decision = decide(
@@ -129,7 +130,7 @@ class Leaf:
             plan = await complete_json(
                 self.llm,
                 step="plan",
-                models=[s.fast_model, s.fallback_model],
+                models=s.models("plan"),
                 messages=[
                     {"role": "system", "content": PLAN_SYSTEM},
                     {"role": "user", "content": plan_input},
@@ -137,9 +138,9 @@ class Leaf:
                 schema=CarePlan,
                 trace=trace,
                 thinking=False,
-                max_tokens=2500,
+                max_tokens=s.budget("plan"),
                 temperature=0.6,
-                repair_model=s.fast_model,
+                repair_model=s.repair_model,
             )
         except ModelError:
             plan = CarePlan(
@@ -184,13 +185,19 @@ class Leaf:
         ]
         valid_ids = {src["id"] for src in context["sources"]}
         trace: list[ModelCall] = []
-        for i, model in enumerate([self.settings.fast_model, self.settings.fallback_model]):
+        for i, model in enumerate(self.settings.models("chat")):
             try:
-                res = await self.llm.complete(
-                    model=model, messages=messages, thinking=False, max_tokens=800
-                )
+                with task_scope("chat"):
+                    res = await self.llm.complete(
+                        model=model,
+                        messages=messages,
+                        thinking=False,
+                        max_tokens=self.settings.budget("chat"),
+                    )
                 trace.append(res.to_trace("chat", "fallback" if i else ""))
                 return ChatResponse(reply=_drop_unknown_citations(res.text, valid_ids), trace=trace)
+            except SpendCapReached:
+                raise
             except ModelError as exc:
                 log.warning("chat call failed: %s", exc)  # detail stays server-side
                 trace.append(ModelCall(step="chat", model=model, latency_ms=0, note="failed"))

@@ -48,6 +48,11 @@ json.dump({k: env[k] for k in keys}, open(sys.argv[1], "w"))
 print(f"{len(keys)} secrets ready")
 PY
 
+# Platform schema first: the new version's code expects it. Applies only migrations D1 has not
+# recorded (backend/data/migrations); CI=1 answers Wrangler's confirmation prompt.
+echo "==> Applying D1 migrations"
+CI=1 "${WRANGLER[@]}" d1 migrations apply leaf-platform --remote
+
 # Secrets ship with the version (--secrets-file). Setting them afterwards is too late: the
 # rollout restarts the container as soon as the version is live, with the env it had then.
 echo "==> Building the image and deploying the Worker with its secrets"
