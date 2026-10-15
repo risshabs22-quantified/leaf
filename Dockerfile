@@ -4,6 +4,11 @@ LABEL org.opencontainers.image.source=https://github.com/risshabs22-quantified/l
       org.opencontainers.image.licenses=MIT
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+# Platform data through the Worker bridge (cloudflare/src/index.ts). Baked into the image, not
+# only passed by the Worker: a deploy restarts the running container with the environment the
+# previous Worker version gave it, so a new variable would be missing until the next cold
+# start (seen on the M1 deploy). `make docker-run` clears it to use local SQLite.
+ENV LEAF_PLATFORM_URL=http://leaf-platform.internal
 WORKDIR /app
 
 COPY pyproject.toml README.md ./
