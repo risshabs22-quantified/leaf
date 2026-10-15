@@ -407,8 +407,9 @@ None of the five matched exactly, and all five were within one half zone (four c
 - **One change since the eval:** the vision prompt now asks for each species once under its accepted name. The eval showed it splitting its own confidence between synonyms (rosemary as *Salvia rosmarinus* and *Rosmarinus officinalis*). This change has not been re-measured.
 
 ### M4 Leaf Care
-- [ ] Morning planner per garden, once per populated timezone; afternoon frost and heat check (Worker prefilter); Today screen; notifications service (channels, quiet hours, dedupe, rate limits); Web Push PWA; Nano 3 job triage
-- [ ] Live: a production garden planned, Today shown, and a Web Push notification delivered
+- [x] Morning planner per garden, once per populated timezone; afternoon frost and heat check (Worker prefilter); Today screen; notifications service (channels, quiet hours, dedupe, rate limits); Web Push PWA; Nano 3 job triage
+- [x] Live: a production garden planned, Today shown, and a Web Push notification delivered. At 375 px in Chromium, a Minneapolis garden got its tasks; notifications were turned on; the test push was accepted by Google's push service (D1: sent, 1/1 devices); zero console errors. Test garden deleted.
+- [ ] A push received on a real Android phone (Chrome) and on an iPhone after Add to Home Screen (needs a real device)
 
 **The planner (`backend/care/`), in code.** Each morning, every garden gets its tasks for the day. Each task has a reason, a due time and a source; a rule without a published source is labelled "Leaf's own rule".
 

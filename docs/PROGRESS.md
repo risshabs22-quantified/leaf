@@ -58,6 +58,8 @@ Keep it short: newest entries first.
     - Gardens without a location are planned, and a location can be added later.
     - Nano's "relevant" flag and act-by time are used safely.
     - The service worker refuses off-site URLs; the nav fits 375 px; Worker runs are bounded.
+  - **Production check:** at 375 px, a Minneapolis garden was set up with plants, Today was right, notifications were turned on, and the test push was accepted by Google's push service (D1: sent, 1/1 devices). Zero console errors; test garden deleted.
+  - **Still to do:** a push received on a real Android phone and an iPhone (Home Screen app).
   - 703 tests.
 - 2026-10-16: **Leaf Platform M3, knowledge graph and identify** (`backend/knowledge/`, `/identify`). Details are in `docs/LEAF_PLATFORM.md` M3.
   - **Profiles:** each profile comes from Tavily sources (a care search with a batched extract, plus its own toxicity search). Lightning extracts facts with exact quotes, code checks them, and Super verifies them. Unsourced fields are listed, and toxicity fails safe in code.
