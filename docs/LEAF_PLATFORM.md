@@ -477,7 +477,7 @@ Where a source does not say when to start counting, Leaf counts from January 1 a
 
 ### M5 Season Plan
 - [x] Ultra season plan, Super verification against code rules, living plan with replanning, calendar export and printable page, Doctor wiring
-- [ ] Live: a production garden's plan written, verified and shown at `/season`, exported to a calendar (PRODUCTION_CHECK)
+- [x] Live: a production garden's plan written, verified and shown at `/season` (checked in Chromium on leafathon.site; test gardens deleted afterwards)
 
 **How a plan is written (`backend/season/`, job `season_plan`).** A plan covers the next 52 weeks from this week's Monday.
 1. **Outline (Ultra, one call):** every plant's sowing and planting-out weeks for the whole season, including succession sowings. Months are written separately, so the outline is what keeps them consistent; plantings come only from it.
@@ -515,6 +515,11 @@ When a check-in is added to that report, the loop closes: the check-in task is m
   - Super removed 4 items with reasons, among them a July harvest of spring lettuce ("lettuce bolts in summer heat").
 - **Replan:** a test frost trigger (labelled TEST, local only) moved the tomato transplant a week later. Super verified it, the code diff was correct, and it cost $0.011 in 12 s.
 - **Prompt fix after this run:** Super had also removed hardening off before the earliest date. The rules now say that a few hours a day before planting out is fine. This has not been re-measured.
+
+**Measured in production (2026-10-15).** Two Minneapolis test gardens with a tomato each (migration 0005 applied to D1; deleted afterwards). The `/season` page rendered and its button started the plan; its status was read from D1.
+- **The first production plan had a real defect, found here.** The outline put the tomato transplant in the week of May 3, and the earliest date is May 5, which falls mid-week. The code rule allowed it with a caution, and then Super removed it, so the plan never planted the tomato out. Fixed: a planting week must start on or after the earliest date, and the outline moves a milestone dated in the week that holds that date to the next week. The prompt now says weeks are dated by their Monday.
+- **After the fix:** 34 items in about 70 s, with sowing indoors on Mar 15 and planting out on May 10 (earliest May 5), then harvests, verified by Super.
+- **Not measured in production:** the `.ics` download button and a replan, because both need the garden's private key and the browser tools were unavailable. Both are tested offline, and the replan was run live against real models locally.
 
 **Limits.**
 - The plan does not roll forward: after 52 weeks the gardener writes a new one.
