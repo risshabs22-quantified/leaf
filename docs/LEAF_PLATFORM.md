@@ -519,7 +519,12 @@ When a check-in is added to that report, the loop closes: the check-in task is m
 **Measured in production (2026-10-15).** Two Minneapolis test gardens with a tomato each (migration 0005 applied to D1; deleted afterwards). The `/season` page rendered and its button started the plan; its status was read from D1.
 - **The first production plan had a real defect, found here.** The outline put the tomato transplant in the week of May 3, and the earliest date is May 5, which falls mid-week. The code rule allowed it with a caution, and then Super removed it, so the plan never planted the tomato out. Fixed: a planting week must start on or after the earliest date, and the outline moves a milestone dated in the week that holds that date to the next week. The prompt now says weeks are dated by their Monday.
 - **After the fix:** 34 items in about 70 s, with sowing indoors on Mar 15 and planting out on May 10 (earliest May 5), then harvests, verified by Super.
-- **Not measured in production:** the `.ics` download button and a replan, because both need the garden's private key and the browser tools were unavailable. Both are tested offline, and the replan was run live against real models locally.
+- **Calendar export:** `GET /season.ics` returned 34 all-day events for the plan.
+- **Doctor wiring and replan, end to end** (a third test garden, a real diagnosis from notes at about $0.04):
+  - Linking the report added 4 treatment tasks, each sourced to the report, plus a check-in on Oct 20.
+  - The replan job ran once and succeeded. It added the blight steps to the next four weeks and wrote its summary.
+  - Super removed 4 copper/neem items for citing a planting-dates source for treatment advice. The diagnosis's own treatment step stayed in today's tasks.
+- **Not checked:** a photo check-in on the linked report (offline tests only), and a push on a real phone.
 
 **Limits.**
 - The plan does not roll forward: after 52 weeks the gardener writes a new one.

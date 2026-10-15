@@ -442,6 +442,9 @@ async def replan(
     if plan is None:
         return {"skipped": "no verified plan"}
     rows = {w.week: w.items for w in await ctx.repo.list_plan_weeks(plan.id)}
+    if not rows and await ctx.repo.get_plan(plan.id) is None:
+        # A rewrite replaced this plan between the two reads: retry on the new one.
+        raise RuntimeError("the plan was replaced while replanning; retrying")
     target = [w for w in trigger.get("weeks", []) if w in rows][:MAX_REPLAN_WEEKS]
     if not target:
         return {"skipped": "no plan weeks to change"}

@@ -51,7 +51,8 @@ Keep it short: newest entries first.
     - Second run: 76 coherent items in 110 s, 18 calls, $0.21, verified by Super.
     - A labelled test frost replan moved the tomato a week later, for $0.011.
   - **Production check:** migration 0005 applied. The first production plan never planted the tomato out: the outline picked the week containing the earliest date, code allowed it with a caution, and Super removed it. Fixed with a deterministic rule (a planting week must start on or after the earliest date; the outline moves a milestone to the next week), tests, and a redeploy. The second plan planted out on May 10, verified by Super.
-  - **Not yet checked in production:** the `.ics` download button and a replan (both need the garden key; the browser tools were locked). Both are covered offline. A push on a real phone is still the open M4 item.
+  - **Doctor wiring and replan checked in production:** a real diagnosis linked to a test garden added tasks and a check-in. The replan ran once, was verified by Super, and wrote its changes. The `.ics` export returned 34 events. Test gardens deleted.
+  - **Still open:** a photo check-in on a linked report (offline only) and a push on a real phone (the M4 item).
   - **Local dev DB:** `data/platform.db` had been built from an earlier draft of 0003 (no `species.started_at`). It was rebuilt locally; production D1 was not affected.
 - 2026-10-15: **Leaf Platform M4, Leaf Care** (`backend/care/`, `backend/notify/`, `/today`). Details are in `docs/LEAF_PLATFORM.md` M4.
   - **Planner (code):** each task has a reason, a due time and a source.
