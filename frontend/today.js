@@ -47,7 +47,7 @@ $("g-locate").addEventListener("click", () => {
   if (!navigator.geolocation) { $("g-where").textContent = "Location is not available in this browser."; return; }
   $("g-where").textContent = "Finding you…";
   navigator.geolocation.getCurrentPosition(
-    (p) => { place = { lat: Math.round(p.coords.latitude * 100) / 100, lon: Math.round(p.coords.longitude * 100) / 100, label: "your location" };  // about 1 km $("g-where").textContent = "Using your location."; },
+    (p) => { /* rounded to about 1 km */ place = { lat: Math.round(p.coords.latitude * 100) / 100, lon: Math.round(p.coords.longitude * 100) / 100, label: "your location" }; $("g-where").textContent = "Using your location."; },
     () => { $("g-where").textContent = "Leaf could not get your location; type a town instead."; },
     { maximumAge: 600000, timeout: 10000 },
   );

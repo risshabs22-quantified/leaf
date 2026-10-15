@@ -9,6 +9,9 @@ import asyncio
 import base64
 import contextlib
 import io
+import shutil
+import subprocess
+from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
@@ -677,3 +680,15 @@ def test_settings_repr_never_shows_secrets():
 
     text = repr(Settings(nebius_api_key="nb-secret-1", tavily_api_key="tvly-secret-2"))
     assert "nb-secret-1" not in text and "tvly-secret-2" not in text
+
+
+SCRIPTS = sorted((Path(__file__).parent.parent / "frontend").glob("*.js"))
+
+
+@pytest.mark.parametrize("script", SCRIPTS, ids=lambda p: p.name)
+def test_every_frontend_script_parses(script):
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+    done = subprocess.run([node, "--check", str(script)], capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
