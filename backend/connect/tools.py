@@ -109,6 +109,9 @@ async def diagnose_tool(
 
     request.app.state.limiter.check(caller.identity)
     await spend_model_call(request, caller.garden)
+    from backend.radar.prior import activate
+
+    await activate(request.app, cell=caller.garden.cell)  # Leaf Radar's capped prior
     prefs = Garden(organic=caller.garden.prefs.organic, pets=caller.garden.prefs.pets)
     plant = None
     if plant_id:

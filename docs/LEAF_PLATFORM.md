@@ -33,6 +33,7 @@ What these limits mean for Leaf:
 - **Climatology is the costly Open-Meteo call.** Thirty years of daily data for one point is about 10,957 days ÷ 14 ≈ **780 weighted calls**, out of 10,000 a day. Normals are therefore computed once per 0.1° cell and kept for good, and at most 8 new cells are built a day, with the rest queued for the next day. A forecast refresh, with 12 hourly variables over 7 days, costs about 1.2 calls.
 - **KV is never used for counters or locks**, because of the 1 write/s limit and the 60 s propagation. Counters, spend and job state live in D1.
 - **Nano 3 is not cheaper than Lightning per token, and on Token Factory it is slower.** Both cost the same. On the 65-message front-door eval, Lightning's median was 0.4 s and Nano 3's 1.4 to 1.6 s. So live requests go to Lightning, and Nano 3 does background screening where a second does not matter (see [Decisions](#decisions)).
+- **Tavily credits are the scarcest resource.** The plan is 1,000 credits a month. Leaf keeps 100 for development and spreads what is left over the days left, so on Oct 15 the searcher's daily cap was 11 (702 used, 17 days left). Radar therefore takes at most 8 credits a day (2 states at 4 credits: two searches and two page reads of 5 pages each), species profiles and identification at most 12, and diagnosis keeps the rest. The searcher's own cap sits above all of them.
 - **Free-tier rules:** Open-Meteo forecast and archive, NWS alerts, Tavily within its credits, and Cloudflare features on the current plan. Anything that could cost money waits for the user's approval; approvals are recorded under [Decisions](#decisions).
 
 ## Architecture
@@ -109,7 +110,7 @@ Per-task budgets are listed below. `max_tokens` is the cap on one call's output,
 | `front_door` (route + screen, live) | Lightning → Nano | off | 300 | 400 / 80 | 0.00004 | M1 |
 | `checkin_screen` (check-in notes) | Nano → Lightning | off | 300 | 400 / 80 | 0.00004 | M1 |
 | `job_triage` | Nano → Lightning | off | 300 | 400 / 80 | 0.00004 | M4 |
-| `radar_screen` (fetched pages) | Nano → Lightning | off | 300 | 1500 / 80 | 0.00011 | M7 |
+| `radar_screen` (fetched pages) | Nano → Lightning | off | 300 | 400 / 17 (measured) | 0.00003 | M7 |
 | `vision` | vision | off | 4000 | measured | 0.002 | exists |
 | `look_closer` | vision | off | 4000 | measured | 0.002 | exists |
 | `diagnose` | Ultra → Super → Lightning | on | 6000 | 3000 / 2000 | 0.009 | exists |
@@ -134,7 +135,7 @@ Per-task budgets are listed below. `max_tokens` is the cap on one call's output,
 | `season_plan` (one month, 13 a plan) | Ultra → Super | on | 16000 | 2750 / 3050 (measured) | 0.012 | M5 |
 | `plan_verify` (25 items a call) | Super → Ultra | on | 8000 | 5300 / 5750 (measured) | 0.0068 | M5 |
 | `replan` (optional) | Ultra → Super | on | 8000 | 2450 / 2350 (measured) | 0.0095 | M5 |
-| `radar_extract` | Lightning → Super | off | 2000 | 4000 / 1000 | 0.0005 | M7 |
+| `radar_extract` (one call a region) | Lightning → Super | off | 2000 | 560 / 90 (measured) | 0.00006 | M7 |
 
 Routing rules:
 
@@ -212,7 +213,7 @@ The Worker's `scheduled()` handler only enqueues; the queue consumer wakes the c
 | `notify` | after `plan_garden` and on alerts; quiet hours via queue delay (up to 24 h) | per garden | `notify:<garden>:<date>:<kind>` | M4 |
 | `season_plan` (outline, months, Super, then current) | `POST /api/gardens/<id>/season` | per garden | `season_plan:<plan id>` | M5 |
 | `replan` (only the weeks a change touches) | from `plan_cell` (forecast frost or heat in a week with planting), a linked diagnosis, or a check-in that is spreading | per garden | `replan:<garden>:<frost|heat>:<week>`, `…:diagnosis:<case>:<plant>`, `…:checkin:<case>:<plant>:<n>` | M5 |
-| `radar` | `0 6 * * 1` | per region | `radar:<region>:<iso week>` | M7 |
+| `radar` (search the state's extension sites, read, screen, extract, check) | `0 6 * * 1-5`: the Worker picks up to 2 states with gardens that have no run yet this week (least recently checked first) | per region | `radar:<region>:<iso week>` | M7 |
 
 Container wake-ups are the only job cost that can exceed the plan. One daily housekeeping wake (about 30 minutes, because of `sleepAfter`) uses about 15 GiB-hours a month, inside the 25 included. Morning planning per populated timezone adds about $0.60 a month (approved). The afternoon check wakes the container only on frost or heat days, because the Worker's temperature prefilter runs without it. That prefilter is only a wake-up gate with wide margins; every decision is still made in `backend/climate/`.
 

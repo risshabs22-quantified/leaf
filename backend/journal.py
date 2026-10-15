@@ -248,7 +248,7 @@ SHARED_FIELDS = (
     "verdict",
     "verdict_reason",
     "auto",
-)
+)  # not "regional": it would show a shared link's state and county
 
 
 def public_view(entry: JournalEntry) -> dict[str, Any]:

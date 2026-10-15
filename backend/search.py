@@ -33,8 +33,10 @@ class Searcher(Protocol):
         topic: str = "general",
         time_range: str | None = None,
         max_results: int = 5,
+        include_domains: list[str] | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
-        """Results plus Tavily credits charged (0 on a cache hit)."""
+        """Results plus Tavily credits charged (0 on a cache hit). `include_domains` limits
+        the search to those hosts ("example.edu", "*.example.edu")."""
         ...
 
     async def extract(self, url: str, query: str) -> tuple[list[str], int]:
@@ -43,6 +45,10 @@ class Searcher(Protocol):
 
     async def extract_many(self, urls: list[str], query: str) -> tuple[dict[str, list[str]], int]:
         """Passages for up to five pages in one call (one credit per five pages)."""
+        ...
+
+    async def extract_pages(self, urls: list[str]) -> tuple[dict[str, str], int]:
+        """The text of up to five whole pages in one call (one credit per five pages)."""
         ...
 
 
@@ -113,6 +119,12 @@ class CreditBudget:
         self.day, self.cap, self.used = today, cap, 0
         log.info("Tavily daily credit cap for %s: %d", today, cap)
 
+    async def remaining(self) -> int:
+        """Credits left of today's allowance (for background work that must leave a share
+        for diagnoses)."""
+        await self._refresh()
+        return max(0, self.cap - self.used)
+
     async def take(self, credits: int = 1) -> None:
         await self._refresh()
         if self.used + credits > self.cap:
@@ -151,8 +163,10 @@ class TavilySearcher:
         topic: str = "general",
         time_range: str | None = None,
         max_results: int = 5,
+        include_domains: list[str] | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
-        key = f"{topic}|{time_range}|{max_results}|{' '.join(query.lower().split())}"
+        domains = sorted(include_domains or [])
+        key = f"{topic}|{time_range}|{max_results}|{domains}|{' '.join(query.lower().split())}"
         hit = self._cache.get(key)
         if hit and time.time() - hit[0] < CACHE_TTL_S:
             return hit[1], 0
@@ -163,6 +177,8 @@ class TavilySearcher:
         }
         if time_range:
             kwargs["time_range"] = time_range
+        if domains:
+            kwargs["include_domains"] = domains
         if self.budget:
             await self.budget.take(1)
         resp = await self._client.search(query, **kwargs)
@@ -212,6 +228,34 @@ class TavilySearcher:
                 out[str(r["url"])] = passages
         return out, (1 if out else 0)  # failed extractions are not charged
 
+    async def extract_pages(self, urls: list[str]) -> tuple[dict[str, str], int]:
+        """Whole-page text for up to five pages per credit (basic extraction, no relevance
+        query, so nothing is cut out of the page)."""
+        urls = list(dict.fromkeys(urls))[:5]
+        if not urls:
+            return {}, 0
+        cached: dict[str, str] = {}
+        for u in urls:
+            hit = self._extract_cache.get(f"page|{u}")
+            if hit and time.time() - hit[0] < CACHE_TTL_S:
+                cached[u] = hit[1][0]
+        todo = [u for u in urls if u not in cached]
+        if not todo:
+            return cached, 0
+        if self.budget:
+            await self.budget.take(1)
+        resp = await self._client.extract(urls=todo, extract_depth="basic")
+        out = {
+            str(r["url"]): str(r.get("raw_content") or "")[:PAGE_CHARS]
+            for r in resp.get("results") or []
+            if r.get("url") and r.get("raw_content")
+        }
+        if len(self._extract_cache) >= CACHE_MAX:
+            self._extract_cache.clear()
+        for u, text in out.items():
+            self._extract_cache[f"page|{u}"] = (time.time(), [text])
+        return {**cached, **out}, (1 if out else 0)
+
 
 def search_paused(searcher: Searcher) -> bool:
     """Has today's Tavily allowance run out? Then answers carry no fresh sources and say so."""
@@ -224,6 +268,9 @@ PAUSED_NOTICE = (
     "sources. The care plan sticks to general good practice; check with your local extension "
     "office before using any product."
 )
+
+
+PAGE_CHARS = 20000  # the most of one page Leaf keeps
 
 
 class NullSearcher:
@@ -239,6 +286,9 @@ class NullSearcher:
         return [], 0
 
     async def extract_many(self, urls: list[str], query: str) -> tuple[dict[str, list[str]], int]:
+        return {}, 0
+
+    async def extract_pages(self, urls: list[str]) -> tuple[dict[str, str], int]:
         return {}, 0
 
 

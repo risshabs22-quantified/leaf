@@ -25,6 +25,7 @@ PHOTO_DAYS = 30
 METER_DAYS = 30
 JOB_DAYS = 14
 TOUCH_EVERY_S = 3600  # how often opening a garden updates last_seen (saves D1 writes)
+RADAR_KEEP_DAYS = 120
 CELL_DEG = 0.1  # grid cell for shared forecasts and climatology (~11 km, ERA5-Land's grid)
 PLAN_LOCAL_HOUR = 5
 
@@ -223,6 +224,37 @@ class ApiKey(BaseModel):
     created_at: int
     last_used: int | None = None
     revoked_at: int | None = None
+
+
+class RadarReport(BaseModel):
+    id: str
+    region: str
+    pest: str
+    pest_key: str
+    hosts: list[str] = Field(default_factory=list)
+    place: str = ""
+    status: Literal["confirmed", "reported"]
+    reported_on: str
+    quote: str
+    source_title: str
+    source_url: str
+    week: str
+    collected_at: int
+
+
+class RadarRun(BaseModel):
+    region: str
+    week: str
+    status: Literal["done", "skipped", "failed"]
+    searched: int = 0
+    read: int = 0
+    relevant: int = 0
+    undated: int = 0
+    rejected: int = 0
+    reports: int = 0
+    credits: int = 0
+    note: str = ""
+    created_at: int
 
 
 class Reading(BaseModel):
@@ -705,6 +737,42 @@ class Repo:
         )
         return {"calls": res[0].rows, "cache": res[1].rows, "active": res[2].rows}
 
+    async def platform_stats(self, since_ts: int, day: str) -> dict[str, Any]:
+        """Counts for /ops: jobs, data held, and today's free-service use. Counts and sums only;
+        no row of anyone's data leaves here."""
+        res = await self.db.batch(
+            [
+                (
+                    "SELECT kind, status, COUNT(*) AS n FROM jobs WHERE updated_at >= ?"
+                    " GROUP BY kind, status ORDER BY kind",
+                    (since_ts,),
+                ),
+                (
+                    "SELECT (SELECT COUNT(*) FROM gardens) AS gardens,"
+                    " (SELECT COUNT(*) FROM plants WHERE status = 'active') AS plants,"
+                    " (SELECT COUNT(*) FROM cells) AS cells,"
+                    " (SELECT COUNT(*) FROM climatology WHERE status = 'ready') AS climatology,"
+                    " (SELECT COUNT(*) FROM species WHERE status = 'ready') AS species,"
+                    " (SELECT COUNT(*) FROM facts WHERE status = 'verified') AS facts,"
+                    " (SELECT COUNT(*) FROM radar_reports) AS radar_reports,"
+                    " (SELECT COUNT(DISTINCT region) FROM radar_runs) AS radar_regions,"
+                    " (SELECT COUNT(*) FROM season_plans WHERE status = 'ready') AS season_plans,"
+                    " (SELECT COUNT(*) FROM api_keys WHERE revoked_at IS NULL) AS api_keys",
+                    (),
+                ),
+                (
+                    "SELECT service, units, calls FROM api_usage WHERE day = ?"
+                    " AND service NOT LIKE 'model_calls:%' ORDER BY service",
+                    (day,),
+                ),
+            ]
+        )
+        return {
+            "jobs": res[0].rows,
+            "data": res[1].rows[0] if res[1].rows else {},
+            "free": res[2].rows,
+        }
+
     # ---------- housekeeping ----------
 
     async def purge(self, today: date | None = None) -> dict[str, int]:
@@ -744,6 +812,19 @@ class Repo:
                     ),
                 ),
                 ("DELETE FROM telegram_links WHERE expires_at < ?", (now_s(),)),
+                (
+                    "DELETE FROM radar_reports WHERE reported_on < ?",
+                    ((today - timedelta(days=RADAR_KEEP_DAYS)).isoformat(),),
+                ),
+                ("DELETE FROM radar_pages WHERE checked_at < ?", (now_s() - 60 * 86400,)),
+                (
+                    "DELETE FROM radar_runs WHERE week < ?",
+                    (
+                        "{}-W{:02d}".format(
+                            *(today - timedelta(days=RADAR_KEEP_DAYS)).isocalendar()[:2]
+                        ),
+                    ),
+                ),
             ]
         )
         names = [
@@ -757,6 +838,9 @@ class Repo:
             "model_calls_by_garden",
             "api_key_hits",
             "telegram_links",
+            "radar_reports",
+            "radar_pages",
+            "radar_runs",
         ]
         return {n: r.changes for n, r in zip(names, res, strict=True)}
 
@@ -1598,6 +1682,136 @@ class Repo:
                     ("DELETE FROM telegram_chats WHERE chat_id = ? AND failures >= 10", (chat_id,)),
                 ]
             )
+
+    # ---------- Radar (M7): regions, reports, runs ----------
+
+    async def set_cell_region(self, cell: str, region: str) -> None:
+        await execute(self.db, "UPDATE cells SET region = ? WHERE cell = ?", region, cell)
+
+    async def cells_missing_region(self, limit: int = 10) -> list[dict[str, Any]]:
+        """Cells that hold a garden and have no region yet (they are looked up a few a day)."""
+        return await query(
+            self.db,
+            "SELECT DISTINCT c.cell, c.lat, c.lon FROM cells c JOIN gardens g ON g.cell = c.cell"
+            " WHERE c.region IS NULL AND IFNULL(c.us, 1) = 1 LIMIT ?",
+            limit,
+        )
+
+    async def add_radar_reports(self, reports: Sequence[dict[str, Any]]) -> int:
+        """Store reports, skipping any (region, page, pest) already held. Returns new rows."""
+        if not reports:
+            return 0
+        now = now_s()
+        stmts: list[Statement] = [
+            (
+                "INSERT OR IGNORE INTO radar_reports (id, region, pest, pest_key, hosts, place,"
+                " status, reported_on, quote, source_title, source_url, week, collected_at,"
+                " trace_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    new_id(),
+                    r["region"],
+                    r["pest"],
+                    r["pest_key"],
+                    _json(r.get("hosts", [])),
+                    r.get("place", ""),
+                    r["status"],
+                    r["reported_on"],
+                    r["quote"],
+                    r["source_title"],
+                    r["source_url"],
+                    r["week"],
+                    now,
+                    r.get("trace_id", ""),
+                ),
+            )
+            for r in reports
+        ]
+        return sum(x.changes for x in await write_chunked(self.db, stmts))
+
+    async def list_radar_reports(
+        self, region: str, since: str = "", limit: int = 100
+    ) -> list[RadarReport]:
+        """A region's reports newest first (`since` is a YYYY-MM-DD report date)."""
+        rows = await query(
+            self.db,
+            "SELECT * FROM radar_reports WHERE region = ? AND reported_on >= ?"
+            " ORDER BY reported_on DESC, collected_at DESC LIMIT ?",
+            region,
+            since,
+            max(1, min(limit, 300)),
+        )
+        return [RadarReport(**{**r, "hosts": _load(r.get("hosts"), [])}) for r in rows]
+
+    async def record_radar_run(self, run: RadarRun) -> None:
+        await execute(
+            self.db,
+            "INSERT INTO radar_runs (region, week, status, searched, read, relevant, undated,"
+            " rejected, reports, credits, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,"
+            " ?, ?, ?) ON CONFLICT (region, week) DO UPDATE SET status = excluded.status,"
+            " searched = excluded.searched, read = excluded.read, relevant = excluded.relevant,"
+            " undated = excluded.undated, rejected = excluded.rejected,"
+            " reports = excluded.reports, credits = excluded.credits, note = excluded.note,"
+            " created_at = excluded.created_at",
+            run.region,
+            run.week,
+            run.status,
+            run.searched,
+            run.read,
+            run.relevant,
+            run.undated,
+            run.rejected,
+            run.reports,
+            run.credits,
+            run.note[:300],
+            run.created_at,
+        )
+
+    async def radar_runs(self, region: str | None = None, limit: int = 60) -> list[RadarRun]:
+        """The newest run of each region, or a region's recent runs."""
+        if region:
+            rows = await query(
+                self.db,
+                "SELECT * FROM radar_runs WHERE region = ? ORDER BY week DESC LIMIT ?",
+                region,
+                limit,
+            )
+        else:
+            rows = await query(
+                self.db,
+                "SELECT r.* FROM radar_runs r JOIN (SELECT region, MAX(week) AS w FROM radar_runs"
+                " GROUP BY region) m ON r.region = m.region AND r.week = m.w ORDER BY r.region"
+                " LIMIT ?",
+                limit,
+            )
+        return [RadarRun(**r) for r in rows]
+
+    async def radar_pages_checked(self, urls: Sequence[str], since: int) -> set[str]:
+        """Which of these pages were read since `since` (so they are not paid for again)."""
+        urls = list(urls)[:90]
+        if not urls:
+            return set()
+        marks = ", ".join("?" * len(urls))
+        rows = await query(
+            self.db,
+            f"SELECT url FROM radar_pages WHERE checked_at >= ? AND url IN ({marks})",
+            since,
+            *urls,
+        )
+        return {r["url"] for r in rows}
+
+    async def mark_radar_pages(self, region: str, outcomes: dict[str, str]) -> None:
+        now = now_s()
+        stmts: list[Statement] = [
+            (
+                "INSERT INTO radar_pages (url, region, outcome, checked_at) VALUES (?, ?, ?, ?)"
+                " ON CONFLICT (url) DO UPDATE SET outcome = excluded.outcome,"
+                " checked_at = excluded.checked_at, region = excluded.region",
+                (url, region, outcome, now),
+            )
+            for url, outcome in outcomes.items()
+        ]
+        if stmts:
+            await write_chunked(self.db, stmts)
 
     async def events_by_ref(self, kind: str, ref: str, limit: int = 20) -> list[Event]:
         """Events of a kind about one thing, newest first (e.g. the gardens a case is in)."""

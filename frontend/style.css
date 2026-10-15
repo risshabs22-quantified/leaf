@@ -396,3 +396,25 @@ textarea:focus, input:focus { outline: none; border-bottom-color: var(--green); 
 .api-table th, .api-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
 .connect-page h3 { font: 600 .95em var(--sans); margin-top: 1.2em; }
 
+/* Leaf Radar (M7) */
+.regional { margin-top: 18px; }
+.regional h3, .radar-page h3 { font: 600 .95em var(--sans); }
+.regional-list, .radar-list { list-style: none; padding: 0; margin: 10px 0; display: grid; gap: 12px; }
+.regional-list li, .radar-list li { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; overflow-wrap: anywhere; }
+.regional blockquote, .radar-list blockquote { margin: 6px 0; padding-left: 10px; border-left: 3px solid var(--line); font-size: .88em; color: var(--muted); }
+.radar-state { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.radar-state select { max-width: 100%; }
+.radar-stats { font-size: .85em; color: var(--muted); }
+
+/* Ops (M7) */
+.ops-big { font: 500 1.25em var(--serif, inherit); margin: 4px 0 10px; }
+.meter { height: 10px; border-radius: 6px; background: var(--line); overflow: hidden; }
+.meter > span { display: block; height: 100%; background: var(--green); border-radius: 6px; }
+.small-meter { height: 6px; margin-top: 4px; }
+.ops-list { list-style: none; padding: 0; margin: 10px 0; display: grid; gap: 10px; }
+.ops-list li { display: grid; gap: 2px; font-size: .9em; }
+.ops-page .api-table code { font-size: .85em; }
+.scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.scroll-x table { min-width: 560px; }
+.scroll-x td, .scroll-x th { white-space: nowrap; }
+

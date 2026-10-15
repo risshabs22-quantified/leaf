@@ -52,6 +52,16 @@ def _pct(p: float) -> str:
     return f"{round(p * 100)}%"
 
 
+_RANK = {"lab": 0, "likely": 1, "confident": 2}
+
+
+def more_cautious(raw: Decision, with_prior: Decision) -> Decision:
+    """The less confident of two decisions (a lab beats likely beats confident); on a tie the
+    one made with the prior, which matches the ranking shown. Used so that a regional prior
+    can lower a verdict but never raise it."""
+    return raw if _RANK[raw.verdict] < _RANK[with_prior.verdict] else with_prior
+
+
 def decide(
     ranking: list[tuple[str, float]],
     image_quality: str,

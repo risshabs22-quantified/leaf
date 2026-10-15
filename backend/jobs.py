@@ -18,9 +18,10 @@ import hashlib
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Protocol
 
+import httpx
 from pydantic import BaseModel, Field
 
 from backend.care.service import (
@@ -36,11 +37,13 @@ from backend.climate.openmeteo import WeatherUnavailable, climatology_cost
 from backend.config import Settings
 from backend.context import REQUEST, RequestContext, request_scope
 from backend.data.driver import Bridge, DataError
-from backend.data.repo import EventIn, Garden, Repo, now_s, plan_hour_utc
+from backend.data.repo import EventIn, Garden, RadarRun, Repo, now_s, plan_hour_utc
 from backend.knowledge import budget as knowledge_budget
 from backend.knowledge.profile import build_profile
 from backend.metering import Meter
 from backend.notify import deliver, notify
+from backend.radar import regions as radar_regions
+from backend.radar.collect import PAGE_RECHECK_DAYS, collect_region
 from backend.schemas import ModelCall
 from backend.search import SearchPaused
 from backend.season.service import replan, replan_job, weather_replans, write_plan
@@ -50,7 +53,7 @@ log = logging.getLogger("leaf.jobs")
 JOB_TIMEOUT_S = 240  # well under the 300 s lease, so a stuck run never overlaps a retry
 # A season plan's outline is one long Ultra call that may fall back to Super; it gets more
 # room, still inside the lease. Its months and checks are saved as they finish anyway.
-KIND_TIMEOUT_S = {"season_plan": 285}
+KIND_TIMEOUT_S = {"season_plan": 285, "radar": 270}
 
 
 class JobMessage(BaseModel):
@@ -173,7 +176,10 @@ async def housekeeping(ctx: JobContext, payload: dict[str, Any]) -> dict[str, An
         await ctx.objects.delete([p.r2_key for p in photos])
     removed = await ctx.repo.delete_photos(p.id for p in photos)
     purged = await ctx.repo.purge()
-    return {"photos": removed, **purged}
+    located = 0
+    for row in await ctx.repo.cells_missing_region(REGIONS_PER_DAY):  # older cells, a few a day
+        located += int(await _locate(ctx, row["cell"], row["lat"], row["lon"]) is not None)
+    return {"photos": removed, **purged, "regions_found": located}
 
 
 @job("garden_ready")
@@ -187,6 +193,7 @@ async def garden_ready(ctx: JobContext, payload: dict[str, Any]) -> dict[str, An
     if garden.cell:
         lat, lon = cell_center(garden.cell)
         await ctx.repo.register_cell(garden.cell, lat, lon)
+        await _locate(ctx, garden.cell, lat, lon)
         existing = await ctx.repo.get_climatology(garden.cell)
         if existing is None or existing["status"] != "ready":
             await ctx.queue.send([climatology_job(garden.cell)])
@@ -195,6 +202,24 @@ async def garden_ready(ctx: JobContext, payload: dict[str, Any]) -> dict[str, An
         EventIn(garden_id=garden.id, kind="garden_ready", payload={"cell": garden.cell})
     )
     return {"cell": garden.cell, "climatology_queued": queued}
+
+
+REGIONS_PER_DAY = 5  # cells looked up per housekeeping run
+
+
+async def _locate(ctx: JobContext, cell: str, lat: float, lon: float) -> str | None:
+    """The cell's US state (kept for good), so Radar knows which regions have gardens. NWS not
+    answering is not an error: it is tried again with the next housekeeping run."""
+    lookup = ctx.extra.get("region_lookup")  # the app wires the NWS lookup; tests a fake
+    if lookup is None:
+        return None
+    try:
+        region = await lookup(lat, lon)
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        log.warning("region lookup for %s failed: %s", cell, type(exc).__name__)
+        return None
+    await ctx.repo.set_cell_region(cell, region)
+    return region
 
 
 CLIMATOLOGY_PER_DAY = 8  # each build is about 780 of Open-Meteo's 10,000 daily units
@@ -502,6 +527,115 @@ async def replan_season(ctx: JobContext, payload: dict[str, Any]) -> dict[str, A
             url="/season",
         )
     return result
+
+
+RADAR_SERVICE = "tavily:radar"
+# Tavily's plan is 1,000 credits a month and Leaf spreads what is left over the days left, so
+# the daily cap can be as low as 10. Radar takes at most 8 of them: two regions a day.
+RADAR_CREDITS_PER_DAY = 8
+RADAR_RUN_CREDITS = 4  # two searches and, for up to ten pages, two page reads
+DIAGNOSIS_RESERVE = 4  # Tavily credits left for diagnoses before Radar may run
+RADAR_RUN_TIMEOUT_S = 200  # inside the queue runner's own limit
+
+
+def radar_week(day: date) -> str:
+    y, w, _ = day.isocalendar()
+    return f"{y}-W{w:02d}"
+
+
+@job("radar")
+async def radar(ctx: JobContext, payload: dict[str, Any]) -> dict[str, Any]:
+    """Weekly, per state with gardens: read that state's extension sites and keep the current
+    reports that pass the code checks. Out of credits, the week is recorded as skipped. After its
+    Tavily calls the run is never retried by the queue (that would spend them again): a failure
+    is recorded and the region is tried again next week."""
+    region = str(payload.get("region", ""))
+    today = datetime.now(UTC).date()
+    week = str(payload.get("week") or radar_week(today))
+    if not radar_regions.covered(region):
+        return {"skipped": "region not covered"}
+
+    async def record(status: str, note: str, c: Any = None) -> None:
+        await ctx.repo.record_radar_run(
+            RadarRun(
+                region=region,
+                week=week,
+                status=status,
+                searched=getattr(c, "searched", 0),
+                read=getattr(c, "read", 0),
+                relevant=getattr(c, "relevant", 0),
+                undated=getattr(c, "undated", 0),
+                rejected=getattr(c, "rejected", 0),
+                reports=len(getattr(c, "reports", [])),
+                credits=getattr(c, "credits", 0),
+                note=note,
+                created_at=now_s(),
+            )
+        )
+
+    used = await ctx.repo.api_usage_on(RADAR_SERVICE)
+    if RADAR_CREDITS_PER_DAY - used < RADAR_RUN_CREDITS:
+        await record("skipped", "Today's Radar credits were used by other regions.")
+        return {"skipped": "daily radar credits"}
+    leaf = ctx.extra["leaf"]
+    budget = getattr(leaf.searcher, "budget", None)
+    if budget is not None and await budget.remaining() < RADAR_RUN_CREDITS + DIAGNOSIS_RESERVE:
+        # Diagnosis shares Tavily's daily allowance and comes first.
+        await record("skipped", "Search credits are being kept for diagnoses today.")
+        return {"skipped": "credits reserved for diagnosis"}
+    trace: list[ModelCall] = []
+
+    async def spent(credits: int) -> None:
+        await ctx.repo.add_api_usage(RADAR_SERVICE, float(credits))
+
+    async def read_lately(urls: list[str]) -> set[str]:
+        return await ctx.repo.radar_pages_checked(urls, now_s() - PAGE_RECHECK_DAYS * 86400)
+
+    try:
+        c = await asyncio.wait_for(
+            collect_region(
+                leaf.llm,
+                leaf.settings,
+                leaf.searcher,
+                region,
+                today,
+                week,
+                read_lately,
+                trace,
+                on_credits=spent,
+            ),
+            RADAR_RUN_TIMEOUT_S,
+        )
+    except TimeoutError:  # slow pages: recorded, not retried (that would pay for them again)
+        await record("failed", "The run took too long.")
+        return {"failed": "timeout"}
+    except SearchPaused:
+        await record("skipped", "Tavily credits are used up for now.")
+        return {"skipped": "Tavily credits"}
+    except Exception as exc:  # noqa: BLE001 - recorded, not retried (credits already spent)
+        log.exception("radar %s failed", region)
+        await record("failed", f"{type(exc).__name__}")
+        return {"failed": type(exc).__name__}
+    ctx_trace = REQUEST.get()
+    trace_id = ctx_trace.trace_id if ctx_trace else ""
+    stored = await ctx.repo.add_radar_reports([{**r, "trace_id": trace_id} for r in c.reports])
+    await ctx.repo.mark_radar_pages(region, c.outcomes)
+    await record("done", c.note, c)
+    return {
+        "region": region,
+        "searched": c.searched,
+        "read": c.read,
+        "relevant": c.relevant,
+        "reports": stored,
+        "rejected": c.rejected,
+        "credits": c.credits,
+    }
+
+
+def radar_job(region: str, week: str) -> JobMessage:
+    return JobMessage(
+        kind="radar", key=f"radar:{region}:{week}", payload={"region": region, "week": week}
+    )
 
 
 @job("notify_send")

@@ -19,6 +19,7 @@ from backend.config import Settings
 from backend.context import task_scope
 from backend.models import LLM, ModelError, SpendCapReached, complete_json
 from backend.prompts import CHAT_SYSTEM, DIAGNOSE_SYSTEM, PLAN_SYSTEM, sanitize
+from backend.radar.prior import REGIONAL, apply_prior
 from backend.schemas import (
     CarePlan,
     ChatRequest,
@@ -30,7 +31,7 @@ from backend.schemas import (
     Observation,
 )
 from backend.search import PAUSED_NOTICE, Searcher, search_all, search_paused
-from backend.verdict import QUICK, Decision, decide
+from backend.verdict import QUICK, Decision, decide, more_cautious
 from backend.vision import describe
 
 log = logging.getLogger("leaf.pipeline")
@@ -110,6 +111,24 @@ class Leaf:
         decision = decide(
             [(c.name, c.confidence) for c in diagnosis.candidates], obs.image_quality, QUICK
         )
+        regional = None
+        for c in diagnosis.candidates:
+            c.prior_points = 0.0  # only Leaf Radar sets it, in code
+        ctx = REGIONAL.get()
+        if ctx is not None:
+            known = obs.plant_guess if obs.plant_guess.lower() != "unknown" else notes
+            regional = apply_prior(diagnosis.candidates, known, ctx)
+        if regional is not None:
+            # Decided again with the prior; the more cautious verdict stands.
+            diagnosis.candidates.sort(key=lambda c: c.confidence, reverse=True)
+            decision = more_cautious(
+                decision,
+                decide(
+                    [(c.name, c.confidence) for c in diagnosis.candidates],
+                    obs.image_quality,
+                    QUICK,
+                ),
+            )
 
         # 3. Grounding (parallel web search)
         queries = diagnosis.search_queries or [
@@ -172,6 +191,7 @@ class Leaf:
             verdict_reason=decision.reason,
             notice=PAUSED_NOTICE if not sources and search_paused(self.searcher) else "",
             garden=garden,
+            regional=regional,
         )
 
     async def chat(self, req: ChatRequest) -> ChatResponse:

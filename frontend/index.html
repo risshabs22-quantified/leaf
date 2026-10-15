@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Leaf · plant doctor</title>
-<meta name="description" content="Show Leaf a sick leaf. It works the case like a plant clinic: ranks the likely causes, checks your weather, reads extension guides, and writes a care plan that cites its sources, or tells you to send a sample to a lab.">
+<title>Leaf · garden intelligence</title>
+<meta name="description" content="Leaf plans your garden's day and year from your own weather, diagnoses what goes wrong like a plant clinic, and shows the source for everything it says. In the browser, on Telegram, through an API and from AI agents.">
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M6 26C6 14 13 7 26 6c0 13-7 20-18 20z' fill='none' stroke='%2318793a' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M6 26C12 19 17 14 22 10' fill='none' stroke='%2318793a' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="manifest" href="/manifest.webmanifest">
@@ -15,8 +15,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=2026101901">
-<link rel="stylesheet" href="/static/landing.css?v=2026101503">
+<link rel="stylesheet" href="/static/style.css?v=2026101903">
+<link rel="stylesheet" href="/static/landing.css?v=2026101903">
 </head>
 <body class="landing">
 <canvas id="forest" aria-hidden="true"></canvas>
@@ -28,12 +28,13 @@
     <span class="word">Leaf</span>
   </a>
   <nav class="nav" aria-label="Main">
-    <a class="wide" href="#how">How it works</a>
+    <a class="wide" href="#products">What it does</a>
     <a class="wide" href="#features">Features</a>
     <a class="wide" href="#accuracy">Accuracy</a>
     <a href="/today">Today</a>
     <a href="/identify">Identify</a>
     <a class="wide" href="/plants">My plants</a>
+    <a class="wide" href="/radar">Radar</a>
     <a class="nav-cta" href="/app">Diagnose</a>
   </nav>
 </header>
@@ -43,13 +44,13 @@
 <!-- ============================================================== hero -->
 <section class="hero wrap">
   <div class="hero-copy panel">
-    <h1>Show Leaf a sick leaf. It works the case like a plant clinic.</h1>
-    <p class="hero-sub">It ranks what could be wrong, checks your local weather, reads extension guides and writes a care plan that cites them. When it isn't sure, it tells you to send a sample to a lab.</p>
+    <h1>Leaf plans your garden's day and year, and works the case when a plant goes wrong.</h1>
+    <p class="hero-sub">Each morning it tells you what to water, protect or check, from your own weather. It writes a plan for the next twelve months around your frost dates. Send a photo of a struggling plant and it works the case like a plant clinic. Every answer shows its source, and when it isn't sure it says so.</p>
     <p class="hero-actions">
-      <a class="btn" href="/app">Diagnose a plant</a>
-      <a class="btn-quiet" href="#how">How it works</a>
+      <a class="btn" href="/today">Plan my garden</a>
+      <a class="btn-quiet" href="/app">Diagnose a plant</a>
     </p>
-    <p class="hero-facts">Free, no account. About 15 seconds for a quick look, a minute for a full investigation.</p>
+    <p class="hero-facts">Free, no account. <a href="/ops">See how it is running right now.</a></p>
   </div>
 
   <figure class="specimen" aria-labelledby="specimen-cap">
@@ -86,14 +87,28 @@
       <ol class="cc-log" id="cc-log"></ol>
       <p class="cc-verdict" id="cc-verdict">Likely: early blight <span>Check in again Thursday</span></p>
     </div>
-    <figcaption id="specimen-cap" class="cap">An example case, sped up. Yours runs live.</figcaption>
+    <figcaption id="specimen-cap" class="cap">An example Leaf Doctor case, sped up. Yours runs live.</figcaption>
   </figure>
+</section>
+
+<!-- ============================================================== products -->
+<section id="products" class="products wrap panel" aria-labelledby="products-h">
+  <h2 id="products-h" class="section-h">Five things Leaf does</h2>
+  <p class="section-sub">One core underneath: a climate engine, a plant knowledge graph, model routing and guardrails. Each product is a page you can open now.</p>
+  <div class="product-grid">
+    <a class="product" href="/today"><h3>Care</h3><p>What to water, protect, feed or check today, from the forecast, weather alerts and each plant's needs. Notifications by Web Push or Telegram.</p><span class="p-link">Open Today</span></a>
+    <a class="product" href="/season"><h3>Season Plan</h3><p>Fifty-two weeks of sowing, planting out, feeding, pruning and harvest, checked against your frost dates and verified before you see it. It replans when a frost or a disease changes things.</p><span class="p-link">Open the plan</span></a>
+    <a class="product" href="/app"><h3>Doctor</h3><p>Photos in, a ranked list of causes and a cited care plan out, or a case summary for your state's plant clinic. Check-ins compare new photos with old ones.</p><span class="p-link">Diagnose a plant</span></a>
+    <a class="product" href="/radar"><h3>Radar</h3><p>What university extension services say is being seen in your state this month. Each report is the page's own sentence, with its date and link.</p><span class="p-link">Open Radar</span></a>
+    <a class="product" href="/connect"><h3>Connect</h3><p>A REST API, an MCP server for AI agents, a Home Assistant soil-moisture webhook, and a Telegram bot. Your own keys, with limits.</p><span class="p-link">Open Connect</span></a>
+    <a class="product" href="/identify"><h3>Identify</h3><p>Name a plant from a photo, checked against cited sources, then add it to your garden with one tap.</p><span class="p-link">Identify a plant</span></a>
+  </div>
 </section>
 
 <!-- ============================================================== how it works -->
 <section id="how" class="how wrap panel" aria-labelledby="how-h">
   <div class="how-head">
-    <h2 id="how-h" class="section-h">How Leaf works a case</h2>
+    <h2 id="how-h" class="section-h">How Leaf Doctor works a case</h2>
     <p>Models look, reason and write. Code makes the verdict and enforces the safety rules.</p>
   </div>
   <ol class="steps-line" id="steps-line">
@@ -220,7 +235,7 @@
 
 <!-- ============================================================== accuracy -->
 <section id="accuracy" class="accuracy wrap panel" aria-labelledby="acc-h">
-  <h2 id="acc-h" class="section-h">How often it's right</h2>
+  <h2 id="acc-h" class="section-h">How often the doctor is right</h2>
   <p class="section-sub">52 licensed photos: 31 diseases, 15 nutrient, water or sun problems, 6 pests.</p>
   <div class="acc-grid">
     <div class="acc-bars" id="acc-bars">
@@ -246,20 +261,41 @@
   </div>
 </section>
 
+<!-- ============================================================== numbers -->
+<section id="numbers" class="numbers wrap panel" aria-labelledby="num-h">
+  <h2 id="num-h" class="section-h">Other numbers we measured</h2>
+  <p class="section-sub">Real runs in October 2026. Where a number is an estimate, it says so.</p>
+  <div class="table-wrap">
+    <table class="stack-table">
+      <tbody>
+        <tr><td>A full season plan, written and verified</td><td>$0.21 and 70 to 110 seconds in a real Minneapolis garden, 18 model calls</td></tr>
+        <tr><td>A replan after a frost or a diagnosis</td><td>About 1 cent and 12 seconds, verified before it is shown</td></tr>
+        <tr><td>Naming a plant from a photo, 40 licensed photos</td><td>92.5% right on the vision model alone, 95% after the check against sources. These photos are easier than a phone photo, so treat it as a ceiling</td></tr>
+        <tr><td>Hardiness zone from 30 years of weather</td><td>Within half a zone of the USDA map in all five cities checked, exact in none</td></tr>
+        <tr><td>The front door's safety screen, 65 messages</td><td>0 false refusals, no harmful request missed, 97% routed to the right place, median 0.4 seconds</td></tr>
+        <tr><td>Radar, real runs</td><td>Pennsylvania's extension pages gave validated reports; Minnesota's had none current; Michigan's site blocks the page reader. It says "nothing current" rather than guess</td></tr>
+        <tr><td>Cost per active user per day</td><td>About half a cent, estimated from the per-call costs above. Not measured: there are too few users to average, and the <a href="/ops">dashboard</a> says so</td></tr>
+        <tr><td>Not yet checked live</td><td>The Telegram bot with a real token, the MCP server from a real MCP client, Home Assistant itself, and a push notification on a real phone</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
 <!-- ============================================================== built with + faq -->
 <section class="stack wrap panel" aria-labelledby="stack-h">
   <h2 id="stack-h" class="section-h">What does what</h2>
   <div class="table-wrap">
     <table class="stack-table">
       <tbody>
-        <tr><td>NVIDIA Nemotron 3 Ultra</td><td>First list of causes, and the investigator</td></tr>
-        <tr><td>NVIDIA Nemotron 3 Super</td><td>Second opinion, and fallback for every reasoning step</td></tr>
-        <tr><td>NVIDIA Nemotron 3.5 Lightning</td><td>Care plan, claim check, check-ins, chat</td></tr>
+        <tr><td>NVIDIA Nemotron 3 Ultra</td><td>Diagnosis and the investigator; writes the season plan and replans</td></tr>
+        <tr><td>NVIDIA Nemotron 3 Super</td><td>Verifies every season plan and replan (it can only remove); second opinion; fallback for every reasoning step</td></tr>
+        <tr><td>NVIDIA Nemotron 3.5 Lightning</td><td>The front door, care plans, claim checks, chat, notification wording, Radar's extraction</td></tr>
+        <tr><td>NVIDIA Nemotron Nano 3</td><td>Background screening: check-in notes and fetched web pages</td></tr>
         <tr><td>Kimi K2.6</td><td>Reads photos, until an NVIDIA vision model is served</td></tr>
         <tr><td>Nebius Token Factory</td><td>Runs every model call</td></tr>
-        <tr><td>Tavily</td><td>Search, page reading and outbreak news</td></tr>
-        <tr><td>Open-Meteo</td><td>Past weather for disease risk, forecast for spray windows</td></tr>
-        <tr><td>Cloudflare</td><td>Hosting, and saved reports in R2</td></tr>
+        <tr><td>Tavily</td><td>Search, page reading, plant facts and Radar</td></tr>
+        <tr><td>Open-Meteo and the National Weather Service</td><td>Forecast, 30-year climate, frost dates, alerts</td></tr>
+        <tr><td>Cloudflare</td><td>Workers, Containers, D1, KV, Queues, R2 and Cron Triggers</td></tr>
       </tbody>
     </table>
   </div>
@@ -269,13 +305,15 @@
     <details><summary>Does it replace my extension office?</summary><p>No. It tells you when you need one, and hands you a case summary to take along.</p></details>
     <details><summary>What happens to my photos and location?</summary><p>Only small thumbnails are kept, for 30 days, under a private link. Your browser location is rounded to about 10 km before it's sent. Notes never appear on a shared link.</p></details>
     <details><summary>Which plants does it know?</summary><p>Common vegetables, fruit, roses and garden ornamentals. Weather-based disease rules cover tomato and potato. For anything unusual, expect "Likely" or a lab referral.</p></details>
+    <details><summary>Where does it not work yet?</summary><p>Radar covers US states only and often finds little, because extension sites mostly publish evergreen guides. Pest scouting by degree days is northern hemisphere only. Weather alerts are US only. Telegram needs a bot token that has not been set up yet, so it is hidden until it is.</p></details>
+    <details><summary>Where do the numbers on this page come from?</summary><p>From real runs, written down in the <a href="https://github.com/risshabs22-quantified/leaf">README</a> and <code>docs/LEAF_PLATFORM.md</code>, with the date and what was tested. Estimates are labelled as estimates.</p></details>
     <details><summary>Is it free?</summary><p>Yes. The project pays for the model and search calls, so the public demo has a daily limit. The code is MIT licensed.</p></details>
   </div>
 </section>
 
 <section class="closing wrap panel">
-  <h2>Got a plant that looks wrong?</h2>
-  <p class="hero-actions"><a class="btn" href="/app">Diagnose a plant</a> <a class="btn-quiet" href="/plants">My plants</a></p>
+  <h2>Start with your garden, or a plant that looks wrong.</h2>
+  <p class="hero-actions"><a class="btn" href="/today">Plan my garden</a> <a class="btn-quiet" href="/app">Diagnose a plant</a></p>
 </section>
 
 </main>
@@ -286,7 +324,7 @@
   <span><a href="https://open-meteo.com/" target="_blank" rel="noopener">Weather data by Open-Meteo.com</a></span>
   <span>Guidance, not certainty. For food crops and any chemical, follow the product label.</span>
 </footer>
-<script src="/static/rainforest.js?v=2026101901"></script>
-<script src="/static/landing.js?v=2026101901"></script>
+<script src="/static/rainforest.js?v=2026101903"></script>
+<script src="/static/landing.js?v=2026101903"></script>
 </body>
 </html>

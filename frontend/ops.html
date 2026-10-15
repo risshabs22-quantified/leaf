@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ops · Leaf</title>
+<meta name="description" content="Live numbers from Leaf's platform: model calls, cost, cache hit rate, jobs and free-service use. No secrets and no personal data.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M6 26C6 14 13 7 26 6c0 13-7 20-18 20z' fill='none' stroke='%2318793a' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M6 26C12 19 17 14 22 10' fill='none' stroke='%2318793a' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#18793a">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=2026101903">
+</head>
+<body class="calm">
+<canvas id="forest" aria-hidden="true"></canvas>
+<header class="site">
+  <a href="/" class="brand" aria-label="Leaf home">
+    <svg class="mark" viewBox="0 0 48 64" aria-hidden="true"><path d="M9 57C5 33 17 12 41 6c3 25-8 45-30 51" /><path d="M9 57C17 41 26 27 37 14" /></svg>
+    <span class="word">Leaf</span>
+  </a>
+  <nav class="nav" aria-label="Main">
+    <a class="wide" href="/#how">How it works</a>
+    <a class="wide" href="/#features">Features</a>
+    <a href="/today">Today</a>
+    <a href="/identify">Identify</a>
+    <a class="wide" href="/plants">My plants</a>
+    <a class="wide" href="/radar">Radar</a>
+    <a class="nav-cta" href="/app">Diagnose</a>
+  </nav>
+</header>
+
+<main class="page ops-page">
+  <div class="season-intro">
+    <h1 class="page-title">How Leaf is running</h1>
+    <p class="lede small">Live numbers from the platform: model calls, cost, caching, jobs and the free services it uses. Counts and sums only: no secrets and no personal data.</p>
+  </div>
+  <p id="o-status" class="status" role="status" aria-live="polite"></p>
+
+  <section class="block" aria-labelledby="o-spend-h">
+    <h2 id="o-spend-h">Today's spend</h2>
+    <p id="o-mode" class="ops-big"></p>
+    <div class="meter" role="img" id="o-bar" aria-label="Spend against the daily cap"><span id="o-bar-fill"></span></div>
+    <p id="o-spend" class="radar-stats"></p>
+    <p id="o-cpu" class="radar-stats"></p>
+  </section>
+
+  <section class="block" aria-labelledby="o-models-h">
+    <h2 id="o-models-h">Models, by task (last 7 days)</h2>
+    <div class="scroll-x"><table class="api-table"><thead><tr><th>Task</th><th>Calls</th><th>Avg time</th><th>Tokens in / out</th><th>Cost</th><th>Model</th></tr></thead><tbody id="o-tasks"></tbody></table></div>
+    <p id="o-cache" class="radar-stats"></p>
+  </section>
+
+  <section class="block" aria-labelledby="o-jobs-h">
+    <h2 id="o-jobs-h">Background jobs (last 24 hours)</h2>
+    <div class="scroll-x"><table class="api-table"><thead><tr><th>Job</th><th>Done</th><th>Failed</th><th>Waiting or running</th></tr></thead><tbody id="o-jobs"></tbody></table></div>
+  </section>
+
+  <section class="block" aria-labelledby="o-free-h">
+    <h2 id="o-free-h">Free services today</h2>
+    <ul id="o-free" class="ops-list"></ul>
+    <p class="small">Weather data by <a href="https://open-meteo.com/">Open-Meteo.com</a> (CC BY 4.0).</p>
+  </section>
+
+  <section class="block" aria-labelledby="o-data-h">
+    <h2 id="o-data-h">What Leaf holds</h2>
+    <ul id="o-data" class="ops-list"></ul>
+    <p class="small"><a href="/radar">Leaf Radar</a> · <a href="/api/ops/usage?days=7">usage as JSON</a> · <a href="/api/ops/platform">platform as JSON</a></p>
+  </section>
+</main>
+
+<footer class="foot">
+  <span>Open source, MIT license. <a href="https://github.com/risshabs22-quantified/leaf">Code on GitHub</a> · <a href="https://open-meteo.com/">Weather data by Open-Meteo.com</a></span>
+  <span>Leaf gives guidance, not certainty. For food crops and any chemical, follow the product label.</span>
+</footer>
+<script src="/static/ops.js?v=2026101903"></script>
+<script src="/static/rainforest.js?v=2026101903"></script>
+</body>
+</html>

@@ -1,34 +1,124 @@
 # Leaf
 
-**Snap a sick leaf. Get a cited care plan, or a case ready for a plant clinic.**
+**A garden intelligence platform. Leaf plans your garden's day and year from your own weather, diagnoses what goes wrong, and shows the source for everything it says.**
 
-Leaf is a plant-doctor agent for home gardeners and small growers. Upload up to three photos of a struggling plant and Leaf ranks the likely causes with a confidence for each, checks your recent weather, reads extension-service sources, gets a second opinion, and writes a short care plan whose every step cites a source it read. When it isn't confident, it says so and hands you a printable case summary for your state's plant diagnostic lab.
+Give Leaf your plants and a place. Each morning it works out what to water, protect, feed or check, from your local forecast, National Weather Service alerts and the published rules for each crop. It writes a week-by-week plan for the next year, checked against your frost dates. When something goes wrong, you send a photo and it works the case like a plant clinic: ranks the likely causes, reads extension-service guides, and either gives a cited care plan or hands you a case summary for your state's plant diagnostic lab. It reaches you in the browser, on Telegram, through an API, and from any MCP-capable AI agent.
 
 Built for the [Nebius x NVIDIA Global AI Hackathon](https://nebiusglobalaihackathon.devpost.com/), Best Apps and Agents track, with Tavily at runtime.
 
-**Try it:** https://leafathon.site · **Video:** _coming soon_
+**Try it:** https://leafathon.site · **How it is running right now:** https://leafathon.site/ops · **Video:** _coming soon_
 
-## Why
+## What is in it
 
-Gardeners lose plants because early symptoms look alike: a fungal leaf spot, a nutrient problem and sun scorch can all start as brown patches. Search results are generic and forums disagree. A plant clinic works a case differently: it takes a history, looks closely, checks the weather, forms a differential, tests each hypothesis and only then advises, or asks for a sample. Leaf does that workflow in about a minute and shows every step. It does not claim to beat experts; it says when you need one.
+One intelligence core (a climate engine, a plant knowledge graph, a data layer, model routing, guardrails) with five products on top.
 
-## Three modes, three verdicts
+| Product | What it does | Where |
+| --- | --- | --- |
+| **Care** | A daily plan per garden: water or skip (the FAO-56 water balance outdoors, a separate model indoors), frost, heat, wind and flood protection from the forecast and NWS alerts, feeding, pest scouting timed by degree days. Notifications by Web Push (an installable PWA) and Telegram, with quiet hours, dedupe and limits | `/today` |
+| **Season Plan** | Nemotron Ultra writes 52 weeks of sowing, planting out, feeding, pruning, protection and harvest. Code rules check every item against your frost dates, temperature limits, organic and pet choices; Nemotron Super then verifies and can only remove. A frost, a diagnosis or a spreading disease replans only the affected weeks and says what changed and why. Calendar export, printable | `/season` |
+| **Doctor** | Photos and notes in, a ranked differential, a cited plan and one of three verdicts (Confident, Likely, Send to a lab) out. Quick, Deep (an investigator agent with tools) and Auto. Check-ins compare new photos with old ones | `/app` |
+| **Radar** | What university extension services say is being seen right now, state by state. Each report is a sentence copied from the page, checked in code, with its date and link. A matching report nudges a diagnosis by at most 5 points and can never be the reason for Confident | `/radar` |
+| **Connect** | A REST API with OpenAPI, API keys with scopes and per-key limits, an MCP server, a Home Assistant webhook where a soil-moisture sensor overrides the water estimate, and a Telegram bot | `/connect` |
 
-**Auto** (the default; 15 seconds to about a minute, about 4 cents on average): runs Quick first, and only when Quick is not confident does it open a Deep investigation, seeded with Quick's look at the photo, its differential, evidence and sources so nothing is repeated. The page shows when and why Leaf decided to look further ("Quick was unsure: early blight is most likely, but Septoria leaf spot is close behind").
+Also: **Identify** (name a plant from a photo, checked against cited sources, `/identify`) and **`/ops`**, a public dashboard of what the platform is doing (counts and sums only: no secrets, no personal data).
 
-**Quick** (about 15 seconds, under 1 cent): one careful look at the photo, a structured diagnosis by Nemotron 3 Ultra, Tavily search, and a care plan by Nemotron 3.5 Lightning.
+## Architecture
 
-**Deep** (about 40 seconds, about 5 cents): an investigator agent works the case with tools, streamed live to the page.
+```mermaid
+flowchart LR
+  subgraph You
+    WEB[Web app and PWA]
+    TG[Telegram]
+    API[REST API v1]
+    MCP[MCP server]
+    HA[Home Assistant]
+  end
+  subgraph Edge[Cloudflare Worker]
+    FWD[Forward and strip internal headers]
+    CRON[Cron Triggers]
+    QC[Queue consumer]
+    BRIDGE[Data bridge: D1, KV, Queue]
+  end
+  subgraph Core[FastAPI container]
+    FD[Front door: route and screen]
+    AG[Agents: doctor, care, season, radar]
+    CLIM[Climate engine: forecast, climatology, frost dates, water balance]
+    KG[Knowledge graph: cited species facts]
+    GR[Guardrails: code rules, Super verification, quote checks]
+    MT[Meter, spend guard, trace ids]
+  end
+  TF[(Nebius Token Factory: Nemotron Ultra, Super, Lightning, Nano; one vision model)]
+  D1[(D1)]
+  KV[(KV)]
+  Q[(Queue)]
+  R2[(R2)]
+  EXT[(Open-Meteo, NWS, Tavily)]
+  You --> FWD --> FD --> AG
+  AG --> CLIM & KG & GR
+  AG & GR --> MT --> TF
+  CRON --> Q --> QC -->|/internal/jobs/run| AG
+  Core -->|http://leaf-platform.internal| BRIDGE --> D1 & KV & Q
+  Core --> R2
+  CLIM & KG & AG --> EXT
+```
+
+Everything that decides something is code: the zone, the frost dates, the water balance, degree days, disease risk, spray windows, every safety verdict and every limit. Models look, reason, write and verify; code decides, and checks the models. The container is reached by the Worker, which holds D1, KV and the queue; the container itself holds no database credentials (it reaches D1 through the Worker's outbound interception).
+
+## What each NVIDIA model does
+
+Every model call goes through `backend/models.py` to Nebius Token Factory. The routing table is `ROUTES` in `backend/config.py`; `/ops` shows the live mix.
+
+| Model | Role | Used for |
+| --- | --- | --- |
+| **Nemotron 3 Ultra** (550B, reasoning on) | Reasoner and writer of long plans | The diagnosis and the investigator agent; the season plan (an outline of every planting date, then one call per month); replans |
+| **Nemotron 3 Super** (120B) | Verifier and fallback | Verifies every season plan and replan against the code rules and cited facts, and can only remove items; checks plant identification and species facts; the second opinion in Deep; Ultra's fallback |
+| **Nemotron 3.5 Lightning** | Fast volume work | The live front door (routing and the input safety screen, about 0.4 s), the care plan, claim check, chat, morning notification wording, species fact extraction, Radar's report extraction |
+| **Nemotron Nano 3** | Background screening | Screens check-in notes and fetched web pages for instructions aimed at an AI reader, and triages weather alerts. It is slower than Lightning on Token Factory at the same price (1.4 s against 0.4 s median on the 65-message router eval), so nothing a user waits for uses it |
+| **Kimi K2.6** | Reads photos | Token Factory serves no public NVIDIA vision model (Oct 2026); Leaf picks an image model at startup and prefers an NVIDIA one when it appears |
+
+## Numbers (measured unless it says estimated)
+
+**What the models cost** (measured on real runs, Oct 2026; Token Factory per-token prices):
+
+| Work | Measured | Notes |
+| --- | --- | --- |
+| A Quick diagnosis | under 1 cent, about 15 s | |
+| An Auto diagnosis (investigates when unsure) | about 3.7 cents, about 31 s | 52-photo tune split |
+| A full season plan, written and verified | $0.21, 70 to 110 s | 18 calls: 1 outline, 13 months, 4 Super chunks, in a real Minneapolis garden |
+| A replan of the affected weeks, verified | about $0.011, 12 s | |
+| Identifying a plant from a photo | about $0.003 | |
+| A species profile (once per species, shared by every user) | 3 Tavily credits, plus a few cents of model calls | |
+| A Radar run for one state | 4 Tavily credits at most, under $0.001 of model calls | |
+
+**Estimated cost per active user per day: about half a cent** (target: under one cent). That is an estimate from the measured per-call costs above, for a user with one garden of five plants, three messages a day, one diagnosis a fortnight and two replans a month. It is not measured: Leaf has too few users for a real average, and `/ops` says so rather than printing one. The platform has a hard daily spend cap ($3 by default), a brownout at 80% (optional features fall back to rules and templates), and rules-only mode at the cap, which keeps care and alerts working.
+
+**Accuracy:**
+
+| Test | Result |
+| --- | --- |
+| Diagnosis, 52 licensed photos (tune split, so optimistic) | Auto right first time 58%, in the top three 73%; when it said Confident it was right 14 of 16 times. Details below |
+| Plant identification, 40 licensed photos | 92.5% right with the vision model alone, 95% after the check against sources. Well-lit, well-framed Commons photos likely seen in training, so a ceiling rather than what a phone photo gets |
+| Front-door router, 65 labelled messages (attacks, toxicity questions, real garden questions) | 0 false refusals, 0 of 6 harmful requests missed, 0 to 1 of 7 prompt injections missed, intent 97% (Lightning) |
+| Hardiness zone from 30 years of ERA5-Land, five US cities | Within half a zone of the USDA map in all five, exact in none |
+| Radar, real runs on Oct 15 2026 | One state's pages (Pennsylvania) gave two validated reports; Minnesota's current pages had none; Michigan's site blocks the page reader. Extension sites mostly host evergreen guides, so Radar often finds little, and says so |
+
+**Tests:** 800+ offline tests with scripted fake models and search (`make test`; they never spend credits), a type check of the Worker, lint. CI runs `make check`; while GitHub Actions billing is broken it is run locally before every push.
+
+**Not yet verified live:** the Telegram bot with a real bot token, the MCP server from a real MCP client (it is tested with the raw JSON-RPC calls such a client sends, in both protocol versions), the Home Assistant webhook from a real Home Assistant, and a Web Push notification on a real phone. Each is built, tested offline and, where it could be, checked against the real services.
+
+## Leaf Doctor
+
+**Auto** (the default; 15 seconds to about a minute, about 4 cents on average) runs Quick first, and opens a Deep investigation only when Quick is not confident, seeded with Quick's look at the photo so nothing is repeated. **Quick** (about 15 seconds, under a cent) is one careful look at the photo, a structured diagnosis by Nemotron 3 Ultra, Tavily search, and a care plan by Nemotron 3.5 Lightning. **Deep** (about 40 seconds, about 5 cents) is an investigator agent working the case with tools, streamed live.
 
 Every answer ends in one of three verdicts, decided in code (`backend/verdict.py`), never by the model:
 
 | Verdict | When | What you get |
 | --- | --- | --- |
 | **Confident** | the leading cause is well ahead, the photo is usable, nothing high-stakes is in play | a cited care plan |
-| **Likely** | a clear favourite, but a weaker lead, a close second, or a second opinion that leans elsewhere | the care plan, what to watch for that would change the diagnosis, and when to send a sample |
+| **Likely** | a clear favourite, but a weaker lead, a close second, or a second opinion that leans elsewhere | the care plan, what to watch for, and when to send a sample |
 | **Send to a lab** | the causes are spread out, the photo is too poor, the second opinion strongly disagrees, or a high-stakes condition is in the top two or at 20% or more anywhere | a printable case summary and your state's plant diagnostic lab |
 
-High-stakes conditions are the ones where a wrong guess hurts more than the gardener's plant: late blight (spores travel miles; extension services ask growers to report it), tomato brown rugose fruit virus, sudden oak death, citrus greening, Ralstonia race 3 biovar 2, boxwood blight, spotted lanternfly and box tree moth, each with its APHIS or extension source in `backend/diseases.py`.
+High-stakes conditions are the ones where a wrong guess hurts more than the gardener's plant: late blight, tomato brown rugose fruit virus, sudden oak death, citrus greening, Ralstonia race 3 biovar 2, boxwood blight, spotted lanternfly and box tree moth, each with its APHIS or extension source in `backend/diseases.py`.
 
 ```mermaid
 flowchart TD
@@ -51,32 +141,9 @@ flowchart TD
     X -- Send to a lab: spread out, disagreement, poor photo, high-stakes --> H[Lab handoff: printable packet + state lab link]
 ```
 
-| Step | Model (all calls via Nebius Token Factory) |
-| --- | --- |
-| First differential, investigator | `nvidia/Nemotron-3-Ultra-550b-a55b`, reasoning on, native tool calling |
-| Fallback for every reasoning step, second opinion | `nvidia/nemotron-3-super-120b-a12b` |
-| Care plan, claim check, chat, check-in advice, JSON repair | `nvidia/Nemotron-3_5-Lightning` |
-| Reading photos | `moonshotai/Kimi-K2.6` with thinking off. Token Factory has no public NVIDIA vision model as of Oct 2026; Leaf picks an image model at startup and prefers an NVIDIA one if it appears |
+The investigator's tools are all read-only: `look_closer`, `get_conditions` (14 days from Open-Meteo through published rules: TOMCAST for tomato; Hutton, Smith and Wallin for potato, each threshold cited in `backend/disease_rules.py`), `search_sources`, `read_source` (only URLs this case's own searches returned; no URL a model writes is ever fetched), `check_alerts`, `ask_user` and `update_differential`/`finish`. **Enforced in code:** 8 counted tool calls, per-tool caps, a dollar budget, a hard 90-second clock with a forced finish, an Ultra-to-Super fallback per turn, and a fall back to Quick if the investigation fails. Probabilities are capped at 0.9.
 
-The investigator's tools, all read-only:
-
-| Tool | What it does |
-| --- | --- |
-| `look_closer` | Crops a region of an uploaded photo in code and asks the vision model one targeted question |
-| `get_conditions` | Last 14 days from Open-Meteo, humid-hour counts, and only the published rules that apply to the crop: TOMCAST for tomato; Hutton, Smith and Wallin for potato. Every threshold is cited in `backend/disease_rules.py` |
-| `search_sources` | Tavily search; .edu, .gov and extension services ranked first, open-web results marked untrusted |
-| `read_source` | Tavily extract with a relevance query, only on URLs this case's own searches returned (no URL a model writes is ever fetched) |
-| `check_alerts` | Tavily news from the last month for outbreak reports in your region |
-| `ask_user` | Stops with up to 3 questions that would separate the top two causes |
-| `update_differential`, `finish` | Record the ranking, with the evidence ids behind each cause |
-
-**Enforced in code, not left to the model:** 8 counted tool calls, per-tool caps, a dollar budget, a hard 90-second clock with a forced finish, parallel calls counted, Ultra-to-Super fallback per turn, and a fall back to Quick if the investigation fails for any reason. Probabilities are capped at 0.9. The final confidence combines the investigation, the second opinion, photo quality and evidence coverage, and the verdict comes from it in code. If the investigator never searched, Leaf searches for the leading diagnosis itself before writing the plan, so every plan step can cite a passage it read.
-
-## Quick, Deep and Auto (measured)
-
-`scripts/eval.py` runs each mode on the same labelled photos and reports top-1 and top-3 accuracy, how often each verdict was right, the lab-referral rate, the Brier score of the reported confidence (lower is better), cost and time per case. Names are scored through `backend/diseases.py`, so "Alternaria solani" counts as early blight and "bacterial speck" does not count as bacterial spot. `scripts/fit_verdicts.py` fits the verdict thresholds and `scripts/calibrate.py` Deep's blend, both offline from logged runs.
-
-**Tune split: 52 licensed photos, 31 diseases, 15 abiotic problems, 6 pests** (`evals/README.md`). These photos were used to tune Leaf, including the verdict thresholds, so the numbers are optimistic; the held-out test split of our own phone photos is still being collected and nothing has been tuned on it. One run per mode, 13 October 2026:
+**Accuracy, 52 licensed photos** (31 diseases, 15 abiotic problems, 6 pests; `evals/README.md`). These were used to tune Leaf, including the verdict thresholds, so the numbers are optimistic; a held-out split of our own phone photos is still being collected and nothing has been tuned on it. One run per mode, 13 October 2026:
 
 | Mode | Top-1 | Top-3 | When it said Confident | Likely right | Sent to a lab | Brier | Cost / case | Time / case |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -84,52 +151,58 @@ The investigator's tools, all read-only:
 | Deep | 56% | 73% | right 7 of 8 | 14 of 24 (top-3: 18) | 20 (38%) | 0.210 | $0.054 | 40 s |
 | **Auto** | **58%** | 73% | **right 14 of 16** | 10 of 23 | 13 (25%) | **0.204** | $0.037 | 31 s |
 
-Auto's row is live; Quick's and Deep's verdict columns replay their logged runs through the final thresholds, which were fitted on those same runs, so they flatter Quick and Deep slightly (the raw `evals/summary_tune_sprint-*.json` files show the verdicts under the first, unfitted thresholds). Auto investigated 69% of cases.
+Auto's row is live; Quick's and Deep's verdict columns replay their logged runs through the final thresholds, which were fitted on those same runs, so they flatter Quick and Deep slightly. Read plainly: Auto is the default because it beat Quick on this split (58% against 52%, better calibrated, about four times the cost), but on 52 cases one case is about 2 points and repeat runs vary by several, so that is a modest lead, not a proven one. "Confident" means something (14 of 16 in Auto). "Likely" is where the misses are, which is why it comes with what to watch for. Late blight is Leaf's most common miss: Auto once said Confident: powdery mildew on a late blight leaf, because the vision model reported a white coating that was not there. A structured symptom checklist in the vision step did not help (48% with it, 52% without), so it is off. `scripts/eval.py` reruns all of this; `docs/ACCURACY_AUDIT.md` examines every miss.
 
-What this shows, read plainly:
+## After the diagnosis, and the plant journal
 
-- **Auto is the default because it beat Quick on this split**: 3 more cases right at top-1 (58% vs 52%), better calibrated (Brier 0.204 vs 0.264), about 4 times the cost. On 52 cases one case is about 2 points and repeat runs of the same mode vary by several points, so this is a modest lead, not a proven one.
-- **"Confident" means something.** When Leaf said Confident it was right 14 of 16 times in Auto (and 11 of 12 in Quick's replay). It says Confident on about a third of cases.
-- **"Likely" is where the misses are.** More than half of Quick's and Auto's Likely answers were wrong at top-1 (Deep: 10 of 24), though the right answer is usually in the top three; that is why Likely comes with what to watch for and when to send a sample.
-- **Lab referrals:** 9 of Auto's 13 were warranted (the top answer was wrong, or the condition was late blight). Three of the four late blight photos went to a lab. The fourth is Leaf's worst answer on this split: Auto said **Confident: powdery mildew** (85%) on a late blight leaf, because the vision model reported a white powdery coating that is not there. Late blight is the condition Leaf misses most, for that reason.
-- **Where Leaf is wrong**, from looking at all 25 Quick misses (`docs/ACCURACY_AUDIT.md`): 12 reasoning errors (10 with the right answer in the top three, the kind Deep fixes), 6 where the vision model missed or invented a feature, 7 photos that are genuinely ambiguous, 0 naming mismatches.
-- **A structured symptom checklist in the vision step did not help** (top-1 48% with it, 52% without; it fixed 5 cases and broke 7), so it is off by default.
+Three tools for actually saving the plant, each decided in code rather than by a model:
 
-Earlier runs on the first 22 photos, kept for the record (escalation then meant a yes/no flag, before the three verdicts):
+- **Organic and pet-safe plans.** Tick "Organic methods only" or "Pets or children use this garden". The plan writer is told, and then every step is checked in code against a table of 33 active ingredients (`backend/actives.py`): organic or not (USDA National Organic Program actives), risk to pets, harm to bees. Steps that break your choice are removed and listed with the reason. Plan-wide warnings cover oil with sulfur (leaf burn), bee-harming products (spray at dusk) and what to do if a pet eats a treated plant. The Season Plan uses the same table.
+- **The best time to spray** (`backend/spray.py`). When a plan applies a product, Leaf scores every daylight hour of the next five days of forecast: leaves dry, at least 6 dry hours after, wind at most 16 km/h with gusts at most 24 km/h, between 7 °C and a heat limit that drops from 32 °C to 29 °C with oil or sulfur, and only early morning or evening for bee-harming products. It suggests the best 3-hour window and shows the five-day grid.
+- **My plants and reminders** (`/plants`). Every report you save is listed on your device with its verdict, last check-in and the date to check again. Add a check-in or a spray window to Google, Apple or Outlook calendars (the `.ics` links can only point at Leaf pages). A private link moves the list to another device; there is no account.
 
-| Run | Mode | Top-1 | Top-3 | Brier | Escalated | Escalation precision / recall | Cost / case | Time / case |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| first Deep version | Quick | 50% | 82% | 0.287 | 18% | 1.0 / 0.364 | $0.008 | 15 s |
-| first Deep version | Deep | 50% | 73% | 0.269 | 73% | 0.5 / 0.727 | $0.051 | 67 s |
-| calmer critic, blend 0.4 | Deep | 46% | 59% | 0.202 | 68% | 0.733 / 0.917 | $0.054 | 56 s |
-| blend 0.7, before review fixes | Quick | 50% | 68% | 0.270 | 32% | 0.714 / 0.455 | $0.008 | 12 s |
-| blend 0.7, before review fixes | Deep | 36% | 64% | 0.205 | 82% | 0.722 / 0.929 | $0.058 | 57 s |
-| after review fixes | Deep | 55% | 73% | 0.227 | 91% | 0.45 / 0.9 | $0.056 | 43 s |
-| shipped rules | Deep | 41% | 64% | 0.268 | 82% | 0.667 / 0.923 | $0.056 | 51 s |
+Every finished report is saved for 30 days under an unguessable link (`/c/<id>`) you can share. Come back with a new photo to check in: Leaf compares it with the last one (spreading, stable or recovering), updates the advice and escalates anything still spreading. Only small thumbnails are kept, never your full uploads. A report linked to a garden plant also becomes tasks and a replan of the season plan, and its check-ins close that loop.
 
-What the investigation adds whatever the accuracy: a ranked differential tied to evidence the gardener can inspect, local weather and published disease-risk indices, plans that cite only passages Leaf read (with unsupported steps removed), a second opinion, and a lab handoff when the case needs one.
+## Care and Today
 
-## Plant journal
+Each morning, once per populated time zone, Leaf plans every garden: **water or skip** per plant (the FAO-56 water balance from forecast evapotranspiration and rain outdoors; a separate heuristic for houseplants, which the weather never waters), **frost** protection when tonight's low is 2.2 °C (36 °F) or below or an NWS frost or freeze alert starts by tomorrow morning, **heat** protection at 32.2 °C (90 °F), **wind** and **flood** from the forecast and alerts, **feeding** only when a verified fact says how often, **pest scouting** when degree days reach a published threshold (Japanese beetle, squash vine borer, cabbage maggot and three more, each with its extension source), and weekly photo check-ins. An afternoon check at 14:00 warns of frost or heat before dark. Every task has a reason, a due time and a source, or says it is Leaf's own rule.
 
-Every finished report is saved for 30 days under an unguessable link (`/c/<id>`) you can share. Come back with a new photo to check in: Leaf compares it with the last one (spreading, stable or recovering), updates the advice, and escalates anything still spreading. Only small thumbnails are kept, never your full uploads. Storage sits behind a small interface: SQLite locally, or an S3-compatible Object Storage bucket in production (`LEAF_JOURNAL_BUCKET`). `scripts/pin_case.py <id> --until 2027-01-31` keeps a demo link alive past the 30 days.
+Models add little here by design: Lightning only words the morning notification, and code rejects its wording if it names a number or a plant that the tasks do not. Notifications go to the channels the gardener chose, with quiet hours, dedupe and a daily limit; urgent alerts skip quiet hours, because a freeze warning held until 07:00 comes too late.
 
-## After the diagnosis
+## Season Plan
 
-Three tools for actually saving the plant. Each one is decided in code, not by a model.
+Ultra fixes every planting date in one call, then writes each month in its own call around them (a month too cold for anything gets no call). Code checks every item: planting out before the earliest date for the plant's frost class (CSU Extension's hardy, semi-hardy, tender, very tender, counted from the 30-year average last frost) is removed, as is a month too cold for it, a product the garden's organic or pet choices exclude (`backend/actives.py`), and a repeated pest check every week. Super then verifies in chunks and can only remove. The plan the gardener sees is the verified one; a rewrite keeps it on screen until the new one is ready, and months are saved as they are written, so a retry after a timeout writes only what is missing.
 
-- **Organic and pet-safe plans.** Tick "Organic methods only" or "Pets or children use this garden". The plan writer is told, and then every step is checked in code against a table of 33 active ingredients (`backend/actives.py`): organic or not (USDA National Organic Program allowed actives), risk to pets, harm to bees. Steps that break your choice are removed and listed with the reason. Plan-wide warnings cover oil with sulfur (leaf burn), bee-harming products (spray at dusk) and what to do if a pet eats a treated plant. The same rules apply to check-in advice.
-- **The best time to spray** (`backend/spray.py`, `POST /api/spray-window`). When a plan applies a product, Leaf scores every daylight hour of the next five days of Open-Meteo forecast: leaves dry, at least 6 dry hours after (24 is best), wind at most 16 km/h (10 mph) with gusts at most 24 km/h, between 7 C and a heat limit that drops from 32 C to 29 C (85 F) when the plan uses oil or sulfur, and only early morning or evening for bee-harming products. It suggests the best 3-hour window, preferring a sooner day when it is nearly as good, and shows the whole five-day grid.
-- **My plants and reminders** (`/plants`). Every report you save is listed on your device with its verdict, last check-in status and the date to check again. Add a check-in or a spray window to Google Calendar (an add-event link) or to Apple Calendar and Outlook (an `.ics` file from `POST /api/calendar.ics`, whose links can only point at Leaf pages). A private link moves the list to another device; there is no account.
+A real production check found a bug the offline tests did not: the outline put a tomato transplant in the week of the earliest allowed date, the rules allowed it with a caution, and Super then removed it, so the plan never planted the tomato out. It is fixed with a rule and a test, and `docs/LEAF_PLATFORM.md` records it.
 
-Pages: `/` explains Leaf, `/app` diagnoses a plant, `/plants` lists your plants, `/c/<id>` is a saved report.
+## Radar
+
+Once a week for each US state that has a garden, Leaf searches that state's university extension sites (a table of 50 hosts in `backend/radar/regions.py`; Louisiana, Michigan and Oklahoma could not be opened by the checker and are marked), reads the pages, and keeps a report only when the page has its own recent date, says a specific pest or disease was seen, and contains the quoted sentence word for word. Every step that decides is code: the page's date is found in code, the quote must be in the page, must name the pest and say it was seen (a sentence about what might happen is rejected), and a page about another state is rejected. Nano 3 screens each page for text aimed at an AI reader first. Nothing is seeded or written from memory.
+
+A report nudges a diagnosis only through `backend/radar/prior.py`: two points per distinct source, at most five, only for a candidate that names the same pest on the same kind of plant. The verdict is decided twice, without and with the prior, and the more cautious stands, so a prior can send a serious case to a lab but can never make Leaf confident by itself.
+
+## Connect
+
+- **REST API v1** (`/api/v1`, OpenAPI at `/api/v1/openapi.json`): garden, today, season plan, readings, diagnose, identify, weather risk. Keys belong to a garden, are shown once, stored only as a hash, and carry scopes (`read`, `readings`, `tools`) and limits per hour, per day and for calls that spend model credits, counted in D1.
+- **MCP** (`/mcp`, Streamable HTTP, no sessions): `diagnose`, `identify`, `care_plan`, `season_plan`, `weather_risk`. It serves both the 2025 `initialize` handshake and the current stateless 2026-07-28 protocol, written from the specification pages.
+- **Home Assistant**: `POST /api/v1/readings`. A reading under 12 hours old replaces the weather estimate for its plant. A test reading is labelled TEST wherever Leaf uses it.
+- **Telegram**: link a chat with a one-time code, then `/today`, `/season`, photo diagnosis, and the same notifications as Web Push. It is off, and hidden, until a bot token is set (`scripts/telegram_setup.py`).
+
+## Platform engineering
+
+- **Where it runs**: Cloudflare Workers and Containers, with D1 (data), KV (caches), Queues (jobs with a dead-letter queue), R2 (reports) and Cron Triggers. The container reaches D1 through the Worker's outbound interception, so it holds no database credentials. Every model call still goes to Nebius Token Factory.
+- **Jobs**: the Worker's crons fan work out per region and enqueue it; the queue consumer wakes the container only when there is work. Every job is idempotent, retried with backoff, and recorded in D1. The schedule is in `docs/LEAF_PLATFORM.md`.
+- **Cost engineering**: forecasts are cached per 0.1° cell per hour, climatology once per cell for good, species profiles once per species for every user, Radar once per state per week. Open-Meteo's free allowance is counted in D1 and Leaf stays under 8,000 of the 10,000 daily units; Tavily credits are sized each day from the live monthly balance. Every model call is metered by task, model, tokens, cost and latency under a trace id.
+- **Guardrails**: code rules for chemicals, organic, pet, child and bee choices, verdict thresholds and escalation; Super verifies plans; web text is untrusted data inside delimiters and checked in code (quotes must be on the page; nothing a model writes is fetched); the front door screens every message (code first, then a model).
+- **Free services only**: Open-Meteo (CC BY 4.0), NWS, Tavily within its credits, Cloudflare on the current plan.
 
 ## Nebius and NVIDIA usage
 
 - **Nebius Token Factory**: every model call (OpenAI-compatible API, `backend/models.py`), including native tool calling for the investigator and live per-token prices from `/models` for the cost meter.
-- **NVIDIA Nemotron 3 Ultra, Super and 3.5 Lightning**: every reasoning and writing step.
-- **Hosting**: Leaf runs on Cloudflare Containers (`cloudflare/`, `make deploy-cloudflare`), with saved reports in a Cloudflare R2 bucket. Cloudflare only hosts the app: every model call goes to Nebius Token Factory.
-- **Tavily**: search, extract and news at runtime (`backend/search.py`, `backend/tools.py`).
-- **Open-Meteo**: weather for the disease-risk rules, and the hourly forecast for spray windows. Weather data by [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0).
+- **NVIDIA Nemotron 3 Ultra, Super, 3.5 Lightning and Nano 3**: every reasoning, writing, verification and screening step (the table above).
+- **Hosting**: Cloudflare Containers (`cloudflare/`, `make deploy-cloudflare`). Cloudflare only hosts the app.
+- **Tavily**: search, extract and news at runtime (`backend/search.py`, `backend/tools.py`, `backend/radar/`).
+- **Open-Meteo** and **NWS**: weather, climatology and alerts. Weather data by [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0).
 
 ## Run it
 
@@ -137,48 +210,56 @@ Requirements: Python 3.11+, a Nebius Token Factory API key, a Tavily API key.
 
 ```bash
 git clone https://github.com/risshabs22-quantified/leaf.git && cd leaf
-make setup          # creates .venv and .env
-# add NEBIUS_API_KEY and TAVILY_API_KEY to .env
+make setup          # creates .venv and the env file
+# add NEBIUS_API_KEY and TAVILY_API_KEY to the env file
 make smoke-all      # checks keys, models, regions, vision model (under 1 cent + 1 Tavily credit)
 make run            # http://localhost:8000
 ```
 
-Other commands: `make test` (offline tests, no credits), `make check`, `make eval`, `make docker-build`, `make deploy-cloudflare`. See `make help`. Settings are listed in `.env.example`; Deep is capped at 20 cases a day by default (`LEAF_DEEP_DAILY_CAP`).
+Other commands: `make test` (offline tests, no credits), `make check`, `make eval`, `make eval-router`, `make docker-build`, `make deploy-cloudflare`. See `make help`. Settings are in `.env.example`.
 
 ## Project layout
 
 ```text
-backend/    FastAPI app; Token Factory client (models.py); Quick pipeline (pipeline.py);
-            Deep: agent.py, tools.py, case.py, deep.py, critic.py, claims.py, handoff.py;
-            weather and rules (conditions.py, disease_rules.py); journal.py, checkin.py
-frontend/   index.html (diagnosis), case.html (shared report), no build step
+backend/    FastAPI app (app.py); Token Factory client (models.py); routing table (config.py)
+  data/       D1 or SQLite repository, migrations, KV, the Worker bridge
+  climate/    forecast, climatology, frost dates, NWS, risk, water balance, crops
+  knowledge/  species profiles with verified facts, plant identification
+  care/       the daily planner, pests, sensor override
+  season/     season plans: rules, writing, verification, replanning, Doctor wiring
+  radar/      regions, collection, regional prior
+  connect/    API keys, REST API v1, MCP, Telegram, management endpoints
+  notify/     the notifications service, Web Push, Telegram client
+  pipeline.py, deep.py, agent.py, tools.py, critic.py, claims.py   Leaf Doctor
+  jobs.py, platform_api.py, metering.py, router.py, cache.py        platform
+frontend/   static pages and scripts, no build step
+cloudflare/ the Worker (cron fan-out, queue consumer, data bridge) and its config
+migrations: backend/data/migrations/0001 to 0007
 tests/      offline tests with scripted fake models, tools and search
-scripts/    smoke test, eval runner, calibration, deploy
-cloudflare/ the Worker and config that serve the container on Cloudflare
-evals/      labelled photo cases and their licences
-docs/       AGENT_V2.md (agent design, verified facts, milestones), PROGRESS.md
-.claude/    Claude Code settings, subagents, skills and rules used to build Leaf
+scripts/    smoke test, evals, calibration, deploy, Telegram and VAPID setup
+evals/      labelled photo cases and their licences; the front-door router eval
+docs/       LEAF_PLATFORM.md (architecture, limits, decisions, milestones), PROGRESS.md
 ```
 
 ## Safety
 
-Leaf gives guidance, not certainty. Plans are written only from passages Leaf actually read; a claim check drops any step whose cited source doesn't support it and any rate or dose that isn't in the cited passage, and every chemical step tells you to follow the product label. In code, any low-confidence diagnosis, near-tie, poor photo or disagreeing second opinion escalates to a lab handoff with your state's diagnostic lab and how to send a sample. Weather-based indices are presented as risk signals estimated from modelled humidity, never as proof of disease.
+Leaf gives guidance, not certainty. Plans are written only from passages Leaf actually read; a claim check drops any step whose cited source does not support it and any rate or dose that is not in the cited passage, and every chemical step tells you to follow the product label. In code, any low-confidence diagnosis, near-tie, poor photo or disagreeing second opinion escalates to a lab handoff. Weather-based indices are risk signals estimated from modelled humidity, never proof of disease. Plants a garden marks as for pets or children never get a step that the organic and pet table forbids, and toxic plants carry a precaution with its source.
 
-The public demo protects itself and its credits: uploads are size- and pixel-limited and decoded off the event loop, request bodies are capped before they are read, every case runs under a concurrency cap and a deadline, per-IP, daily and Deep-specific limits apply, and the dollar budget per Deep case is enforced. User text, web text and model-written text are sanitised before they enter a prompt and treated as data, not instructions; `read_source` never fetches a URL a model wrote. Photos are not logged; locations are rounded to about 10 km; errors shown to users are generic.
+The public demo protects itself and its credits: uploads are size- and pixel-limited, request bodies are capped before they are read, every case runs under a concurrency cap and a deadline, per-IP, per-garden, per-key and daily limits apply, and the spend cap holds. User text, web text and model-written text are sanitised before they enter a prompt and treated as data, not instructions. Photos are not logged; locations are rounded; a garden has no account, only a private link whose key is stored as a hash.
 
 ## Feedback on Nebius and NVIDIA
 
-The full write-up, with reproduction steps, impact and a suggestion for each item, is in
-[`docs/FEEDBACK.md`](docs/FEEDBACK.md). The short version:
+The full write-up, with reproduction steps, impact and a suggestion for each item, is in [`docs/FEEDBACK.md`](docs/FEEDBACK.md). The short version:
 
 - **Do not combine `tools` with `response_format`**: Ultra silently stops calling tools.
 - **The thinking switch differs by model family**: Nemotron reads `enable_thinking`, Kimi reads `thinking`. The right key made our vision step 3x faster and 4x cheaper.
 - **The public catalog listed Super as `error`** while it answered every request.
 - **No NVIDIA vision, guard, embedding or reranker model is served**, so Leaf's photo step cannot run on NVIDIA.
-- **Reasoning tokens count toward `max_tokens`**, which returns empty or truncated JSON unless budgets are generous.
+- **Reasoning tokens count toward `max_tokens`**, which returns empty or truncated JSON unless budgets are generous (a 3,000-token budget for Super's verification ran out while it reasoned; 8,000 with smaller chunks fixed it).
+- **Nemotron 3.5 Lightning returned an empty list for a clear sighting** in Radar's extraction until the prompt carried a worked example; Super found it without one.
 - `tool_choice="required"` produced duplicate calls; Nemotron sometimes answers in prose or invents tool names mid-agent; run-to-run variance at temperature 1.0 is large; there is no cached-input price for agent loops.
 - What worked well: native tool calling (1-2 s per turn, parallel calls), separate `reasoning_content`, and per-token prices in `/models?verbose=true`, which power Leaf's live cost meter.
 
 ## License
 
-Leaf's code is [MIT](LICENSE). The evaluation photos in `evals/images/` are **not** MIT: each file keeps its own Wikimedia Commons licence (CC0, public domain, CC BY or CC BY-SA), and `evals/README.md` lists the author, source link, licence and changes (resized, re-encoded) for every file.
+Leaf's code is [MIT](LICENSE). The evaluation photos in `evals/images/` are **not** MIT: each file keeps its own Wikimedia Commons licence (CC0, public domain, CC BY or CC BY-SA), and `evals/README.md` lists the author, source link, licence and changes for every file.

@@ -54,7 +54,7 @@
     ]
   },
   // UTC. Each run wakes the container only when there is work (docs/LEAF_PLATFORM.md, "Jobs").
-  "triggers": { "crons": ["17 7 * * *", "5 * * * *", "35 */3 * * *"] },
+  "triggers": { "crons": ["17 7 * * *", "5 * * * *", "35 */3 * * *", "0 6 * * MON-FRI"] },
   // Not secret. API keys are Worker secrets, set by the deploy script from .env.
   "vars": {
     "LEAF_DAILY_CAP": "60",

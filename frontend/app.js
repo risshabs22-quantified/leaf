@@ -328,6 +328,7 @@ async function offerGarden(d) {
 
 function render(d) {
   last = d; history = [];
+  if (window.LeafRegional) window.LeafRegional.render(d);  // every mode: clears a previous result's box
   caseId = d.status === "needs_answers" ? d.case_id : null;
   $("results").hidden = false;
   const deep = d.mode === "deep";

@@ -140,7 +140,7 @@ const NO_STORE = { "cache-control": "no-store" };
 // A person opening a page (not a script calling the API), so a waking screen makes sense.
 function isPageVisit(request: Request, url: URL): boolean {
   if (request.method !== "GET") return false;
-  const page = ["/", "/app", "/plants", "/identify", "/today", "/season", "/connect"].includes(url.pathname) ||
+  const page = ["/", "/app", "/plants", "/identify", "/today", "/season", "/connect", "/radar", "/ops"].includes(url.pathname) ||
     url.pathname.startsWith("/c/") || url.pathname.startsWith("/g/");
   if (!page) return false;
   return (request.headers.get("accept") ?? "").includes("text/html");
@@ -166,6 +166,8 @@ function isInternalPath(pathname: string): boolean {
 const CRON_HOUSEKEEPING = "17 7 * * *";
 const CRON_HOURLY = "5 * * * *"; // morning planning at 05:00 local, frost/heat check at 14:00
 const CRON_NWS = "35 */3 * * *"; // new NWS alerts for US cells
+const CRON_RADAR = "0 6 * * MON-FRI"; // weekdays: Radar for states with gardens not yet read this week
+const MAX_RADAR_REGIONS = 2; // four Tavily credits each; the container also holds a daily cap
 const EVENING_OFFSET_H = 9; // 14:00 local is 9 hours after the 05:00 planning hour
 const FROST_C = 3; // the prefilter only decides whether to wake the container;
 const HEAT_C = 32; // the climate engine makes the real call with each plant's limits
@@ -279,6 +281,30 @@ async function nwsJobs(env: Env): Promise<Job[]> {
   return jobs;
 }
 
+// ISO 8601 year and week, as the container writes it ("2026-W42").
+function isoWeek(d: Date): string {
+  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const dow = t.getUTCDay() || 7;
+  t.setUTCDate(t.getUTCDate() + 4 - dow); // the Thursday of this week decides the year
+  const jan1 = Date.UTC(t.getUTCFullYear(), 0, 1);
+  const week = Math.ceil(((t.getTime() - jan1) / 86400000 + 1) / 7);
+  return `${t.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
+// The states that have gardens, least recently checked first (so a cap rotates fairly).
+async function radarJobs(env: Env, at: Date): Promise<Job[]> {
+  const week = isoWeek(at);
+  const rows = await env.DB.prepare(
+    "SELECT c.region AS region FROM cells c JOIN gardens g ON g.cell = c.cell" +
+      " WHERE c.region IS NOT NULL AND c.region != '-'" +
+      " AND NOT EXISTS (SELECT 1 FROM radar_runs r WHERE r.region = c.region AND r.week = ?)" +
+      " GROUP BY c.region ORDER BY (SELECT IFNULL(MAX(r.week), '') FROM radar_runs r WHERE r.region = c.region) ASC LIMIT ?",
+  ).bind(week, MAX_RADAR_REGIONS).all<{ region: string }>();
+  return (rows.results ?? []).map((r) => ({
+    kind: "radar", key: `radar:${r.region}:${week}`, payload: { region: r.region, week },
+  }));
+}
+
 // Backoff for a failed job: 30 s, 60 s, 120 s ... capped at an hour.
 function retryDelay(attempts: number): number {
   return Math.min(3600, 30 * 2 ** Math.max(0, attempts - 1));
@@ -338,6 +364,7 @@ export default {
     let jobs = scheduledJobs(controller.cron, at);
     if (controller.cron === CRON_HOURLY) jobs = await hourlyJobs(env, at);
     if (controller.cron === CRON_NWS) jobs = await nwsJobs(env);
+    if (controller.cron === CRON_RADAR) jobs = await radarJobs(env, at);
     for (let i = 0; i < jobs.length; i += 100) {
       await env.JOBS.sendBatch(jobs.slice(i, i + 100).map((body) => ({ body })));
     }

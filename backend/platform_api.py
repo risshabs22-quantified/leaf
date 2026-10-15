@@ -25,7 +25,12 @@ from backend.climate import Climate, cell_center
 from backend.climate.crops import GENERAL_GDD_BASE_C, Crop, find_crop
 from backend.climate.forecast import Forecast
 from backend.climate.nws import AlertsUnavailable
-from backend.climate.openmeteo import ATTRIBUTION, ATTRIBUTION_URL, WeatherUnavailable
+from backend.climate.openmeteo import (
+    ATTRIBUTION,
+    ATTRIBUTION_URL,
+    DAILY_ALLOWANCE,
+    WeatherUnavailable,
+)
 from backend.climate.risk import gdd_recent, risks, soil_temperature_now, sowing
 from backend.climate.sources import cite
 from backend.climate.water import Placement, WaterAdvice, indoor_advice, outdoor_advice
@@ -49,7 +54,7 @@ from backend.data.repo import (
     new_id,
     now_s,
 )
-from backend.jobs import JobMessage, species_job
+from backend.jobs import RADAR_CREDITS_PER_DAY, JobMessage, species_job
 from backend.knowledge import budget as knowledge_budget
 from backend.knowledge import species_key
 from backend.knowledge.identify import identify
@@ -273,6 +278,35 @@ async def usage(request: Request, days: int = Query(1, ge=1, le=7)) -> dict[str,
         log.error("usage query failed: %s", exc)
         raise HTTPException(503, "Usage data is unavailable right now.") from exc
     return summarize_usage(raw, meter.snapshot())
+
+
+@router.get("/api/ops/platform")
+async def ops_platform(request: Request) -> dict[str, Any]:
+    """What the platform is doing: jobs in the last 24 hours, how much data it holds, and
+    today's use of the free services. Counts only; no personal data and no secrets."""
+    request.app.state.ops_limiter.check(_ip(request))
+    day = datetime.now(UTC).date().isoformat()
+    try:
+        raw = await _repo(request).platform_stats(now_s() - 86400, day)
+    except DataError as exc:
+        raise HTTPException(503, "Platform data is unavailable right now.") from exc
+    jobs: dict[str, dict[str, int]] = {}
+    for r in raw["jobs"]:
+        jobs.setdefault(r["kind"], {})[r["status"]] = int(r["n"])
+    return {
+        "day": day,
+        "jobs_24h": jobs,
+        "data": raw["data"],
+        "free_services": {
+            r["service"]: {"units": round(float(r["units"]), 1), "calls": int(r["calls"])}
+            for r in raw["free"]
+        },
+        "allowances": {
+            "open-meteo": DAILY_ALLOWANCE,
+            knowledge_budget.SERVICE: knowledge_budget.KNOWLEDGE_CREDITS_PER_DAY,
+            "tavily:radar": RADAR_CREDITS_PER_DAY,
+        },
+    }
 
 
 def summarize_usage(raw: dict[str, list[dict[str, Any]]], guard: dict[str, Any]) -> dict[str, Any]:

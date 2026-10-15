@@ -286,7 +286,12 @@ class DeepLeaf:
         )
         cands = quick.diagnosis.candidates
         case.differential = normalise_differential(
-            [{"name": c.name, "probability": c.confidence} for c in cands], set()
+            # Quick's scores before any regional prior: Deep decides its own verdict
+            [
+                {"name": c.name, "probability": round(c.confidence - c.prior_points, 3)}
+                for c in cands
+            ],
+            set(),
         )
         case.first_differential = [h.model_copy() for h in case.differential]
         if case.differential:

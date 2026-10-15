@@ -49,6 +49,7 @@ function draw(v) {
   banner.textContent = `${word}. ${d.verdict_reason || d.plan.escalate_reason || ""} ${d.notice || ""}`.trim();
   $("summary").textContent = d.summary || d.diagnosis.reasoning_summary || "";
   $("candidates").innerHTML = diff.map((h) => `<li class="cand"><div class="cand-head"><span class="cand-name">${esc(h.name)}</span><span>${pct(h.p)}</span></div><div class="bar"><span style="width:${Math.round(h.p * 100)}%"></span></div></li>`).join("");
+  if (window.LeafRegional) window.LeafRegional.render(d);
   $("plan-summary").textContent = d.plan.summary;
   $("steps").innerHTML = d.plan.steps.map(stepHtml).join("");
   $("cautions").innerHTML = (d.plan.cautions || []).map((c) => `<li>${esc(c)}</li>`).join("");

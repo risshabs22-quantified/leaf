@@ -149,6 +149,9 @@ class Candidate(BaseModel):
     confidence: float = Field(..., ge=0.0, le=1.0)
     evidence_for: list[str] = Field(default_factory=list)
     evidence_against: list[str] = Field(default_factory=list)
+    prior_points: float = (
+        0.0  # set in code from Leaf Radar (backend/radar/prior.py), never by a model
+    )
 
     @field_validator("confidence", mode="before")
     @classmethod
@@ -254,6 +257,29 @@ class ModelCall(BaseModel):
     note: str = ""
 
 
+class RegionalReport(BaseModel):
+    """One Radar report shown with a diagnosis: the page's own words and where to find them."""
+
+    pest: str
+    hosts: list[str] = Field(default_factory=list)
+    place: str = ""
+    reported_on: str
+    quote: str
+    source_title: str
+    source_url: str
+
+
+class RegionalNote(BaseModel):
+    """What Leaf Radar contributed to a diagnosis: reports nearby that matched, and the points
+    (at most 5 per candidate) they added."""
+
+    region: str
+    region_name: str
+    window_days: int
+    reports: list[RegionalReport] = Field(default_factory=list)
+    boosted: list[dict[str, Any]] = Field(default_factory=list)  # {"name", "points"}
+
+
 class DiagnoseResponse(BaseModel):
     case_id: str = ""  # journal id: the share link is /c/<case_id>
     owner_token: str = ""  # given only to the creator; allows check-ins (never shared)
@@ -267,6 +293,7 @@ class DiagnoseResponse(BaseModel):
     verdict: Literal["confident", "likely", "lab"] = "likely"
     verdict_reason: str = ""
     garden: Garden = Field(default_factory=Garden)
+    regional: RegionalNote | None = None  # set in code from Leaf Radar
 
 
 class ChatTurn(BaseModel):
@@ -486,3 +513,40 @@ class Replan(BaseModel):
 
     _clip_summary = field_validator("summary", mode="before")(_clip(600))
     _cap = field_validator("weeks", mode="before")(_first(8))
+
+
+# ---------- Leaf Radar (M7) ----------
+
+
+class RadarScreen(BaseModel):
+    """Nano's screen of one fetched page: is it a current report, and does it try to give
+    instructions to a reader that is an AI?"""
+
+    relevant: bool = False
+    injection: bool = False
+
+
+class RadarFinding(BaseModel):
+    """One report as Lightning extracts it; backend/radar/collect.py checks it in code."""
+
+    passage: str = ""
+    pest: str = ""
+    hosts: list[str] = Field(default_factory=list)
+    where: str = ""
+    status: str = ""
+    quote: str = ""
+
+    @field_validator("hosts", mode="before")
+    @classmethod
+    def _hosts(cls, v: Any) -> Any:
+        items = v if isinstance(v, list) else [v] if v else []
+        return [str(x)[:60] for x in items][:6]
+
+
+class RadarExtraction(BaseModel):
+    reports: list[RadarFinding] = Field(default_factory=list)
+
+    @field_validator("reports", mode="before")
+    @classmethod
+    def _cap(cls, v: Any) -> Any:
+        return v[:40] if isinstance(v, list) else []

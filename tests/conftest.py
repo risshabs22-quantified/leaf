@@ -37,6 +37,8 @@ from backend.prompts import (
     PLAN_DEEP_SYSTEM,
     PLAN_SYSTEM,
     PLAN_VERIFY_SYSTEM,
+    RADAR_EXTRACT_SYSTEM,
+    RADAR_SCREEN_SYSTEM,
     REPLAN_SYSTEM,
     SEASON_OUTLINE_SYSTEM,
     SEASON_PLAN_SYSTEM,
@@ -117,6 +119,8 @@ def step_of(messages: list[dict[str, Any]]) -> str:
         SEASON_PLAN_SYSTEM: "season_plan",
         PLAN_VERIFY_SYSTEM: "plan_verify",
         REPLAN_SYSTEM: "replan",
+        RADAR_SCREEN_SYSTEM: "radar_screen",
+        RADAR_EXTRACT_SYSTEM: "radar_extract",
     }.get(system, "repair")
 
 
@@ -173,6 +177,8 @@ class FakeLLM:
         if step not in self.responses:  # unscripted step: behave like an unavailable model
             raise ModelError(f"{model}: no scripted response for {step}")
         out = self.responses[step]
+        if callable(out):  # a test may answer according to the prompt
+            out = out(messages)
         text = out if isinstance(out, str) else json.dumps(out)
         return CallResult(
             text=text,
@@ -227,7 +233,15 @@ class FakeSearcher:
 
     async def search_web(self, query: str, **kwargs: Any) -> tuple[list[dict[str, Any]], int]:
         self.web_calls = getattr(self, "web_calls", []) + [(query, kwargs)]
+        scripted = getattr(self, "web_results", None)  # tests may script results per query
+        if scripted is not None:
+            return list(scripted), 1
         return await self.search(query), 1
+
+    async def extract_pages(self, urls: list[str]) -> tuple[dict[str, str], int]:
+        self.extracted = getattr(self, "extracted", []) + list(urls)
+        texts = getattr(self, "page_texts", {})
+        return {u: texts[u] for u in urls if u in texts}, (1 if urls else 0)
 
     async def extract(self, url: str, query: str) -> tuple[list[str], int]:
         self.extracted = getattr(self, "extracted", []) + [url]

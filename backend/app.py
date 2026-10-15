@@ -49,6 +49,9 @@ from backend.notify.webpush import WebPush
 from backend.pipeline import Leaf
 from backend.platform_api import refusal_for
 from backend.platform_api import router as platform_router
+from backend.radar.api import router as radar_router
+from backend.radar.prior import activate as activate_regional
+from backend.radar.regions import region_for_point
 from backend.router import front_door
 from backend.schemas import ChatRequest, ChatResponse, DiagnoseResponse, Garden
 from backend.search import (
@@ -336,6 +339,7 @@ async def start_platform(app: FastAPI, s: Settings) -> None:
                 "leaf": app.state.leaf,
                 "pusher": pusher,
                 "telegram": getattr(app.state, "telegram", None),
+                "region_lookup": region_for_point,
             },
         )
     )
@@ -345,6 +349,8 @@ async def start_platform(app: FastAPI, s: Settings) -> None:
     app.state.route_limiter = RateLimiter(ROUTE_PER_IP_PER_HOUR, ROUTE_DAILY_CAP)
     app.state.garden_limiter = RateLimiter(GARDEN_PER_IP_PER_HOUR, GARDEN_DAILY_CAP)
     app.state.garden_use_limiter = RateLimiter(GARDEN_USE_PER_IP_PER_HOUR, GARDEN_USE_DAILY_CAP)
+    app.state.radar_limiter = RateLimiter(120, 20_000)
+    app.state.ops_limiter = RateLimiter(60, 5_000)
 
 
 app = FastAPI(title="Leaf", version="0.1.0", lifespan=lifespan)
@@ -353,6 +359,7 @@ app.include_router(api_v1_router)
 app.include_router(connect_router)
 app.include_router(mcp_router)
 app.include_router(telegram_router)
+app.include_router(radar_router)
 
 
 @app.exception_handler(DataError)
@@ -747,6 +754,7 @@ async def auto(
 ) -> DeepResponse:
     check_limits(request)
     photos, lat, lon = await _deep_inputs(request, notes, region, lat, lon)
+    await activate_regional(request.app, lat=lat, lon=lon)  # Leaf Radar's capped prior
     work, timeout = _auto_work(
         request, photos, notes, region, lat, lon, Garden(organic=organic, pets=pets)
     )
@@ -769,6 +777,7 @@ async def auto_stream(
 ) -> StreamingResponse:
     check_limits(request)
     photos, lat, lon = await _deep_inputs(request, notes, region, lat, lon)
+    await activate_regional(request.app, lat=lat, lon=lon)
     work, timeout = _auto_work(
         request, photos, notes, region, lat, lon, Garden(organic=organic, pets=pets)
     )
@@ -1092,6 +1101,14 @@ if FRONTEND.exists():
     @app.get("/season", include_in_schema=False)
     async def season_page() -> FileResponse:
         return FileResponse(FRONTEND / "season.html")
+
+    @app.get("/radar", include_in_schema=False)
+    async def radar_page() -> FileResponse:
+        return FileResponse(FRONTEND / "radar.html")
+
+    @app.get("/ops", include_in_schema=False)
+    async def ops_page() -> FileResponse:
+        return FileResponse(FRONTEND / "ops.html")
 
     @app.get("/connect", include_in_schema=False)
     async def connect_page() -> FileResponse:

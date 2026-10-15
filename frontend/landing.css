@@ -261,3 +261,14 @@
 .specimen { align-self: center; }
 .specimen .cap { display: inline-block; max-width: none; white-space: nowrap; padding: 6px 12px; border-radius: 999px; background: var(--glass-solid); color: var(--muted); }
 .case-card { box-shadow: 0 18px 50px -24px rgba(12, 50, 26, .45); }
+
+/* Platform sections (M7) */
+.product-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-top: 16px; }
+.product { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; color: inherit; text-decoration: none; background: rgba(255, 255, 255, .35); }
+@media (prefers-color-scheme: dark) { .product { background: rgba(255, 255, 255, .04); } }
+.product:hover, .product:focus-visible { border-color: var(--green); }
+.product h3 { margin: 0; font-size: 1.05em; }
+.product p { margin: 0; font-size: .9em; color: var(--muted); }
+.product .p-link { margin-top: auto; padding-top: 6px; color: var(--green); font-weight: 600; font-size: .9em; }
+.numbers .stack-table td:first-child { width: 36%; white-space: normal; }
+
