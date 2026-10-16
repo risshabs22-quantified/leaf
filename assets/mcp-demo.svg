@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 440" width="1000" height="440" role="img" aria-labelledby="t d">
+  <title id="t">Leaf in Claude Code</title>
+  <desc id="d">A terminal session: the claude mcp add command connects Leaf, then Claude Code asks Leaf what to do in the garden today and answers with the care plan and the weather risk.</desc>
+  <style>
+    .win { fill: #0f1a13; }
+    .bar { fill: #17261c; }
+    .mono { font: 500 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .dim { fill: #7f9a88; }
+    .cmd { fill: #e8f6ec; }
+    .ok  { fill: #7fd492; }
+    .amb { fill: #f0b45b; }
+    .note { font: 400 13px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #7f9a88; }
+    .l { opacity: 0; animation: show 22s linear infinite; }
+    @keyframes show {
+      0%   { opacity: 0; transform: translateY(6px); }
+      2%   { opacity: 1; transform: translateY(0); }
+      94%  { opacity: 1; }
+      100% { opacity: 0; }
+    }
+    .type { clip-path: inset(0 100% 0 0); animation: type1 22s steps(60, end) infinite; }
+    @keyframes type1 {
+      0%   { clip-path: inset(0 100% 0 0); opacity: 1; }
+      12%  { clip-path: inset(0 0 0 0); }
+      94%  { clip-path: inset(0 0 0 0); opacity: 1; }
+      100% { clip-path: inset(0 0 0 0); opacity: 0; }
+    }
+    .type2 { clip-path: inset(0 100% 0 0); animation: type2 22s steps(50, end) infinite; }
+    @keyframes type2 {
+      0%, 30% { clip-path: inset(0 100% 0 0); opacity: 1; }
+      40%  { clip-path: inset(0 0 0 0); }
+      94%  { clip-path: inset(0 0 0 0); opacity: 1; }
+      100% { clip-path: inset(0 0 0 0); opacity: 0; }
+    }
+  </style>
+
+  <rect class="win" x="0" y="0" width="1000" height="440" rx="16"/>
+  <rect class="bar" x="0" y="0" width="1000" height="40" rx="16"/>
+  <rect class="bar" x="0" y="24" width="1000" height="16"/>
+  <circle cx="26" cy="20" r="6.5" fill="#ff5f57"/><circle cx="48" cy="20" r="6.5" fill="#febc2e"/><circle cx="70" cy="20" r="6.5" fill="#28c840"/>
+  <text class="note" x="500" y="25" text-anchor="middle">Claude Code</text>
+
+  <!-- connect -->
+  <g class="mono">
+    <text x="28" y="78" class="dim">$</text>
+    <text x="48" y="78" class="cmd type">claude mcp add --transport http leaf https://leafathon.site/mcp \</text>
+    <text x="48" y="102" class="cmd type">  --header "Authorization: Bearer lf_…"</text>
+    <g class="l" style="animation-delay:2.6s"><text x="28" y="132" class="ok">Added HTTP MCP server leaf</text></g>
+  </g>
+
+  <!-- ask -->
+  <g class="mono">
+    <g class="l" style="animation-delay:4.4s"><text x="28" y="176" class="dim">&gt;</text></g>
+    <text x="48" y="176" class="cmd type2">Using Leaf, what should I do in my garden today?</text>
+    <g class="l" style="animation-delay:9.4s">
+      <text x="28" y="214" class="ok">●</text><text x="48" y="214" class="cmd">leaf › care_plan</text>
+      <text x="28" y="238" class="ok">●</text><text x="48" y="238" class="cmd">leaf › weather_risk</text>
+    </g>
+    <g class="l" style="animation-delay:11.4s">
+      <text x="48" y="276" class="cmd">Monstera: check the soil today. If the top is dry, give about 0.6 L.</text>
+    </g>
+    <g class="l" style="animation-delay:12.8s">
+      <text x="48" y="304" class="cmd">Tomato: skip. The root zone is 46 mm short of full; it needs water Oct 17.</text>
+    </g>
+    <g class="l" style="animation-delay:14.2s">
+      <text x="48" y="332" class="cmd">Basil: skip. 9 mm of rain is likely today.</text>
+    </g>
+    <g class="l" style="animation-delay:15.6s">
+      <text x="48" y="360" class="amb">Freeze Watch (NWS): a low of -0.1 °C on the night of Oct 16.</text>
+      <text x="48" y="384" class="amb">Cover the tomato and basil by Oct 16 evening.</text>
+    </g>
+  </g>
+  <text class="note" x="28" y="420">Real output from Claude Code calling a Leaf garden on 15 October 2026, shortened.</text>
+</svg>

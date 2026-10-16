@@ -7,6 +7,21 @@ concrete suggestion. Model IDs are the ones Leaf uses: `nvidia/Nemotron-3-Ultra-
 `moonshotai/Kimi-K2.6` for vision (with `nvidia/Nemotron-3.5-Super-VL` as the fallback). The repro snippets use the OpenAI Python SDK against
 `https://api.tokenfactory.nebius.com/v1/`.
 
+## Summary
+
+| # | Finding | Impact on Leaf | Suggestion |
+| --- | --- | --- | --- |
+| 1 | `tools` together with `response_format` silently stops tool calling | The investigator wrote JSON instead of calling tools, with no error | Return an error, or honour both |
+| 2 | The thinking switch has a different key per model family | Vision step 11.2 s and $0.0083 per photo with the wrong key, 3.9 s and $0.002 with the right one | List the supported keys per model, or accept one normalised key |
+| 3 | The public catalog listed Super as `error` while it answered | We nearly dropped Super; we now check `/models` at startup instead | Make catalog status reflect live health |
+| 4 | No NVIDIA guard, embedding or reranker model served | Screening and source ranking done by prompt and rules | Serve one size of each |
+| 5 | Reasoning tokens count toward `max_tokens` | Failed diagnoses until we raised budgets and added a retry | A separate reasoning budget and a distinct `finish_reason` |
+| 6 | `tool_choice="required"` produced duplicate calls | Four identical calls for one useful one; we never use `required` | Deduplicate server-side, or document it |
+| 7 | Nemotron sometimes answers in prose or invents tools mid-agent | Cases ended early or crashed without guards | Constrain tool names to the declared set |
+| 8 | Run-to-run variance at the recommended sampling settings | Small evals are noisy: differences under about 10 points are treated as noise | Document seed support and safe lower temperatures |
+| 9 | No cached-input pricing for agent loops | Agentic modes cost several times single-shot ones | Prefix caching with a cached-input price |
+| 10 | Nemotron 3.5 Super VL reads plant photos about 16 points worse than Kimi K2.6 | Kimi reads photos; the NVIDIA model is the fallback | Plant-pathology imagery in training, richer lesion description |
+
 ## 1. `tools` together with `response_format` silently stops tool calling
 
 **What happened.** Our investigator agent sent `tools=[...]` and, to get a clean final answer,

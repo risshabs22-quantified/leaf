@@ -18,7 +18,7 @@
   <a href="#more-docs">Docs</a>
 </p>
 
-**Leaf tells you what your garden needs today, plans the next twelve months around your frost dates, and works out what's wrong when a plant gets sick.** It uses your own forecast, National Weather Service alerts and university extension guides, and it shows the source for what it says. When it isn't sure, it says so and points you to a plant clinic instead of guessing.
+**Leaf tells you what your garden needs today, plans the next twelve months around your frost dates, and works out what's wrong when a plant gets sick.** Every answer shows its source. When Leaf isn't sure, it says so and points you to a plant clinic instead of guessing.
 
 **[Open Leaf → leafathon.site](https://leafathon.site)** &nbsp;·&nbsp; No account, no install. [How it is running right now](https://leafathon.site/ops).
 
@@ -30,43 +30,87 @@
   </tr>
 </table>
 
-Built for the [Nebius x NVIDIA Global AI Hackathon](https://nebiusglobalaihackathon.devpost.com/) (Best Apps and Agents), with Tavily search at runtime. Every model call goes to Nebius Token Factory.
+Where the answers come from:
+
+| Source | Gives Leaf |
+| --- | --- |
+| Open-Meteo | Forecast, 30 years of climate, frost dates, soil temperature |
+| National Weather Service | Freeze, heat, wind and flood alerts |
+| University extension guides, found with Tavily | Care steps, pest timing, disease facts (each cited) |
+| Nemotron models on Nebius Token Factory | Reading, ranking, writing and checking (Kimi K2.6 reads the photos) |
+
+Built for the [Nebius x NVIDIA Global AI Hackathon](https://nebiusglobalaihackathon.devpost.com/) (Best Apps and Agents), with Tavily search at runtime.
 
 ---
 
 ## Use it
 
-Everything lives at **[leafathon.site](https://leafathon.site)**. Works on a phone; on iPhone, install it to the Home Screen to get notifications.
+Everything is at **[leafathon.site](https://leafathon.site)**, and it works on a phone.
+
+```mermaid
+flowchart LR
+  A["1. Make a garden<br/>/today"] --> B["Today<br/>tasks and watering"]
+  A --> C["Season plan<br/>/season"]
+  A --> N["Notifications"]
+  S["A plant looks sick"] --> D["Diagnose<br/>/app"]
+  D --> V{"Verdict"}
+  V -->|"Confident or Likely"| P["Cited care plan"]
+  V -->|"Send a sample"| L["Lab handoff"]
+  P --> G["Add to my garden"]
+  G --> B
+  G --> K["Check-in photo in a week"]
+  K --> D
+```
 
 ### 1. Make a garden (30 seconds)
 
 1. Open **[/today](https://leafathon.site/today)**.
 2. Type a name and your town, or tap **Use my location instead**. Tap **Create my garden**.
-3. Add each plant: its name (tomato, basil, monstera), outdoors or indoors, the pot size in litres if it's in a pot, and its stage. Tap **Add plant**. Not sure what a plant is? **Identify it from a photo** is right there.
+3. Fill in each plant, then tap **Add plant**:
 
-There is no account. Your garden lives behind a private link (the **Your private link** box at the bottom of Today). Copy it to open the same garden on another device, and keep it to yourself: anyone with the link can change the garden. You can delete a garden from the same page.
+| Field | What to enter |
+| --- | --- |
+| Plant name | tomato, basil, monstera. Not sure? Use **Identify it from a photo** |
+| Where | Outdoors or indoors (indoor plants are never watered by the weather) |
+| Pot size in litres | Only if it's in a pot. Leave empty for the ground |
+| Stage | Seedling, growing, flowering, fruiting, ready to harvest, or not sure |
+
+There is no account. Your garden lives behind a private link, in the **Your private link** box at the bottom of Today. Copy it to open the garden on another device and keep it to yourself: anyone with it can change the garden. **Delete this garden** is on the same page.
 
 ### 2. Read Today
 
-Each morning Leaf works out what each plant needs, from your forecast and alerts.
-
-- **To do today**: urgent things first (frost tonight, a heat wave, wind, a flood alert), then watering and checks. Every task says why and where the rule comes from, or says "Leaf's own rule". Tap **Done** or **Skip**; Leaf uses that to plan the next one.
-- **Water**: per plant, *water* or *skip* (rain is coming, soil still wet). Indoor plants use a separate model, since the weather doesn't water them.
-- **This week in your season plan**: what the plan says for this week.
+| Block | What it shows | What you do |
+| --- | --- | --- |
+| Alert banner | NWS freeze, heat, wind or flood alerts for your place | Read it. Urgent ones also come as notifications |
+| **To do today** | Tasks, urgent first. Each has a reason and a source, or says "Leaf's own rule" | Tap **Done** or **Skip**. Leaf plans the next one from that |
+| **Water** | Per plant: water or skip (rain coming, soil still wet) | Water the plants marked *water* |
+| **This week in your season plan** | What the plan says for this week | Tap **Open the season plan** |
 
 ### 3. Get a season plan
 
-Open **[/season](https://leafathon.site/season)** and tap **Write my plan**. It takes about a minute and a half and runs in the background, so you can leave the page. You get 52 weeks of sowing, planting out, feeding, pruning, frost protection and harvest, each with a reason and a source. Code checks every item against your frost dates and temperatures; anything unsafe is removed and listed. **Add to my calendar (.ics)** and **Print** are at the top. A frost or a new diagnosis updates only the weeks it affects, and says what changed.
+Open **[/season](https://leafathon.site/season)** and tap **Write my plan**. It takes about a minute and a half and runs in the background, so you can leave the page.
+
+| You get | Detail |
+| --- | --- |
+| 52 weeks | Sowing, planting out, feeding, pruning, frost protection, harvest. Each item has a reason and a source |
+| A "Built on" list | Your frost dates, hardiness zone and each plant's frost class, so you can see what the plan assumed |
+| Safe dates only | Code removes anything planted too early or too cold, anything that breaks your organic or pet choices, and anything a second model can't support |
+| **Add to my calendar (.ics)** and **Print** | At the top of the plan |
+| Updates | A frost or a new diagnosis changes only the weeks it affects, and says what changed |
 
 ### 4. Diagnose a sick plant
 
-Open **[/app](https://leafathon.site/app)**.
+<p align="center"><img src="assets/demo-diagnose.gif" alt="A phone session: open Today, tap Diagnose, add a photo, type what you noticed, watch the ranked causes appear, read the verdict" width="300"><br><sub>A real session on a phone. The waiting part is sped up.</sub></p>
 
-1. Add up to three photos: a close-up of the damage, the whole plant, the underside of a leaf. One is enough.
-2. Say what you've noticed ("brown spots with yellow rings on the lower leaves, after a week of rain").
-3. Pick how hard Leaf should look. **Auto** (the default) takes a quick look and investigates further only if it isn't sure. **Quick** is one look, about 15 seconds. **Deep** works the case like a clinic, about a minute.
-4. Tick **Organic methods only** or **Pets or children use this garden** if they apply. Plans then exclude anything that breaks those rules.
-5. Tap **Diagnose**.
+Open **[/app](https://leafathon.site/app)**, add up to three photos (a close-up of the damage, the whole plant, the underside of a leaf; one is enough), say what you've noticed, and tap **Diagnose**.
+
+| Mode | What it does | Time | Cost |
+| --- | --- | --- | --- |
+| **Auto** (default) | A quick look first, and a deeper investigation only if it isn't sure | 15 s to about a minute | about 4 cents |
+| **Quick** | One careful look at the photo | about 15 s | under 1 cent |
+| **Deep** | Works the case like a plant clinic: looks closer, checks your weather, reads sources, gets a second opinion | about a minute | about 5 cents |
+
+Two boxes change the plan: **Organic methods only** and **Pets or children use this garden**. Steps that break either are removed and listed.
 
 You get one of three verdicts, decided by code and never by the model:
 
@@ -74,22 +118,40 @@ You get one of three verdicts, decided by code and never by the model:
 | --- | --- | --- |
 | **Confident** | One cause is clearly ahead and nothing serious is in play | A cited care plan |
 | **Likely** | A favourite, but with a close second or a second opinion that leans elsewhere | The plan, what to watch for, and when to send a sample |
-| **Send a sample to a lab** | Causes are spread out, the photo is poor, the second opinion strongly disagrees, or it could be a serious disease (late blight, citrus greening, boxwood blight and a few more) | A printable case summary and your state's plant diagnostic lab |
+| **Send a sample to a lab** | Causes are spread out, the photo is poor, the second opinion strongly disagrees, or it could be a serious disease | A printable case summary and your state's plant diagnostic lab |
 
-Under the verdict: the ranked causes with a percentage each, a care plan whose steps cite the passages Leaf actually read (the **[1]** links go to the sources), and, when the plan uses a product, the best time to spray over the next five days. Tap **Add to my garden** to turn the diagnosis into tasks and a plan update. Each result is saved for 30 days at a link you can share. Open it a week later and add a new photo under **Check-in**: Leaf compares it with the first one and tells you whether it's spreading, stable or recovering.
+What's on the result page:
+
+| Part | What it shows |
+| --- | --- |
+| Verdict banner | The verdict and the reason in plain words |
+| Ranked causes | Each with a percentage, updating live while Leaf investigates |
+| Care plan | Steps that cite the passages Leaf read. The **[1]** links go to the sources |
+| Spray window | When the plan uses a product: the best 3 hours in the next five days |
+| **Add to my garden** | Pick the plant. The diagnosis becomes tasks and a plan update |
+| **Copy a read-only link to share** | The result is saved for 30 days at that link |
+
+Come back to the saved result a week later and add a new photo under **Check-ins**. Leaf compares it with the first and says *spreading*, *stable* or *recovering*, and updates the advice.
 
 ### 5. Turn on notifications
 
-On **Today**, under **Notifications**, tap **Turn on notifications**, then **Send a test**. You should get a push within seconds. Set **Quiet hours** there too. Urgent warnings, like a freeze warning, still come through during quiet hours, because one held until 7 am is too late.
+On **Today**, under **Notifications**, tap **Turn on notifications**, then **Send a test**. You should get a push within seconds. **Quiet hours** are on the same page; urgent warnings such as a freeze warning still come through, because one held until 7 am is too late.
 
-On iPhone and iPad: tap **Share → Add to Home Screen**, then open Leaf from the Home Screen icon and turn notifications on there. Safari tabs can't receive push.
+| Device | Steps |
+| --- | --- |
+| iPhone or iPad | Open leafathon.site in Safari → **Share** → **Add to Home Screen** → open Leaf from the Home Screen icon → turn notifications on there. Safari tabs can't receive push |
+| Android | Open it in Chrome and turn notifications on |
+| Computer | Use a browser with Web Push (Chrome, Edge, Firefox), turn notifications on and allow them for the site. Not in a private window |
 
-### 6. The rest
+### 6. The rest of the site
 
-- **[Radar](https://leafathon.site/radar)**: pick a state to see what its university extension service says is being seen right now. Each report is a sentence copied from the page, with its date and a link. "No current report" is normal; Radar shows nothing rather than guess.
-- **[Identify](https://leafathon.site/identify)**: a photo of any plant, and Leaf names it and shows what it checked.
-- **[My plants](https://leafathon.site/plants)**: every diagnosis you saved, with its verdict and the date to check again.
-- **[/ops](https://leafathon.site/ops)**: live counts of what the platform is doing and spending. No personal data.
+| Page | What it's for |
+| --- | --- |
+| **[Radar](https://leafathon.site/radar)** | Pick a state: what its university extension service says is being seen now, each report a sentence from the page with its date and link. "No current report" is normal; Radar shows nothing rather than guess |
+| **[Identify](https://leafathon.site/identify)** | Name a plant from a photo, with what Leaf checked it against |
+| **[My plants](https://leafathon.site/plants)** | Every diagnosis you saved, its verdict, and the date to check again |
+| **[Connect](https://leafathon.site/connect)** | API keys, the MCP server, Home Assistant ([below](#connect-it-to-your-own-tools)) |
+| **[/ops](https://leafathon.site/ops)** | Live counts of what the platform is doing and spending. No personal data |
 
 ---
 
@@ -97,7 +159,11 @@ On iPhone and iPad: tap **Share → Add to Home Screen**, then open Leaf from th
 
 <p align="center"><img src="assets/flow.svg" alt="Photo and notes, read by a vision model, causes ranked by Nemotron Ultra, evidence checked, verdict decided in code" width="100%"></p>
 
-Models look, reason and write. **Code decides**: the verdict, every safety rule, frost dates, the water balance, spray windows, every limit. A care-plan step that its own source doesn't support is dropped before you see it.
+| Models do | Code does |
+| --- | --- |
+| Read the photo, rank the likely causes, write the plan | Decide the verdict (Confident, Likely, or lab) |
+| Give a second opinion, verify season plans | Remove anything unsafe, unsupported or against your organic and pet choices |
+| Screen web pages for hidden instructions | Compute frost dates, the water balance, spray windows and every limit |
 
 | Step | Model |
 | --- | --- |
@@ -107,46 +173,68 @@ Models look, reason and write. **Code decides**: the verdict, every safety rule,
 | Care plan, claim check, front door, notification wording | **Nemotron 3.5 Lightning** |
 | Screens web pages and notes for hidden instructions | **Nemotron Nano 3** |
 
-Why Kimi reads the photos: we wanted an all-NVIDIA pipeline, measured NVIDIA's vision model against Kimi on the same photos, and Kimi was about 16 points better. [The numbers are below](#what-it-gets-right-and-wrong) and written up for NVIDIA in [`docs/FEEDBACK.md`](docs/FEEDBACK.md).
-
-Everything else, in order: the weather comes from Open-Meteo and the National Weather Service, sources from Tavily search, and the whole thing runs on one Cloudflare container behind a Worker. The details are in [`docs/HOW_IT_WORKS.md`](docs/HOW_IT_WORKS.md).
+We wanted an all-NVIDIA pipeline, so we measured NVIDIA's vision model against Kimi on the same photos. Kimi was about 16 points better, so it reads the photos. The numbers are [below](#what-it-gets-right-and-wrong) and written up for NVIDIA in [`docs/FEEDBACK.md`](docs/FEEDBACK.md). The engineering is in [`docs/HOW_IT_WORKS.md`](docs/HOW_IT_WORKS.md).
 
 ---
 
 ## What it gets right and wrong
 
-Measured on real runs in October 2026. The full tables, methods and every run are in [`docs/NUMBERS.md`](docs/NUMBERS.md).
+Measured on real runs in October 2026. Every table, method and run is in [`docs/NUMBERS.md`](docs/NUMBERS.md).
 
-| | Result |
+| Test | Result |
 | --- | --- |
-| **Diagnosis, 24 photos Leaf was never tuned on** | Kimi reading the photos, Quick mode: right first time **50%**, right answer in the top three **67%**. Hard photos (fruit, insects, odd problems), not tidy leaf shots |
-| When it said **Confident** on those photos | Right **6 of 9** times. Set at the strictest level that was right on every one of the 52 photos it was tuned on, and it still over-claimed on new ones. Leaf shows this rather than hiding it |
-| The NVIDIA vision model, same photos | 33% and 46%. Never says Confident (it couldn't be made reliable) |
-| 52 photos it was tuned on | Auto: 58% first time (optimistic, because it was tuned on them) |
+| **24 photos Leaf was never tuned on**, Kimi reading, Quick mode | Right first time **50%**, in the top three **67%**. Hard photos (fruit, insects, odd problems), not tidy leaf shots |
+| When it said **Confident** on those photos | Right **6 of 9** times. Set at the strictest level that was right on every tuning photo, and it still over-claimed on new ones |
+| Same photos, NVIDIA vision model | 33% and 46%. Never says Confident (it couldn't be made reliable) |
+| The 52 photos it was tuned on, Auto | 58% first time (optimistic: it was tuned on them) |
 | Identify a plant, 40 photos | 92.5% right alone, 95% after checking against sources |
 | Hardiness zone, five US cities | Within half a zone of the USDA map in all five |
 
-What it costs: a Quick diagnosis is under a cent, an Auto one about 4 cents, a full season plan 21 cents. A hard daily spend cap protects the account. Estimated cost per active user: about half a cent a day.
+| Work | Cost | Time |
+| --- | --- | --- |
+| Quick diagnosis | under 1 cent | about 15 s |
+| Auto diagnosis | about 4 cents | about 30 s |
+| Full season plan | 21 cents | 70 to 110 s |
+| Replan of the affected weeks | about 1 cent | 12 s |
+| Identify a plant | about 0.3 cents | a few seconds |
+| Estimated, per active user per day | about half a cent | |
+
+A hard daily spend cap protects the account, and the site falls back to rules-only care at the cap.
 
 ---
 
 ## Connect it to your own tools
 
-Open **[/connect](https://leafathon.site/connect)** from your garden's Today page and make a key (shown once, stored only as a hash). Choose its scopes: `read`, `readings`, `tools`.
+Open **[/connect](https://leafathon.site/connect)** from your garden's Today page and make a key. It is shown once and stored only as a hash.
 
-**Claude Code and other MCP clients** (tools: `diagnose`, `identify`, `care_plan`, `season_plan`, `weather_risk`):
+| Scope | Allows |
+| --- | --- |
+| `read` | The garden, Today, the season plan and readings |
+| `readings` | Sending soil moisture (Home Assistant) |
+| `tools` | Diagnose, identify, weather risk, start a season plan (these use Leaf's models) |
+
+**Claude Code and other MCP clients** have five tools: `diagnose`, `identify`, `care_plan`, `season_plan`, `weather_risk`.
+
+<p align="center"><img src="assets/mcp-demo.svg" alt="A Claude Code terminal session that adds Leaf as an MCP server and asks what to do in the garden today" width="100%"></p>
 
 ```bash
 claude mcp add --transport http leaf https://leafathon.site/mcp \
   --header "Authorization: Bearer lf_..."
 ```
 
-Then ask: *"Using Leaf, what should I do in my garden today?"*
+**REST API.** Send `Authorization: Bearer lf_...`. The OpenAPI document is at [`/api/v1/openapi.json`](https://leafathon.site/api/v1/openapi.json).
 
-**REST API** (OpenAPI at [`/api/v1/openapi.json`](https://leafathon.site/api/v1/openapi.json)):
+| Call | What it does |
+| --- | --- |
+| `GET /api/v1/garden` | The key's garden |
+| `GET /api/v1/today` | The garden's day |
+| `GET /api/v1/season` · `POST /api/v1/season` | Read, or write, the season plan |
+| `POST /api/v1/readings` · `GET /api/v1/readings` | Send, or list, soil moisture readings |
+| `POST /api/v1/diagnose` | Diagnose a plant problem (multipart: `image`, `notes`) |
+| `POST /api/v1/identify` | Identify a plant from a photo |
+| `GET /api/v1/weather-risk` | Frost, heat and wind risk |
 
 ```bash
-curl https://leafathon.site/api/v1/today -H "Authorization: Bearer lf_..."
 curl https://leafathon.site/api/v1/diagnose -H "Authorization: Bearer lf_..." \
   -F image=@leaf.jpg -F notes="brown spots with yellow rings"
 ```
@@ -185,7 +273,13 @@ make smoke-all    # checks keys, models and the vision model (under 1 cent + 1 T
 make run          # http://localhost:8000
 ```
 
-`make test` runs the offline tests (835, with fake models and search; they never spend credits). `make check` adds lint and the Worker type check. `make help` lists the rest. Settings are in `.env.example`. Hosting on Cloudflare Containers is `make deploy-cloudflare`.
+| Command | Does |
+| --- | --- |
+| `make test` | 835 offline tests with fake models and search; they never spend credits |
+| `make check` | Tests, lint and the Worker type check. Run before every push |
+| `make eval` | Scores diagnosis accuracy on the labelled photos (spends model and search credits) |
+| `make deploy-cloudflare` | Deploys to Cloudflare Containers |
+| `make help` | Lists the rest. Settings are in `.env.example` |
 
 <details>
 <summary><b>Where things are</b></summary>
@@ -209,10 +303,14 @@ docs/       architecture, numbers, feedback for Nebius and NVIDIA, progress log
 
 ## Honest limits
 
-- Leaf gives guidance, not certainty. For food crops and any chemical, follow the product label. Every chemical step says so.
-- Photos are not logged. Only small thumbnails are kept, for 30 days, under a link nobody can guess. A garden's location is rounded (about 1 km) and a garden can be deleted from its page.
-- Radar covers US states and often finds little, because extension sites mostly publish evergreen guides.
-- Verified in real use: the web app, the season plan, the diagnosis, the REST API and the MCP server from Claude Code. Not yet verified: a push notification on a real phone, and the Home Assistant snippet on a real Home Assistant.
+| Area | What to know |
+| --- | --- |
+| Advice | Guidance, not certainty. For food crops and any chemical, follow the product label. Every chemical step says so |
+| Accuracy | About half right first time on hard photos. When unsure, Leaf says so and points to a lab |
+| Photos | Not logged. Only small thumbnails are kept, for 30 days, behind a link nobody can guess |
+| Location | Rounded to about 1 km. A garden can be deleted from its page, and gardens nobody opens for four months are deleted |
+| Radar | US states only, and it often finds little, because extension sites mostly publish evergreen guides |
+| Not yet verified | A push notification on a real phone, and the Home Assistant snippet on a real Home Assistant. The web app, season plan, diagnosis, REST API and the MCP server from Claude Code are verified |
 
 ## More docs
 
