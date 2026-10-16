@@ -21,6 +21,7 @@ from backend.models import LLM, ModelError, SpendCapReached, complete_json
 from backend.prompts import IDENTIFY_CHECK_SYSTEM, IDENTIFY_SYSTEM, sanitize
 from backend.schemas import IdentifyCheck, IdentifyOut, ModelCall
 from backend.search import Searcher, SearchPaused, rank_sources
+from backend.vision import vision_chain
 
 log = logging.getLogger("leaf.identify")
 
@@ -37,7 +38,7 @@ async def propose(
     return await complete_json(
         llm,
         step="identify",
-        models=[vision_model],
+        models=vision_chain(vision_model),
         messages=[
             {"role": "system", "content": IDENTIFY_SYSTEM},
             {

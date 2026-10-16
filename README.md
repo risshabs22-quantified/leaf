@@ -46,7 +46,7 @@ flowchart LR
     GR[Guardrails: code rules, Super verification, quote checks]
     MT[Meter, spend guard, trace ids]
   end
-  TF[(Nebius Token Factory: Nemotron Ultra, Super, Lightning, Nano, Super VL)]
+  TF[(Nebius Token Factory: Nemotron Ultra, Super, Lightning, Nano; Kimi K2.6 and Nemotron Super VL for photos)]
   D1[(D1)]
   KV[(KV)]
   Q[(Queue)]
@@ -73,7 +73,7 @@ Every model call goes through `backend/models.py` to Nebius Token Factory. The r
 | **Nemotron 3 Super** (120B) | Verifier and fallback | Verifies every season plan and replan against the code rules and cited facts, and can only remove items; checks plant identification and species facts; the second opinion in Deep; Ultra's fallback |
 | **Nemotron 3.5 Lightning** | Fast volume work | The live front door (routing and the input safety screen, about 0.4 s), the care plan, claim check, chat, morning notification wording, species fact extraction, Radar's report extraction |
 | **Nemotron Nano 3** | Background screening | Screens check-in notes and fetched web pages for instructions aimed at an AI reader, and triages weather alerts. It is slower than Lightning on Token Factory at the same price (1.6 s against 0.4 s median on the 65-message router eval), so nothing a user waits for uses it |
-| **Nemotron 3.5 Super VL** | Reads photos | Token Factory now serves this NVIDIA vision model, so Leaf's whole pipeline runs on NVIDIA models. Leaf picks an image model at startup, prefers an NVIDIA one, and keeps Kimi K2.6 as a fallback. The tune-split runs below (13 October) used Kimi K2.6; the held-out runs (15 October) used Nemotron 3.5 Super VL, so the two splits differ in vision model as well as in photos |
+| **Kimi K2.6** (fallback: **Nemotron 3.5 Super VL**) | Reads photos | A measured decision, not a preference: on plant photos Kimi is about 16 points better first time than NVIDIA's vision model (table below), so Kimi does perception and Nemotron 3.5 Super VL is the automatic fallback when a Kimi call fails. Every other step is a Nemotron model. `CLAUDE.md` says to prefer NVIDIA unless the measured accuracy is clearly worse, and to re-measure when a new NVIDIA vision model appears |
 
 ## Numbers (measured unless it says estimated)
 
@@ -95,8 +95,8 @@ Every model call goes through `backend/models.py` to Nebius Token Factory. The r
 
 | Test | Result |
 | --- | --- |
-| **Diagnosis, 24 held-out photos** (never tuned on) | Auto, Nemotron 3.5 Super VL reading the photos: right first time **33%** then **46%** (two runs, same photos), in the top three **50%**. With Kimi K2.6 reading the photos, Quick scored 50% and 67% on the same 24. Leaf with the NVIDIA vision model never says Confident (see below). Details below |
-| Diagnosis, 52 licensed photos (tune split: tuned on, so optimistic) | With Kimi K2.6: Auto right first time 58%, top three 73%, Confident right 14 of 16. With Nemotron 3.5 Super VL, Quick: 36% and 62% (52% and 75% with Kimi) |
+| **Diagnosis, 24 held-out photos** (never tuned on) | Quick with Kimi K2.6 reading the photos: right first time **50%**, in the top three **67%**; when it said Confident it was right **6 of 9** times. With Nemotron 3.5 Super VL: 33% and 46%. Details and the comparison below |
+| Diagnosis, 52 licensed photos (tune split: tuned on, so optimistic) | With Kimi K2.6: Auto right first time 58%, top three 73%, Confident right 14 of 16 at the earlier thresholds. Quick: 52% and 75% (Nemotron VL: 36% and 62%) |
 | Plant identification, 40 licensed photos | 92.5% right with the vision model alone, 95% after the check against sources. Well-lit, well-framed Commons photos likely seen in training, so a ceiling rather than what a phone photo gets |
 | Front-door router, 65 labelled messages (attacks, toxicity questions, real garden questions) | 0 false refusals, 0 of 6 harmful requests missed, 0 to 1 of 7 prompt injections missed, intent 97% (Lightning) |
 | Hardiness zone from 30 years of ERA5-Land, five US cities | Within half a zone of the USDA map in all five, exact in none |
@@ -145,20 +145,25 @@ flowchart TD
 
 The investigator's tools are all read-only: `look_closer`, `get_conditions` (14 days from Open-Meteo through published rules: TOMCAST for tomato; Hutton, Smith and Wallin for potato, each threshold cited in `backend/disease_rules.py`), `search_sources`, `read_source` (only URLs this case's own searches returned; no URL a model writes is ever fetched), `check_alerts`, `ask_user` and `update_differential`/`finish`. **Enforced in code:** 8 counted tool calls, per-tool caps, a dollar budget, a hard 90-second clock with a forced finish, an Ultra-to-Super fallback per turn, and a fall back to Quick if the investigation fails. Probabilities are capped at 0.9.
 
-**Held-out accuracy, 24 photos** (12 diseases, 6 pests, 6 nutrient, weather or other problems; `evals/README.md` lists every photo, author, licence and the rules that keep the split clean). Quick runs have search off (the diagnosis and its confidence come before the search, so scores are the same and no Tavily credits are spent). Deep was not run on this split.
+**Which model reads the photos: a measured decision.** On Oct 15 Token Factory started listing `nvidia/Nemotron-3.5-Super-VL`, an NVIDIA vision model, and Leaf's all-NVIDIA pipeline was tempting. We measured it against Kimi K2.6 on the same photos, same code, Quick mode with search off (the diagnosis and its confidence come before the search, so scores are the same and no Tavily credits are spent):
 
-| Run | Vision model | Top-1 | Top-3 | When it said Confident | Brier | Cost / case |
+| Photo model | Tune split, 52 photos: top-1 / top-3 | Held-out, 24 photos: top-1 / top-3 | Held-out: Confident was right | Held-out Brier |
+| --- | --- | --- | --- | --- |
+| **Kimi K2.6** (pinned) | **52% / 75%** | **50% / 67%** | 6 of 9 | 0.295 |
+| Nemotron 3.5 Super VL (fallback) | 36% / 62% | 33% / 46% | 3 of 7 | 0.363 |
+
+The held-out split is 24 photos (12 diseases, 6 pests, 6 nutrient, weather or other problems; `evals/README.md` lists every photo, author, licence and the rules that keep it clean). Kimi is about 16 points better first time on both splits, so the gap is the model, not luck or overfitting (Kimi scored about the same on the tune and held-out photos). Nemotron's observations are shorter and miss the specifics the diagnosis needs, for example "concentric rings" on early blight. On the tune split only we tried to close the gap with thinking on for the vision step (40% top-1, 52% top-3), larger images at 1568 px (33%, 58%) and a prompt that demands specifics (31%, 50%); none beat the default (36%, 62%) beyond noise. A gap of a few points would have kept all-NVIDIA; 16 points does not, so Kimi does perception, Nemotron VL is the automatic fallback, and every other step is a Nemotron model. The result is also written up as feedback for NVIDIA in `docs/FEEDBACK.md`, with the steps to reproduce it.
+
+**"Confident", fitted on the tune split only.** With Kimi, Quick says Confident only at 0.85 with a lead of 0.3, the strictest level where it was right on every tune case (6 of 6, and 4 of 4 on a second tune run); Deep says it at a combined 0.65 (7 of 7 on tune). The earlier looser levels were 11 of 12 and 7 of 8. **On the held-out photos the strict Quick level was still right only 6 of 9 times**, so even a fit that is perfect on the tune photos over-claims on new ones. We show that rather than hide it. When Nemotron VL is the one that read the photo (the fallback), no threshold reached 85% on the tune split (2 of 4 at 0.8 or 0.85, 0 of 1 at 0.9), and Deep with it could not be fitted inside the credit budget, so neither mode says Confident then: Leaf says Likely or Send a sample to a lab.
+
+**Auto on the held-out photos** was run only with Nemotron 3.5 Super VL, before Kimi was pinned; Auto with Kimi has not been measured on this split (it costs about 25 Tavily credits).
+
+| Run | Photo model | Top-1 | Top-3 | When it said Confident | Brier | Cost / case |
 | --- | --- | --- | --- | --- | --- | --- |
-| Quick | Nemotron 3.5 Super VL | 33% (8 of 24) | 46% | right 3 of 7 | 0.363 | $0.007 |
-| Quick (control) | Kimi K2.6 | **50%** (12 of 24) | **67%** | right 6 of 9 | 0.295 | $0.008 |
 | Auto, first run | Nemotron 3.5 Super VL | 33% | 50% | right 6 of 9 | 0.183 | $0.031 |
-| Auto, second run (final setup) | Nemotron 3.5 Super VL | 46% (11 of 24) | 50% | right 2 of 4 | 0.282 | $0.042 |
+| Auto, second run | Nemotron 3.5 Super VL | 46% (11 of 24) | 50% | right 2 of 4 | 0.282 | $0.042 |
 
-**The second Auto run saw the same 24 photos as the first.** Between the two runs the only change was to the verdict thresholds (below), which can change which cases get investigated but not what the vision model sees, so it is a second look at the same photos, not a fresh test. Earlier in the project repeat runs of the same mode varied by several points, and one photo here is about 4 points, so the gain from 33% to 46% should not be read as an improvement. Read the two runs together, not the better one. Auto's first run investigated 67% of cases; the second investigated all of them (Quick can no longer say Confident), at 0.9 Tavily credits per case. The Kimi row is a control for the vision model: same photos, same code, search off, run on 15 October.
-
-**What the numbers say.** The drop from the tune split to the held-out split was mostly the vision model, not overfitting. With Kimi, Quick scored 52% on the tune split and 50% on the held-out photos, about the same. With Nemotron 3.5 Super VL it scored 36% and 33%, about 16 points lower on both. Its observations are shorter and miss specifics the diagnosis needs (for example "concentric rings" on early blight). On the tune split only, we tried to close the gap with: thinking on for the vision step (40% top-1, 52% top-3), larger images, 1568 px (33%, 58%), and a prompt that demands specifics (31%, 50%); none beat the default (36%, 62%) beyond noise, so the defaults stayed.
-
-**"Confident" with the NVIDIA vision model.** Tuned on the tune split only, no Quick threshold reaches 85% right when it says Confident with Nemotron 3.5 Super VL (2 of 4 at 0.8 or 0.85; 0 of 1 at 0.9), so Quick never says Confident with it. Deep's investigation could not be validated the same way inside the credit budget (a Deep run on 52 photos costs about 130 Tavily credits), and on the held-out photos its Confident was right only 2 of 4 times, so Deep never says Confident with it either. Leaf still says Likely or Send a sample to a lab; a confidently wrong answer is the worst outcome. With Kimi, Quick's Confident was right 11 of 12 on tune (the thresholds were fitted there) but 6 of 9 on held-out, so even those thresholds over-claim on new photos. The vision model is chosen at startup (`LEAF_VISION_MODEL` pins it) and the thresholds follow it (`backend/verdict.py`).
+**The second Auto run saw the same 24 photos as the first.** Between the two runs the only change was to the verdict thresholds, which can change which cases get investigated but not what the vision model sees, so it is a second look at the same photos, not a fresh test. Earlier in the project repeat runs of the same mode varied by several points, and one photo here is about 4 points, so the gain from 33% to 46% should not be read as an improvement. Read the two runs together, not the better one. Deep was not run on this split. Answers are scored by name, so some near-misses count as wrong ("Iron deficiency" for iron chlorosis, "Septoria" for cercospora); the scoring was not changed after seeing results. Every run on the held-out split is listed in `evals/README.md`.
 
 **Tune split, 52 licensed photos** (31 diseases, 15 abiotic problems, 6 pests). These were used to tune Leaf, including the verdict thresholds, so the numbers are optimistic. One run per mode, 13 October 2026:
 
@@ -271,7 +276,7 @@ The full write-up, with reproduction steps, impact and a suggestion for each ite
 - **Do not combine `tools` with `response_format`**: Ultra silently stops calling tools.
 - **The thinking switch differs by model family**: Nemotron reads `enable_thinking`, Kimi reads `thinking`. The right key made our vision step 3x faster and 4x cheaper.
 - **The public catalog listed Super as `error`** while it answered every request.
-- **No NVIDIA guard, embedding or reranker model is served.** (An NVIDIA vision model, Nemotron 3.5 Super VL, was first noticed on Token Factory on 15 October; the 13 October runs used Kimi K2.6.)
+- **No NVIDIA guard, embedding or reranker model is served.** An NVIDIA vision model, Nemotron 3.5 Super VL, appeared on 15 October but reads plant photos about 16 points worse than Kimi K2.6 (see Numbers), so Kimi stays the photo model.
 - **Reasoning tokens count toward `max_tokens`**, which returns empty or truncated JSON unless budgets are generous (a 3,000-token budget for Super's verification ran out while it reasoned; 8,000 with smaller chunks fixed it).
 - **Nemotron 3.5 Lightning returned an empty list for a clear sighting** in Radar's extraction until the prompt carried a worked example; Super found it without one.
 - `tool_choice="required"` produced duplicate calls; Nemotron sometimes answers in prose or invents tool names mid-agent; run-to-run variance at temperature 1.0 is large; there is no cached-input price for agent loops.

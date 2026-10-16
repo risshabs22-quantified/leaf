@@ -32,7 +32,7 @@ from backend.schemas import (
 )
 from backend.search import PAUSED_NOTICE, Searcher, search_all, search_paused
 from backend.verdict import Decision, decide, more_cautious, quick_thresholds
-from backend.vision import describe
+from backend.vision import describe, observed_by
 
 log = logging.getLogger("leaf.pipeline")
 
@@ -108,7 +108,7 @@ class Leaf:
             repair_model=s.repair_model,
         )
         diagnosis.candidates.sort(key=lambda c: c.confidence, reverse=True)
-        thresholds = quick_thresholds(self.vision_model)
+        thresholds = quick_thresholds(observed_by(trace, self.vision_model))
         decision = decide(
             [(c.name, c.confidence) for c in diagnosis.candidates], obs.image_quality, thresholds
         )

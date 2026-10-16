@@ -300,8 +300,22 @@ async def test_no_candidates_at_all_escalates(settings):
     assert res.low_confidence is True and res.plan.escalate is True
 
 
+async def test_a_failing_photo_model_falls_back_to_the_nvidia_one_and_never_says_confident(
+    settings,
+):
+    from backend.config import VISION_FALLBACK
+
+    leaf, _, _ = make_leaf(settings, STD, failing={settings.vision_model})
+    res = await leaf.diagnose(image_b64="abc", notes="spots")
+    assert res.observation.image_quality == "good"  # the fallback read the photo
+    assert [t.model for t in res.trace if t.step == "vision"][-1] == VISION_FALLBACK
+    assert res.verdict == "likely"  # Confident is not validated for the NVIDIA photo model
+
+
 async def test_vision_outage_degrades_to_notes_only_and_escalates(settings):
-    leaf, llm, _ = make_leaf(settings, STD, failing={settings.vision_model})
+    from backend.config import VISION_FALLBACK
+
+    leaf, llm, _ = make_leaf(settings, STD, failing={settings.vision_model, VISION_FALLBACK})
     res = await leaf.diagnose(image_b64="abc", notes="spots")
     assert res.observation.image_quality == "poor"
     assert res.plan.escalate is True

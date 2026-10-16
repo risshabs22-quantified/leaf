@@ -453,12 +453,12 @@ async def test_the_final_ranking_blends_the_first_look_with_the_investigation():
     from backend.config import Settings
 
     blended = Settings(nebius_api_key="t", vision_model="vendor/fake-vl", deep_blend_first=0.7)
-    # first differential (DIAG_HIGH): Early blight 0.82, Septoria 0.1
+    # first differential (DIAG_HIGH): Early blight 0.88, Septoria 0.1
     deep, _, _ = deep_for(
         blended,
         [turn(search(), finish(("Septoria leaf spot", 0.6, ["E1"]), ("Early blight", 0.3, [])))],
     )
     res, _ = await collect(deep)
     assert res.investigator_differential[0].name == "Septoria leaf spot"
-    assert res.differential[0].name == "Early blight"  # 0.3*0.3 + 0.7*0.82 = 0.66 vs 0.25
-    assert res.differential[0].probability == pytest.approx(0.664, abs=0.01)
+    assert res.differential[0].name == "Early blight"  # 0.3*0.3 + 0.7*0.88 = 0.71 vs 0.25
+    assert res.differential[0].probability == pytest.approx(0.706, abs=0.01)

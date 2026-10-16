@@ -14,7 +14,7 @@ from typing import Any, Literal
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, Field, field_validator
 
-from backend.config import ROUTES, VISION_PREFERENCE, Settings
+from backend.config import ROUTES, VISION_FALLBACK, VISION_PREFERENCE, Settings
 from backend.models import LLM, ModelError, complete_json
 from backend.prompts import (
     LOOK_CLOSER_SYSTEM,
@@ -42,16 +42,33 @@ def accepts_images(model: dict[str, Any]) -> bool:
 
 
 def choose_vision_model(models: list[dict[str, Any]], override: str = "") -> str | None:
+    """The measured-best served model first (VISION_PREFERENCE), then any NVIDIA one."""
     if override:
         return override
     capable = [m["id"] for m in models if m.get("id") and accepts_images(m)]
+    if VISION_PREFERENCE[0] in capable:
+        return VISION_PREFERENCE[0]  # the measured best
     nvidia = [m for m in capable if m.lower().startswith("nvidia/")]
     if nvidia:
         return nvidia[0]
-    for preferred in VISION_PREFERENCE:
+    for preferred in VISION_PREFERENCE[1:]:
         if preferred in capable:
             return preferred
     return capable[0] if capable else None
+
+
+def vision_chain(model: str) -> list[str]:
+    """The model first, then the NVIDIA vision model as the automatic fallback."""
+    return [model] if model == VISION_FALLBACK else [model, VISION_FALLBACK]
+
+
+def observed_by(trace: list[Any], default: str | None) -> str | None:
+    """The model that actually wrote the latest first-look observation (the fallback, if the
+    first choice failed): verdict thresholds are fitted per vision model."""
+    for call in reversed(trace):
+        if getattr(call, "step", "") == "vision" and getattr(call, "model", ""):
+            return call.model
+    return default
 
 
 async def discover_vision_model(llm: LLM, settings: Settings) -> str | None:
@@ -153,7 +170,7 @@ async def describe(
         return await complete_json(
             llm,
             step="vision",
-            models=[model],
+            models=vision_chain(model),
             messages=messages,
             schema=Observation,
             trace=trace,
@@ -210,7 +227,7 @@ async def look_closer(
     return await complete_json(
         llm,
         step="look_closer",
-        models=[model],
+        models=vision_chain(model),
         messages=messages,
         schema=RegionAnswer,
         trace=trace,

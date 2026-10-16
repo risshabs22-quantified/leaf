@@ -55,7 +55,7 @@ from backend.schemas import (
 from backend.search import PAUSED_NOTICE, _trust, search_paused
 from backend.store import CaseStore
 from backend.verdict import Decision, decide, deep_thresholds, more_cautious
-from backend.vision import describe
+from backend.vision import describe, observed_by
 
 log = logging.getLogger("leaf.deep")
 
@@ -538,7 +538,9 @@ class DeepLeaf:
             case,
             confidence,
             critic,
-            deep_decision(case, confidence, critic, self.leaf.vision_model),
+            deep_decision(
+                case, confidence, critic, observed_by(case.trace, self.leaf.vision_model)
+            ),
         )
         if plan_failed:  # as in Quick: no plan at all, so a lab or extension office decides
             decision = Decision(
@@ -635,7 +637,12 @@ class DeepLeaf:
         if case.regional is None:
             return raw
         case.differential.sort(key=lambda h: h.probability, reverse=True)
-        return more_cautious(raw, deep_decision(case, confidence, critic, self.leaf.vision_model))
+        return more_cautious(
+            raw,
+            deep_decision(
+                case, confidence, critic, observed_by(case.trace, self.leaf.vision_model)
+            ),
+        )
 
     def _response(
         self,

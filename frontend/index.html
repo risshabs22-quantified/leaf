@@ -15,8 +15,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=2026101906">
-<link rel="stylesheet" href="/static/landing.css?v=2026101906">
+<link rel="stylesheet" href="/static/style.css?v=2026101907">
+<link rel="stylesheet" href="/static/landing.css?v=2026101907">
 </head>
 <body class="landing">
 <canvas id="forest" aria-hidden="true"></canvas>
@@ -113,7 +113,7 @@
   </div>
   <ol class="steps-line" id="steps-line">
     <li><h3>Looks at your photos</h3><p>Plant, symptoms, where they sit, and whether the photo is good enough.</p>
-      <details><summary>How exactly?</summary><p>Up to three photos: a close-up, the whole plant, the underside. Nemotron 3.5 Super VL reads them, so every model Leaf uses is an NVIDIA one.</p></details></li>
+      <details><summary>How exactly?</summary><p>Up to three photos: a close-up, the whole plant, the underside. Kimi K2.6 reads them, because it measured about 16 points better than NVIDIA's vision model on plant photos; the NVIDIA model is the automatic fallback, and every other step is a Nemotron model.</p></details></li>
     <li><h3>Lists what it could be</h3><p>Every plausible cause, each with a probability and the evidence for and against.</p>
       <details><summary>How exactly?</summary><p>NVIDIA Nemotron 3 Ultra, with reasoning on. No cause is allowed above 90%, because a photo is never proof.</p></details></li>
     <li><h3>Investigates</h3><p>Looks closer, checks your weather, reads sources and can ask you up to three questions.</p>
@@ -236,26 +236,28 @@
 <!-- ============================================================== accuracy -->
 <section id="accuracy" class="accuracy wrap panel" aria-labelledby="acc-h">
   <h2 id="acc-h" class="section-h">How often the doctor is right</h2>
-  <p class="section-sub">24 photos Leaf was never tuned on: 12 diseases, 6 pests, 6 nutrient, weather or other problems. Two runs of Auto on the same photos, 15 October 2026.</p>
+  <p class="section-sub">24 photos Leaf was never tuned on: 12 diseases, 6 pests, 6 nutrient, weather or other problems. A measured choice of which model reads the photos.</p>
   <div class="acc-grid">
     <div class="acc-bars" id="acc-bars">
-      <p class="acc-k">Right first time</p>
-      <div class="ab"><span class="ab-n">Quick, NVIDIA vision</span><span class="ab-bar"><span style="--v:33"></span></span><span class="ab-v">33%</span></div>
-      <div class="ab lead"><span class="ab-n">Auto, NVIDIA vision</span><span class="ab-bar"><span style="--v:46"></span></span><span class="ab-v">46%</span></div>
-      <div class="ab"><span class="ab-n">Quick, Kimi vision</span><span class="ab-bar"><span style="--v:50"></span></span><span class="ab-v">50%</span></div>
+      <p class="acc-k">Right first time, held-out photos</p>
+      <div class="ab lead"><span class="ab-n">Kimi K2.6</span><span class="ab-bar"><span style="--v:50"></span></span><span class="ab-v">50%</span></div>
+      <div class="ab"><span class="ab-n">NVIDIA Super VL</span><span class="ab-bar"><span style="--v:33"></span></span><span class="ab-v">33%</span></div>
       <p class="acc-k">Right answer in the top three</p>
-      <div class="ab"><span class="ab-n">Quick, NVIDIA vision</span><span class="ab-bar"><span style="--v:46"></span></span><span class="ab-v">46%</span></div>
-      <div class="ab lead"><span class="ab-n">Auto, NVIDIA vision</span><span class="ab-bar"><span style="--v:50"></span></span><span class="ab-v">50%</span></div>
-      <div class="ab"><span class="ab-n">Quick, Kimi vision</span><span class="ab-bar"><span style="--v:67"></span></span><span class="ab-v">67%</span></div>
+      <div class="ab lead"><span class="ab-n">Kimi K2.6</span><span class="ab-bar"><span style="--v:67"></span></span><span class="ab-v">67%</span></div>
+      <div class="ab"><span class="ab-n">NVIDIA Super VL</span><span class="ab-bar"><span style="--v:46"></span></span><span class="ab-v">46%</span></div>
+      <p class="acc-k">On the 52 tune photos, right first time</p>
+      <div class="ab lead"><span class="ab-n">Kimi K2.6</span><span class="ab-bar"><span style="--v:52"></span></span><span class="ab-v">52%</span></div>
+      <div class="ab"><span class="ab-n">NVIDIA Super VL</span><span class="ab-bar"><span style="--v:36"></span></span><span class="ab-v">36%</span></div>
     </div>
     <div class="acc-notes">
-      <p class="big-stat"><span>No "Confident"</span> with the NVIDIA vision model: it only says "Likely" or "Send a sample".</p>
-      <p>"Confident" was right just 2 of 4 times in the last run, and on the photos we tuned on no threshold made it right 85% of the time, so we switched it off rather than risk a confidently wrong answer. These are hard photos: fruit, insects and odd problems from public-domain archives, not tidy leaf shots.</p>
+      <p class="big-stat"><span>6 of 9</span> times Quick said "Confident" on the held-out photos, it was right.</p>
+      <p>We wanted an all-NVIDIA pipeline, so we measured NVIDIA's new vision model against Kimi on the same photos and the same code. Kimi is about 16 points better first time on both sets of photos, so Kimi reads the photos and the NVIDIA model is the automatic fallback. Every other step is a Nemotron model. When the fallback reads the photo, Leaf never says "Confident". These are hard photos: fruit, insects and odd problems from public-domain archives, not tidy leaf shots.</p>
       <details><summary>The caveats</summary><ul>
-        <li>Held out means nothing was tuned on these 24 photos. The second Auto run saw the same photos as the first (33% first time, then 46%); only the verdict thresholds changed between them, so read the two runs together. One photo is about 4 points, and repeat runs of the same mode vary by several.</li>
-        <li>Leaf reads photos with Nvidia's Nemotron 3.5 Super VL. The Kimi K2.6 row is a control on the same photos: it is about 16 points better first time, on these photos and on the 52 we tuned on (52% against 36%). We tried thinking, larger images and a more detailed prompt for the NVIDIA model on the tuning photos; none helped.</li>
-        <li>Deep was not run on this split. Answers are scored by name, so some near-misses count as wrong: "Iron deficiency" for iron chlorosis, "Septoria" for cercospora.</li>
-        <li>Late blight was missed again: the vision model sometimes reports a coating on it that isn't there.</li>
+        <li>"Confident" is set at the strictest level that was right on every one of the 52 tune photos (6 of 6). On the 24 held-out photos the same level was still right only 6 of 9 times, so a fit that is perfect on tuned photos over-claims on new ones.</li>
+        <li>Held out means nothing was tuned on these 24 photos; we ran several modes on them and list every run in the repo. 24 photos is small: one photo is about 4 points.</li>
+        <li>These bars are Quick mode with search off. The Auto runs on the held-out set used the NVIDIA model (33%, then 46% on the same photos, which should not be read as an improvement); Auto with Kimi has not been measured on it. Deep was not run.</li>
+        <li>We tried thinking, larger images and a more detailed prompt for the NVIDIA model on the tuning photos; none closed the gap. The finding is written up for NVIDIA in the repo.</li>
+        <li>Answers are scored by name, so some near-misses count as wrong: "Iron deficiency" for iron chlorosis, "Septoria" for cercospora. Late blight is missed often: the vision models sometimes report a coating on it that isn't there.</li>
       </ul><p class="small"><a href="https://github.com/risshabs22-quantified/leaf#numbers-measured-unless-it-says-estimated">Every run and the method</a></p></details>
     </div>
   </div>
@@ -292,7 +294,7 @@
         <tr><td>NVIDIA Nemotron 3 Super</td><td>Verifies every season plan and replan (it can only remove); second opinion; fallback for every reasoning step</td></tr>
         <tr><td>NVIDIA Nemotron 3.5 Lightning</td><td>The front door, care plans, claim checks, chat, notification wording, Radar's extraction</td></tr>
         <tr><td>NVIDIA Nemotron Nano 3</td><td>Background screening: check-in notes and fetched web pages</td></tr>
-        <tr><td>Nemotron 3.5 Super VL</td><td>Reads photos</td></tr>
+        <tr><td>Kimi K2.6 (fallback: Nemotron 3.5 Super VL)</td><td>Reads photos: measured about 16 points better than the NVIDIA vision model</td></tr>
         <tr><td>Nebius Token Factory</td><td>Runs every model call</td></tr>
         <tr><td>Tavily</td><td>Search, page reading, plant facts and Radar</td></tr>
         <tr><td>Open-Meteo and the National Weather Service</td><td>Forecast, 30-year climate, frost dates, alerts</td></tr>
@@ -325,7 +327,7 @@
   <span><a href="https://open-meteo.com/" target="_blank" rel="noopener">Weather data by Open-Meteo.com</a></span>
   <span>Guidance, not certainty. For food crops and any chemical, follow the product label.</span>
 </footer>
-<script src="/static/rainforest.js?v=2026101906"></script>
-<script src="/static/landing.js?v=2026101906"></script>
+<script src="/static/rainforest.js?v=2026101907"></script>
+<script src="/static/landing.js?v=2026101907"></script>
 </body>
 </html>

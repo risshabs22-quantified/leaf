@@ -17,7 +17,7 @@ def test_extract_json_handles_fences_and_think_tags():
     assert strip_think("reasoning...</think> answer") == "answer"
 
 
-def test_choose_vision_model_prefers_nvidia_then_preference():
+def test_choose_vision_model_prefers_the_measured_best_then_nvidia_then_any():
     img = {"architecture": {"modality": "text+image->text"}}
     txt = {"architecture": {"modality": "text->text"}}
     models = [
@@ -25,6 +25,8 @@ def test_choose_vision_model_prefers_nvidia_then_preference():
         {"id": "nvidia/some-vl", **img},
         {"id": "nvidia/Nemotron-3_5-Lightning", **txt},
     ]
+    kimi = {"id": "moonshotai/Kimi-K2.6", **img}
+    assert choose_vision_model([*models, kimi]) == "moonshotai/Kimi-K2.6"  # measured best
     assert choose_vision_model(models) == "nvidia/some-vl"
     assert choose_vision_model(models[:1] + models[2:]) == "zai-org/GLM-5.3-Flash"
     assert choose_vision_model([models[2]]) is None

@@ -833,7 +833,7 @@ def test_a_gardens_radar_and_diagnosis_use_its_state(settings):
             "regional" not in public_view(entry)["report"]
         )  # a share link must not show the state
         top = entry.report["diagnosis"]["candidates"][0]
-        assert top["prior_points"] == 0.02 and top["confidence"] == 0.84
+        assert top["prior_points"] == 0.02 and top["confidence"] == 0.9
 
 
 def test_auto_diagnosis_with_a_location_in_a_state_with_reports_shows_them(settings):

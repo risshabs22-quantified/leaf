@@ -46,7 +46,7 @@ After the diagnosis, three tools help you act on it:
 - **NVIDIA Nemotron 3 Ultra** (`nvidia/Nemotron-3-Ultra-550b-a55b`): the first differential and the Deep investigator, with reasoning on and native tool calling.
 - **NVIDIA Nemotron 3 Super** (`nvidia/nemotron-3-super-120b-a12b`): the fallback for every reasoning step and the second opinion.
 - **NVIDIA Nemotron 3.5 Lightning** (`nvidia/Nemotron-3_5-Lightning`): the care plan, the claim check, chat, check-in advice and JSON repair.
-- **NVIDIA Nemotron 3.5 Super VL** (`nvidia/Nemotron-3.5-Super-VL`) reads the photos. We first noticed it on Token Factory on 15 October; the 13 October runs used Kimi K2.6, which Leaf keeps as a fallback. The tune-split accuracy numbers were measured with Kimi, the held-out ones with Super VL.
+- **Kimi K2.6** (`moonshotai/Kimi-K2.6`) reads the photos, with **NVIDIA Nemotron 3.5 Super VL** (`nvidia/Nemotron-3.5-Super-VL`) as the automatic fallback. This is a measured decision: we wanted an all-NVIDIA pipeline, but on plant photos Kimi was about 16 points better (table below), so it does perception. Every other step is a Nemotron model.
 
 **The investigator** is Nemotron 3 Ultra calling read-only tools: `look_closer` (crops a photo region in code and asks a targeted question), `get_conditions` (Open-Meteo weather and the cited disease-risk rules), `search_sources` and `read_source` (Tavily), `check_alerts` (Tavily news), `ask_user` (up to three questions that would separate the top two causes) and `finish`. Limits are enforced in code: 8 counted tool calls, per-tool caps, a dollar budget, a hard 90-second clock with a forced finish, and a fall back to Quick if anything fails.
 
@@ -73,18 +73,16 @@ Details and suggestions for the platform teams are in `docs/FEEDBACK.md`.
 
 ## Accomplishments that we're proud of
 
-**Held-out:** 24 photos Leaf was never tuned on (12 diseases, 6 pests, 6 nutrient, weather or other problems). Details and the rules that keep the split clean are in `evals/README.md`.
+**Which model reads the photos (measured, same photos, same code, Quick mode with search off):**
 
-| Run | Photo model | Top-1 | Top-3 | When it said Confident |
-| --- | --- | --- | --- | --- |
-| Quick | Nemotron 3.5 Super VL | 33% | 46% | right 3 of 7 |
-| Quick (control) | Kimi K2.6 | 50% | 67% | right 6 of 9 |
-| Auto, first run | Nemotron 3.5 Super VL | 33% | 50% | right 6 of 9 |
-| Auto, second run, same photos | Nemotron 3.5 Super VL | 46% | 50% | right 2 of 4 |
+| Photo model | Tune split (52): top-1 / top-3 | Held-out (24): top-1 / top-3 | Held-out: Confident was right |
+| --- | --- | --- | --- |
+| **Kimi K2.6** (pinned) | **52% / 75%** | **50% / 67%** | 6 of 9 |
+| Nemotron 3.5 Super VL (fallback) | 36% / 62% | 33% / 46% | 3 of 7 |
 
-The vision model, not overfitting, explains most of the gap to the tune split: with Kimi, Quick scored 52% on the tune split and 50% held-out; with Nemotron 3.5 Super VL, 36% and 33%. We could not close the gap with thinking, larger images or a more detailed prompt. We kept the all-NVIDIA pipeline for now and switched "Confident" off for it, because on the tune split no threshold made it right 85% of the time. Leaf says "Likely" or "Send a sample" instead. The second Auto run saw the same photos as the first and only the verdict thresholds changed, so its 46% should not be read as an improvement. Deep was not run on this split. With Kimi on the 52 tune photos, Auto scored 58% (top-3 73%, Confident right 14 of 16), which is optimistic.
+The held-out split is 24 photos Leaf was never tuned on (12 diseases, 6 pests, 6 nutrient, weather or other problems; rules and licences in `evals/README.md`). Kimi scores about the same on both splits, so the gap is the model, not overfitting. We tried thinking, larger images and a more detailed prompt for the NVIDIA model on the tune split only; none closed the gap, and we wrote the finding up for NVIDIA in `docs/FEEDBACK.md`. "Confident" is set at the strictest level that was right on every tune photo, and on the held-out photos it was still right only 6 of 9 times, which we show rather than hide. When the NVIDIA fallback reads the photo, Leaf never says "Confident". Auto on the held-out photos was run only with the NVIDIA model (33%, then 46% on the same photos; the gain is not an improvement), and Deep was not run there. With Kimi on the 52 tune photos, Auto scored 58% (top-3 73%), which is optimistic.
 
-- Honest uncertainty is measured: the held-out photos are hard, and Auto is better calibrated than Quick (Brier 0.18 and 0.28, against 0.36).
+- Honest uncertainty is measured: the held-out photos are hard, and the verdict rules favour "Likely" and "Send a sample" over a confident wrong answer.
 - Every care-plan step cites a passage Leaf read, and unsupported steps are removed before you see them.
 - The whole case is visible: the differential re-ranking live, the weather, the sources and the second opinion.
 
@@ -97,7 +95,7 @@ The vision model, not overfitting, explains most of the gap to the tune split: w
 ## What's next
 
 - Grow the held-out set with our own phone photos, and report it without tuning on it.
-- Close the gap between the NVIDIA vision model and Kimi (about 16 points first time), then fit "Confident" again on a bigger tune set.
+- Re-measure NVIDIA's vision model when a new one appears and switch back to all-NVIDIA if it is within a few points of Kimi.
 - Spray windows that also respect a product's pre-harvest interval, read from its label.
 - A targeted close-up question for late blight's tell-tale signs (water-soaked margins, white growth on the underside) to fix its most common miss.
 

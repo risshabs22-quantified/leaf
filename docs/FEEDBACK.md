@@ -4,7 +4,7 @@ What we ran into while building Leaf (October 2026), from live probes and produc
 not from reading docs. Each item says what happened, how to reproduce it, what it cost us, and a
 concrete suggestion. Model IDs are the ones Leaf uses: `nvidia/Nemotron-3-Ultra-550b-a55b`,
 `nvidia/nemotron-3-super-120b-a12b`, `nvidia/Nemotron-3_5-Lightning`, and
-`moonshotai/Kimi-K2.6` for vision. The repro snippets use the OpenAI Python SDK against
+`moonshotai/Kimi-K2.6` for vision (with `nvidia/Nemotron-3.5-Super-VL` as the fallback). The repro snippets use the OpenAI Python SDK against
 `https://api.tokenfactory.nebius.com/v1/`.
 
 ## 1. `tools` together with `response_format` silently stops tool calling
@@ -71,7 +71,7 @@ really down.
 ## 4. No NVIDIA vision, guard, embedding or reranker model is served
 
 **What happened.** For a plant-doctor app the first step is reading a photo. Token Factory serves
-no NVIDIA vision-language model, so the one non-NVIDIA model in Leaf is the vision step (Kimi).
+no NVIDIA vision-language model, so the one non-NVIDIA model in Leaf was the vision step (Kimi). On 15 October `nvidia/Nemotron-3.5-Super-VL` appeared, which is good news; item 10 shows how it compares on plant photos.
 There is also no NVIDIA guard/safety model (Nemotron 3.5 Content Safety exists on Hugging Face but
 is not served), no NVIDIA embedding model (the only embedding model listed is
 `Qwen/Qwen3-Embedding-8B`), and no reranker.
@@ -154,6 +154,66 @@ growing conversation every turn, so input tokens dominate Deep's cost (about $0.
 
 **Suggestion.** Prefix caching with a cached-input price, as other providers offer, would cut
 agent costs substantially.
+
+## 10. Nemotron 3.5 Super VL reads plant-disease photos about 16 points worse than Kimi K2.6
+
+**What happened.** On 15 October `nvidia/Nemotron-3.5-Super-VL` started showing up in
+`/v1/models`. We wanted an all-NVIDIA pipeline, so we measured it against `moonshotai/Kimi-K2.6`
+as the photo-reading step of Leaf, with everything else identical (same code, same Ultra
+diagnosis step, same prompts, Quick mode, search off). Leaf's vision step turns a photo into a
+structured description (symptoms, affected parts, pattern, image quality) and Nemotron 3 Ultra
+diagnoses from that description alone, so the score measures how well the vision model perceives
+the diagnostic cues.
+
+| Photo model | 52 tune photos: top-1 / top-3 | 24 held-out photos: top-1 / top-3 | Held-out Brier | Vision call time |
+| --- | --- | --- | --- | --- |
+| Kimi K2.6 | 52% / 75% | 50% / 67% | 0.295 | about 4 s (thinking off) |
+| Nemotron 3.5 Super VL | 36% / 62% | 33% / 46% | 0.363 | about 1.5 s |
+
+Kimi scored about the same on both splits, so the gap is the model, not luck or overfitting. The
+photos are 76 licensed Wikimedia Commons images (CC0, public domain, CC BY, CC BY-SA) of tomato,
+potato, rose, squash, pepper and other crops; the held-out set has 12 diseases, 6 pests and 6
+nutrient or weather problems, labelled from the uploader's own file title or description. They
+are real-world photos, not a clean leaf-on-white-background dataset.
+
+**What we saw.** Nemotron VL's descriptions are shorter (about 720 characters of JSON against
+about 990 on average) and drop the cues a plant pathologist keys on. On a tomato early-blight leaf
+Kimi wrote "dark brown to black circular lesions with concentric rings (target-like pattern)" and
+"yellow chlorotic halos"; Nemotron wrote "dark brown to black circular spots" with halos but no
+rings. On another leaf it reported fine webbing that Kimi did not, which pushed spider mites up
+the diagnosis.
+
+**What we tried, on the tune split only.** Thinking on for the vision call (40% top-1, 52%
+top-3), 1568 px images instead of 1024 px (33%, 58%), and a prompt that demands 5 to 8 specific
+symptoms with colour, shape, rings, halo, margin, leaf age and surface (31%, 50%). None beat the
+default (36%, 62%) beyond the run-to-run noise on 52 photos (a few points). We did not try
+few-shot photos or a different resize filter.
+
+**Reproduce.** Clone https://github.com/risshabs22-quantified/leaf, run `make setup`, put a Token
+Factory key in the env file the README describes, then:
+
+```
+LEAF_VISION_MODEL=moonshotai/Kimi-K2.6 \
+  .venv/bin/python -m scripts.eval --split tune --mode quick --no-search --label kimi
+LEAF_VISION_MODEL=nvidia/Nemotron-3.5-Super-VL \
+  .venv/bin/python -m scripts.eval --split tune --mode quick --no-search --label nvl
+# the same with --split test for the 24 held-out photos
+```
+
+Each run is about 50 model calls and costs under $0.50. `evals/README.md` lists every photo with
+its author and licence, and the harness writes per-case observations and rankings to
+`evals/results.jsonl`.
+
+**Impact.** Leaf keeps Kimi for photo reading and uses Nemotron 3.5 Super VL only as the
+automatic fallback, so a Kimi outage does not take photos offline; every other step is a
+Nemotron model. We also switch "Confident" off whenever the NVIDIA model read the photo: on the
+tune split no threshold made its Confident right 85% of the time.
+
+**Suggestion.** This looks like a domain gap, not a general vision gap: fine, texture-level cues
+(rings, halos, water-soaked margins, powdery versus downy growth, insect frass). Training or
+fine-tuning on extension-service and plant-pathology imagery, or a "describe every visible lesion
+feature" mode with longer structured output, would likely close it. We will re-run this
+comparison against any newer Nemotron VL release; the harness takes one environment variable.
 
 ## What worked well
 

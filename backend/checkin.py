@@ -21,6 +21,7 @@ from backend.models import LLM, ModelError, complete_json
 from backend.prompts import CHECKIN_PLAN_SYSTEM, CHECKIN_VISION_SYSTEM, sanitize
 from backend.router import front_door
 from backend.schemas import CarePlan, Garden, ModelCall, PlanStep, _unit
+from backend.vision import vision_chain
 
 NOTES_SET_ASIDE = (
     "Leaf set your note aside: it read like an instruction to Leaf rather than a note about "
@@ -74,7 +75,7 @@ async def compare(
     return await complete_json(
         llm,
         step="checkin_compare",
-        models=[model],
+        models=vision_chain(model),
         messages=messages,
         schema=Progress,
         trace=trace,

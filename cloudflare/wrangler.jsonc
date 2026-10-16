@@ -59,6 +59,7 @@
   "vars": {
     "LEAF_DAILY_CAP": "60",
     "LEAF_SEARCH_RESERVE": "20",
+    "LEAF_VISION_MODEL": "moonshotai/Kimi-K2.6",
     "LEAF_TRUSTED_PROXY_HOPS": "1",
     "LEAF_JOURNAL_BUCKET": "leaf-journal",
     "LEAF_PUBLIC_URL": "https://leafathon.site",

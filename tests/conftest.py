@@ -61,7 +61,7 @@ DIAG_HIGH = {
         {
             "name": "Early blight",
             "category": "fungal",
-            "confidence": 0.82,
+            "confidence": 0.88,
             "evidence_for": ["concentric rings"],
             "evidence_against": [],
         },
