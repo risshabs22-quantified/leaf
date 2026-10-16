@@ -31,7 +31,7 @@ DEFAULT_PRICES_PER_TOKEN = {
     "moonshotai/Kimi-K2.6": (0.95e-6, 4.00e-6),
 }
 
-# Photo model, chosen by measured accuracy (README "Numbers"; docs/FEEDBACK.md): Kimi K2.6
+# Photo model, chosen by measured accuracy (docs/NUMBERS.md; docs/FEEDBACK.md): Kimi K2.6
 # reads plant photos about 16 points better than Nemotron 3.5 Super VL, so it does perception
 # and the NVIDIA model is the automatic fallback when a Kimi call fails. Every other step is a
 # Nemotron model. Leaf pins Kimi in production (LEAF_VISION_MODEL); without a pin it takes the

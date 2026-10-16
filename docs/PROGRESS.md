@@ -12,7 +12,7 @@ Keep it short: newest entries first.
 | Backend hardening | done | two audits, 85 offline tests, each fix mutation-checked; live: bomb 400, oversize 413, injection, photo 5/5 |
 | Photo path live | done | synthetic leaf through vision, Ultra, Lightning; chat follow-up works |
 | Real Token Factory calls | done | `make smoke-all`: Ultra 627 ms, Super fallback 788 ms, Lightning 477 ms |
-| Vision model | done | Kimi K2.6 pinned for photos (`LEAF_VISION_MODEL`), Nemotron 3.5 Super VL the automatic fallback; Kimi measured about 16 points better first time (README Numbers, `docs/FEEDBACK.md` item 10) |
+| Vision model | done | Kimi K2.6 pinned for photos (`LEAF_VISION_MODEL`), Nemotron 3.5 Super VL the automatic fallback; Kimi measured about 16 points better first time (`docs/NUMBERS.md`, `docs/FEEDBACK.md` item 10) |
 | Tavily live | done | `make smoke-all` OK; live `/api/diagnose` returned 6 sources |
 | Eval set | tune split (52 photos) and held-out test split (24 photos, leak rules in `evals/README.md`) done; held-out Quick and Auto run once | `evals/summary_test_heldout-*.json` |
 | Three verdicts and Auto mode (Auto is the default) | done | README "Quick, Deep and Auto (measured)" |

@@ -8,7 +8,7 @@
 
 Quick scores are the model's raw candidate confidences; Deep's are its combined confidence,
 which runs lower, so each mode has its own thresholds. Both are fitted on the tune split
-(scripts/fit_verdicts.py) and the numbers behind them are in README.md.
+(scripts/fit_verdicts.py) and the numbers behind them are in docs/NUMBERS.md.
 """
 
 from __future__ import annotations

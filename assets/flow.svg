@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 330" width="1200" height="330" role="img" aria-labelledby="t d">
+  <title id="t">How a diagnosis works</title>
+  <desc id="d">A photo and notes are read by a vision model, Nemotron Ultra ranks the likely causes, Leaf checks sources, weather and alerts, and code decides one of three verdicts: Confident, Likely, or Send a sample to a lab.</desc>
+  <style>
+    .card { fill: #f3faf4; stroke: #cfe3d3; stroke-width: 1.5; }
+    .node { fill: #ffffff; stroke: #b9d6c0; stroke-width: 2; }
+    .h { font: 700 19px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #12391f; }
+    .s { font: 400 14.5px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #4e6a57; }
+    .n { font: 700 15px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #ffffff; }
+    .line { stroke: #b9d6c0; stroke-width: 4; stroke-linecap: round; }
+    .chip text { font: 700 16px -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; }
+    .lit { animation: lit 10s ease-in-out infinite; }
+    @keyframes lit {
+      0%, 100% { stroke: #b9d6c0; fill: #ffffff; }
+      4%, 16%  { stroke: #18793a; fill: #e4f6e8; }
+      24%      { stroke: #b9d6c0; fill: #ffffff; }
+    }
+    .badge { fill: #18793a; }
+    .dot { fill: #18793a; }
+    .halo { fill: #18793a; opacity: .25; animation: halo 1.4s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+    @keyframes halo { from { transform: scale(.6); opacity: .45; } to { transform: scale(2.2); opacity: 0; } }
+    .chipA { animation: pulseA 10s ease-in-out infinite; }
+    @keyframes pulseA { 0%, 70%, 100% { opacity: .55; } 80%, 92% { opacity: 1; } }
+    .chipB { animation: pulseB 10s ease-in-out infinite; }
+    @keyframes pulseB { 0%, 74%, 100% { opacity: .55; } 84%, 94% { opacity: 1; } }
+    .chipC { animation: pulseC 10s ease-in-out infinite; }
+    @keyframes pulseC { 0%, 78%, 100% { opacity: .55; } 88%, 96% { opacity: 1; } }
+  </style>
+  <rect class="card" x="1" y="1" width="1198" height="328" rx="26"/>
+
+  <line class="line" x1="120" y1="120" x2="1080" y2="120"/>
+
+  <!-- stations -->
+  <g>
+    <circle class="node lit" cx="120" cy="120" r="46" style="animation-delay:0s"/>
+    <text x="120" y="132" text-anchor="middle" style="font:700 34px Georgia, serif;fill:#18793a">1</text>
+    <text class="h" x="120" y="196" text-anchor="middle">Photo + notes</text>
+    <text class="s" x="120" y="220" text-anchor="middle">up to three photos,</text>
+    <text class="s" x="120" y="240" text-anchor="middle">what you noticed</text>
+  </g>
+  <g>
+    <circle class="node lit" cx="360" cy="120" r="46" style="animation-delay:1.6s"/>
+    <text x="360" y="132" text-anchor="middle" style="font:700 34px Georgia, serif;fill:#18793a">2</text>
+    <text class="h" x="360" y="196" text-anchor="middle">Read the photo</text>
+    <text class="s" x="360" y="220" text-anchor="middle">Kimi K2.6, with Nemotron</text>
+    <text class="s" x="360" y="240" text-anchor="middle">Super VL as fallback</text>
+  </g>
+  <g>
+    <circle class="node lit" cx="600" cy="120" r="46" style="animation-delay:3.2s"/>
+    <text x="600" y="132" text-anchor="middle" style="font:700 34px Georgia, serif;fill:#18793a">3</text>
+    <text class="h" x="600" y="196" text-anchor="middle">Rank the causes</text>
+    <text class="s" x="600" y="220" text-anchor="middle">Nemotron Ultra, with a</text>
+    <text class="s" x="600" y="240" text-anchor="middle">probability for each</text>
+  </g>
+  <g>
+    <circle class="node lit" cx="840" cy="120" r="46" style="animation-delay:4.8s"/>
+    <text x="840" y="132" text-anchor="middle" style="font:700 34px Georgia, serif;fill:#18793a">4</text>
+    <text class="h" x="840" y="196" text-anchor="middle">Check the evidence</text>
+    <text class="s" x="840" y="220" text-anchor="middle">extension sources (Tavily),</text>
+    <text class="s" x="840" y="240" text-anchor="middle">your weather, alerts</text>
+  </g>
+  <g>
+    <circle class="node lit" cx="1080" cy="120" r="46" style="animation-delay:6.4s"/>
+    <text x="1080" y="132" text-anchor="middle" style="font:700 34px Georgia, serif;fill:#18793a">5</text>
+    <text class="h" x="1080" y="196" text-anchor="middle">Verdict</text>
+    <text class="s" x="1080" y="220" text-anchor="middle">decided in code,</text>
+    <text class="s" x="1080" y="240" text-anchor="middle">never by the model</text>
+  </g>
+
+  <!-- moving dot -->
+  <g>
+    <circle class="halo" r="12"><animateMotion dur="10s" repeatCount="indefinite" path="M120 120 L 1080 120" keyPoints="0;1;1" keyTimes="0;0.7;1" calcMode="linear"/></circle>
+    <circle class="dot" r="9"><animateMotion dur="10s" repeatCount="indefinite" path="M120 120 L 1080 120" keyPoints="0;1;1" keyTimes="0;0.7;1" calcMode="linear"/></circle>
+  </g>
+
+  <!-- verdict chips -->
+  <g class="chip chipA"><rect x="690" y="268" width="150" height="38" rx="19" fill="#dff3e3" stroke="#18793a"/><text x="765" y="293" text-anchor="middle" fill="#0f5a28">Confident</text></g>
+  <g class="chip chipB"><rect x="852" y="268" width="130" height="38" rx="19" fill="#fdf0d2" stroke="#b8791a"/><text x="917" y="293" text-anchor="middle" fill="#7a4d08">Likely</text></g>
+  <g class="chip chipC"><rect x="994" y="268" width="170" height="38" rx="19" fill="#fbe1de" stroke="#b3382c"/><text x="1079" y="293" text-anchor="middle" fill="#8a2218">Send a sample</text></g>
+</svg>
