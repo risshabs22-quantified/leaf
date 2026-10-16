@@ -6,6 +6,8 @@ Field by field, ready to paste. Numbers come from `README.md` and `evals/`; keep
 
 Leaf
 
+**Logo:** `assets/logo-512.png` (square tile) or `assets/logo.svg` (the mark alone).
+
 ## Tagline
 
 Snap a sick leaf. Get a cited care plan, or a case ready for a plant clinic.

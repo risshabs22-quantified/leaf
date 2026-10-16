@@ -55,7 +55,7 @@ body:has(#forest) { background: transparent; }
 .site { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px var(--gutter); border-bottom: 1px solid var(--glass-line); background: var(--glass-solid); font-family: var(--sans); }
 @supports (backdrop-filter: blur(1px)) { .site { background: var(--glass); backdrop-filter: blur(16px) saturate(1.2); } }
 .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); line-height: 1; }
-.mark { width: 22px; height: 30px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.mark { width: auto; height: 32px; display: block; }
 .word { font: 500 1.35rem/1 var(--serif); letter-spacing: -.01em; }
 .brand:hover { color: var(--green); }
 .nav { display: flex; align-items: center; gap: clamp(12px, 2.4vw, 28px); font-size: 15px; }

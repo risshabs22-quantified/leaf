@@ -12,6 +12,7 @@
       <stop offset="1" stop-color="#d3f2b5" stop-opacity="0"/>
     </radialGradient>
     <path id="leaf" d="M0 0 C 16 -24, 54 -24, 74 0 C 54 24, 16 24, 0 0 Z"/>
+    <linearGradient id="lg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a8ea60"/><stop offset=".55" stop-color="#4fbd5a"/><stop offset="1" stop-color="#0e8a45"/></linearGradient>
     <path id="rib" d="M4 0 L 66 0" fill="none"/>
     <clipPath id="round"><rect width="1200" height="400" rx="28"/></clipPath>
   </defs>
@@ -84,7 +85,11 @@
     </g>
 
     <!-- text -->
-    <g class="in" style="animation-delay:.2s"><text class="t1" x="70" y="178">Leaf</text></g>
+        <g transform="translate(38 22) scale(.86)"><g class="in" style="animation-delay:.1s">
+      <path d="M60 160 C61 172 58 182 54 195" fill="none" stroke="#1b9a4c" stroke-width="6" stroke-linecap="round"/>
+      <path d="M60 8 C76 22 97 48 97 80 C97 118 80 148 60 163 C40 148 23 118 23 80 C23 48 44 22 60 8 Z" fill="url(#lg)"/>
+    </g></g>
+    <g class="in" style="animation-delay:.2s"><text class="t1" x="150" y="158">Leaf</text></g>
     <g class="in" style="animation-delay:.7s">
       <text class="t2" x="76" y="250">What your garden needs today,</text>
       <text class="t2" x="76" y="286">the plan for the whole season,</text>
