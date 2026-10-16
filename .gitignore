@@ -14,3 +14,13 @@ evals/results.jsonl
 .DS_Store
 /data/
 .wrangler/
+
+# Anything that could hold a credential, kept out of `git add -A`
+.dev.vars*
+*.pem
+*.key
+*.p12
+*.db
+*.sqlite
+*.sqlite3
+*secrets*.json
