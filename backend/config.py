@@ -161,6 +161,8 @@ class Settings:
     tavily_daily_cap: int = field(default_factory=lambda: _env_int("LEAF_TAVILY_DAILY_CAP", 0))
     # Credits kept back each month so diagnoses never run dry (see backend/search.py).
     search_reserve: int = field(default_factory=lambda: _env_int("LEAF_SEARCH_RESERVE", 100))
+    # Fixed search allowances for chosen days, e.g. "2026-10-16:40" for a recording day.
+    tavily_day_allowance: str = field(default_factory=lambda: _env("LEAF_TAVILY_DAY_ALLOWANCE"))
     request_timeout_s: int = field(default_factory=lambda: _env_int("LEAF_TIMEOUT_S", 120))
     # Whole-request budget for one diagnosis or chat, across every model fallback.
     deadline_s: int = field(default_factory=lambda: _env_int("LEAF_DEADLINE_S", 100))

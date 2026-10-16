@@ -59,6 +59,8 @@
   "vars": {
     "LEAF_DAILY_CAP": "60",
     "LEAF_SEARCH_RESERVE": "20",
+    // Demo-video capture days only (60 credits in total); remove after recording.
+    "LEAF_TAVILY_DAY_ALLOWANCE": "2026-10-16:40,2026-10-17:20",
     "LEAF_VISION_MODEL": "moonshotai/Kimi-K2.6",
     "LEAF_TRUSTED_PROXY_HOPS": "1",
     "LEAF_JOURNAL_BUCKET": "leaf-journal",

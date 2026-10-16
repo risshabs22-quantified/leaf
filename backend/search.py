@@ -62,6 +62,18 @@ DEV_RESERVE_CREDITS = 100
 FALLBACK_DAILY_CAP = 30  # when the balance cannot be read
 
 
+def parse_day_allowances(spec: str) -> dict[date, int]:
+    """'2026-10-16:40,2026-10-17:20' -> {date: credits}. Bad entries are ignored."""
+    out: dict[date, int] = {}
+    for part in filter(None, (p.strip() for p in spec.split(","))):
+        day, _, n = part.partition(":")
+        try:
+            out[date.fromisoformat(day)] = max(0, int(n))
+        except ValueError:
+            log.warning("ignoring Tavily day allowance %r", part)
+    return out
+
+
 def size_daily_cap(plan_limit: int, plan_usage: int, today: date, reserve: int) -> int:
     """Spread what is left of this month's credits evenly over the days left in it, so a
     scraper can never use up the month in a day."""
@@ -94,6 +106,7 @@ class CreditBudget:
         max_daily: int = 0,
         reserve: int = DEV_RESERVE_CREDITS,
         today: Callable[[], date] = date.today,
+        day_allowances: dict[date, int] | None = None,
     ):
         self._balance, self.max_daily, self.reserve, self._today = (
             balance,
@@ -104,6 +117,9 @@ class CreditBudget:
         self.day: date | None = None
         self.cap = 0
         self.used = 0
+        # Set days get a fixed allowance instead of the even spread (LEAF_TAVILY_DAY_ALLOWANCE),
+        # for example a recording day. Still capped by the real balance.
+        self.day_allowances = day_allowances or {}
         # Optional shared store (the platform KV). A container restart then picks up the
         # day's allowance where it was instead of sizing a fresh one from what is left.
         self.store: Any = None
@@ -135,6 +151,8 @@ class CreditBudget:
                 used_today = max(0, used - start)
                 if self.max_daily:
                     cap = min(cap, self.max_daily)
+                if today in self.day_allowances:
+                    cap = min(self.day_allowances[today], max(0, limit - start))
             except Exception as exc:  # noqa: BLE001 - never block Leaf on the usage endpoint
                 log.warning("Tavily balance unavailable (%s); daily cap %d", exc, cap)
         self.day, self.cap, self.used = today, cap, used_today

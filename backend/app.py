@@ -57,6 +57,7 @@ from backend.search import (
     NullSearcher,
     Searcher,
     TavilySearcher,
+    parse_day_allowances,
     search_paused,
     tavily_balance,
 )
@@ -250,6 +251,7 @@ async def build_leaf(settings: Settings) -> Leaf:
             lambda: tavily_balance(key),
             max_daily=settings.tavily_daily_cap,
             reserve=settings.search_reserve,
+            day_allowances=parse_day_allowances(settings.tavily_day_allowance),
         )
         searcher: Searcher = TavilySearcher(key, budget)
     else:

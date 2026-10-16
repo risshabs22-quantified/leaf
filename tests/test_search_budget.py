@@ -142,3 +142,19 @@ async def test_deep_still_answers_when_search_is_paused_and_says_so(settings):
     assert res.status == "done" and res.differential and res.notice == PAUSED_NOTICE
     skipped = [s for s in res.steps if s.tool == "search_sources"]
     assert skipped and "paused" in skipped[0].skipped
+
+
+async def test_a_chosen_day_gets_its_own_allowance_capped_by_the_balance():
+    from backend.search import parse_day_allowances
+
+    async def balance():
+        return 1000, 900  # 100 left
+
+    allow = parse_day_allowances("2026-10-16:40, bad, 2026-10-17:500")
+    day = [date(2026, 10, 16)]
+    budget = CreditBudget(balance, reserve=20, today=lambda: day[0], day_allowances=allow)
+    assert await budget.remaining() == 40  # instead of (100 - 20) // 16 = 5
+    day[0] = date(2026, 10, 17)
+    assert await budget.remaining() == 100  # never more than the real balance
+    day[0] = date(2026, 10, 18)
+    assert await budget.remaining() == 80 // 14  # back to the even spread
