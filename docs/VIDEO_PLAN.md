@@ -2,6 +2,8 @@
 
 Phase 1 of the video brief. Evidence: [`VIDEO_RESEARCH.md`](VIDEO_RESEARCH.md). Numbers: [`NUMBERS.md`](NUMBERS.md) only. Nothing is built until the maintainer approves this plan.
 
+> **v2 amendment (16 Oct 2026):** the shipped video (`~/leaf-video/out/demo.mp4`) follows §0's honest beat, NOT the aspirational narration in §§S06–S08 below (Likely verdict, Tavily sources, cited plan, spray window). The captured run went Deep → lab with search paused, so v2 shows the skip on screen with real trace numbers (vision 2.3 s, critic 3.8 s, $0.044, 0 credits). Full field-by-field audit: `~/leaf-video/REVIEW_AUDITS.md`; milestone: `PROGRESS.md`.
+
 ## 0. What is true on the live site today (checked 16 Oct 2026)
 
 One real-browser pass on https://leafathon.site at phone width, with the MCP test garden in Minneapolis.
