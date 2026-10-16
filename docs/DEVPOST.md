@@ -16,7 +16,7 @@ Early plant problems look alike. A fungal leaf spot, a nutrient deficiency and s
 
 ## What it does
 
-Leaf is a garden platform with a plant doctor inside it. **Today** tells you each morning what to water, protect or check, from your own weather and plants, and warns you by push notification about frost, heat, wind and floods. A **season plan** writes 52 weeks of sowing, planting, feeding and protection around your frost dates, checked by code rules and a second model. **Radar** shows what university extension services say is being seen in your state this week, each report with the page's own sentence and link. **Connect** gives you an API, an MCP server (so Claude can ask your garden questions), Home Assistant moisture readings and an optional Telegram bot. The doctor is the part that works the case when a plant goes wrong:
+Leaf is a garden platform with a plant doctor inside it. **Today** tells you each morning what to water, protect or check, from your own weather and plants, and warns you by push notification about frost, heat, wind and floods. A **season plan** writes 52 weeks of sowing, planting, feeding and protection around your frost dates, checked by code rules and a second model. **Radar** shows what university extension services say is being seen in your state this week, each report with the page's own sentence and link. **Connect** gives you an API, an MCP server (so Claude can ask your garden questions), and Home Assistant moisture readings. The doctor is the part that works the case when a plant goes wrong:
 
 You upload up to three photos of a struggling plant, add a note and your town if you like, and Leaf:
 
@@ -73,16 +73,18 @@ Details and suggestions for the platform teams are in `docs/FEEDBACK.md`.
 
 ## Accomplishments that we're proud of
 
-**Held-out:** 24 photos Leaf was never tuned on (12 diseases, 6 pests, 6 nutrient, weather or other problems), one run per mode on 15 October. Details and the rules that keep the split clean are in `evals/README.md`.
+**Held-out:** 24 photos Leaf was never tuned on (12 diseases, 6 pests, 6 nutrient, weather or other problems). Details and the rules that keep the split clean are in `evals/README.md`.
 
-| Mode | Top-1 | Top-3 | When it said Confident | Sent to a lab | Cost per case | Time per case |
-| --- | --- | --- | --- | --- | --- | --- |
-| Quick | 33% | 46% | right 3 of 7 | 4% | $0.007 | 10.5 s |
-| Auto | 33% | 50% | right 6 of 9 | 42% | $0.031 | 27 s |
+| Run | Photo model | Top-1 | Top-3 | When it said Confident |
+| --- | --- | --- | --- | --- |
+| Quick | Nemotron 3.5 Super VL | 33% | 46% | right 3 of 7 |
+| Quick (control) | Kimi K2.6 | 50% | 67% | right 6 of 9 |
+| Auto, first run | Nemotron 3.5 Super VL | 33% | 50% | right 6 of 9 |
+| Auto, second run, same photos | Nemotron 3.5 Super VL | 46% | 50% | right 2 of 4 |
 
-These are hard photos (fruit close-ups, insects, odd problems) and the first answer is right only a third of the time. What Leaf does well is know when it is unsure: Auto is far better calibrated than Quick (Brier 0.18 against 0.36), and 9 of its 10 lab referrals were cases where the top answer was wrong. Deep was not run on this split. On the 52 photos we tuned on, Auto scored 58% (top-3 73%, Confident right 14 of 16), but those numbers are optimistic. The tune runs used Kimi K2.6 for the photo step and the held-out runs used Nemotron 3.5 Super VL.
+The vision model, not overfitting, explains most of the gap to the tune split: with Kimi, Quick scored 52% on the tune split and 50% held-out; with Nemotron 3.5 Super VL, 36% and 33%. We could not close the gap with thinking, larger images or a more detailed prompt. We kept the all-NVIDIA pipeline for now and switched "Confident" off for it, because on the tune split no threshold made it right 85% of the time. Leaf says "Likely" or "Send a sample" instead. The second Auto run saw the same photos as the first and only the verdict thresholds changed, so its 46% should not be read as an improvement. Deep was not run on this split. With Kimi on the 52 tune photos, Auto scored 58% (top-3 73%, Confident right 14 of 16), which is optimistic.
 
-- Saying "send a sample" is measured, not just claimed: on held-out photos Auto's "Confident" was right 6 of 9 times, against 3 of 7 for Quick.
+- Honest uncertainty is measured: the held-out photos are hard, and Auto is better calibrated than Quick (Brier 0.18 and 0.28, against 0.36).
 - Every care-plan step cites a passage Leaf read, and unsupported steps are removed before you see them.
 - The whole case is visible: the differential re-ranking live, the weather, the sources and the second opinion.
 
@@ -95,7 +97,7 @@ These are hard photos (fruit close-ups, insects, odd problems) and the first ans
 ## What's next
 
 - Grow the held-out set with our own phone photos, and report it without tuning on it.
-- Re-tune the verdict thresholds for Super VL on a bigger held-out set (they were fitted with Kimi's readings).
+- Close the gap between the NVIDIA vision model and Kimi (about 16 points first time), then fit "Confident" again on a bigger tune set.
 - Spray windows that also respect a product's pre-harvest interval, read from its label.
 - A targeted close-up question for late blight's tell-tale signs (water-soaked margins, white growth on the underside) to fix its most common miss.
 

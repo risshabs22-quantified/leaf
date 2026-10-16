@@ -23,7 +23,7 @@ Keep it short: newest entries first.
 | Platform M3: knowledge graph (cited species profiles, verified facts), identify from a photo with one-tap confirm, plant-ID eval | done | `docs/LEAF_PLATFORM.md` M3; 663 tests; 40-photo eval |
 | Platform M4: Leaf Care (morning planner, Today, notifications service, Web Push PWA, 14:00 frost/heat check, NWS alerts, Nano triage) | done | `docs/LEAF_PLATFORM.md` M4; 703 tests; push accepted by FCM |
 | Platform M5: Season Plan (Ultra outline + monthly chunks, code rules, Super verification, replanning, calendar export, printable page, Doctor wiring) | done | `docs/LEAF_PLATFORM.md` M5; 731 tests; live plan $0.21 |
-| Platform M6: Connect (REST API v1 and OpenAPI, API keys with scopes and per-key limits, MCP server, Home Assistant readings, Telegram bot) | built and checked locally; Telegram waits for a bot token | `docs/LEAF_PLATFORM.md` M6; 765 tests |
+| Platform M6: Connect (REST API v1 and OpenAPI, API keys with scopes and per-key limits, MCP server, Home Assistant readings) | built and checked locally; a Telegram bot was built and then cancelled on 2026-10-15 (code removed) | `docs/LEAF_PLATFORM.md` M6; 765 tests |
 | Platform M7: Leaf Radar, `/ops`, landing page and README as a platform | done | `docs/LEAF_PLATFORM.md` M7; 822 tests; real Tavily and Nemotron runs; production check |
 | README final, video, Devpost draft | Devpost drafted (`docs/DEVPOST.md`); video todo | `/submission-check` |
 
@@ -39,7 +39,7 @@ Keep it short: newest entries first.
 - [x] Judge simulation at 375 and 1280 px on production; top issues fixed
 - [x] Temporary files removed (`/tmp/leaf-m7`, `/tmp/leaf-m6`, `/tmp/leafwork`, `/tmp/leaf-judge`, `.playwright-mcp/`)
 - [x] Pushed and deployed (`make deploy-cloudflare`), then a real-browser pass on production at 375 px: 21 steps, no console errors or failed requests (it caught a `today.js` syntax error that my first deploy shipped; fixed, and `tests/test_hardening.py` now parses every frontend script)
-- [ ] Real-device checks by the maintainer: push on a phone, Telegram with a bot token, Claude Code MCP (steps in the final report of this session)
+- [ ] Real-device checks by the maintainer: push on a phone, Claude Code MCP (steps in the final report of this session)
 - [ ] Freeze Oct 22; submission by Oct 30, 10:00 AM PT; demo video; Devpost
 
 ## Blockers
@@ -50,8 +50,13 @@ Keep it short: newest entries first.
 | --- | --- | --- | --- | --- | --- |
 | 2026-10-13 | 52 tune | Quick 52% / Deep 56% / Auto 58% | 75% / 73% / 73% | lab 6% / 38% / 25% | three verdicts, Auto, fitted thresholds; checklist off (48% with it) |
 | 2026-10-15 | 24 held-out test | Quick 33% / Auto 33% | 46% / 50% | lab 4% / 42% | first run on the held-out split; vision model was Nemotron 3.5 Super VL (tune runs: Kimi). Auto Confident right 6 of 9, Quick 3 of 7 |
+| 2026-10-15 | 52 tune, Quick, search off | Nemotron VL 36% (Kimi 52%) | 62% (Kimi 75%) | lab 4% | vision model swap; experiments: thinking on 40/52, 1568 px 33/58, detailed prompt 31/50, none better than default beyond noise |
+| 2026-10-15 | 24 held-out, Quick, search off | Kimi control 50% (Nemotron VL 33%) | 67% (46%) | lab 17% (4%) | control for the vision model: same photos |
+| 2026-10-15 | 24 held-out, Auto, second run (same photos) | 46% (first run 33%) | 50% (50%) | lab 33% (42%) | Quick and Deep never say Confident with the NVIDIA vision model; Confident right 2 of 4 before that rule |
 
 ## Session log
+- 2026-10-15: **Vision-model accuracy work** (Kimi K2.6 against Nemotron 3.5 Super VL). Spend about $2.9 of the $3 set, 22 of 60 Tavily credits. Findings: the held-out drop was mostly the vision model (Kimi: 52% tune, 50% held-out Quick; Nemotron VL: 36% and 33%), not overfitting. No tune-split knob closed the gap. No Quick threshold gives 85% Confident precision with Nemotron VL, so Quick and Deep never say Confident with an NVIDIA vision model (`quick_thresholds`, `deep_thresholds` in `backend/verdict.py`). Deep with Nemotron VL could not be fitted within the credit budget. Decision for the maintainer: keep all-NVIDIA (about 16 points lower on Quick) or pin Kimi for photos (`LEAF_VISION_MODEL=moonshotai/Kimi-K2.6` in `cloudflare/wrangler.jsonc` vars). Production runs Nemotron VL until that is decided. MCP connected to Claude Code and tested (care plan, weather risk, diagnose via a real client).
+- 2026-10-15: **Telegram bot cancelled and removed.** The maintainer cancelled the bot. Deleted `backend/connect/telegram.py`, `backend/notify/telegram.py` and `scripts/telegram_setup.py`, with the webhook route, state, settings, link-code endpoints and repo methods, the Telegram channel in the notifications service (Web Push is the only channel), the Worker secrets and the deploy-script block, the Connect page section, and the claims in the README, Devpost and landing page. Migration 0006 is untouched (its two Telegram tables stay unused). `make check` green, 832 tests.
 - 2026-10-15: **Release-candidate pass** (no new features). Judge simulation, whole-platform review, held-out accuracy.
   - **Balances:** Tavily 749 of 1,000 used (251 left) before the held-out runs; Auto spent about 26 credits and Quick none. Token Factory: production meter $0.43 over 95 calls (Oct 15) and the local dev meter $0.65; Nebius has no balance API, so credit left is read in the console (Billing, then Usage). Reserve for diagnoses: production keeps 20 credits back (`LEAF_SEARCH_RESERVE`), Radar takes 4 a day (one state).
   - **Held-out accuracy** (24 photos, never tuned on, one run each): Quick 33% top-1, 46% top-3, Confident right 3 of 7; Auto 33%, 50%, Confident right 6 of 9, 10 of 24 sent to a lab (9 warranted), Brier 0.18 against 0.36. Far below the tuned 58%: hard photos, and the vision model changed from Kimi K2.6 to Nemotron 3.5 Super VL between the two runs. README, landing page and Devpost now lead with these; tune numbers are labelled as tune.
@@ -73,7 +78,7 @@ Keep it short: newest entries first.
   - **Review:** one blocker (the bot token reached the logs through the HTTP library's request log) and five should-fix items, fixed with tests, one confirmed by mutation.
   - **Also fixed:** four M4 tests that failed between 21:00 and 07:00 UTC (quiet hours).
   - **Production check:** migration 0006 applied; the Connect page, a key, a TEST reading, the REST API and MCP (both protocol eras) worked in a real browser session, Telegram stayed off and hidden; test garden deleted.
-  - **To finish Telegram (needs you):** make a bot with @BotFather, add `TELEGRAM_BOT_TOKEN=<token>` to the env file, run `make deploy-cloudflare`, then `.venv/bin/python -m scripts.telegram_setup`.
+  - **Telegram:** cancelled by the maintainer on 2026-10-15 and removed (see the top of this log); nothing left to finish.
   - **Live, local:** the sensor override, REST diagnose (12 s) and MCP calls with real weather, Tavily and Nemotron; the `/connect` page in headless Chromium at 375 px.
 - 2026-10-15: **Leaf Platform M5, Season Plan** (`backend/season/`, `/season`). Details are in `docs/LEAF_PLATFORM.md` M5.
   - **Writing:** one Ultra outline call fixes every planting date. Then one Ultra call per month, saved as each is written, so a timeout retry writes only what is missing.

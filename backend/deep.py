@@ -54,7 +54,7 @@ from backend.schemas import (
 )
 from backend.search import PAUSED_NOTICE, _trust, search_paused
 from backend.store import CaseStore
-from backend.verdict import DEEP, Decision, decide, more_cautious
+from backend.verdict import Decision, decide, deep_thresholds, more_cautious
 from backend.vision import describe
 
 log = logging.getLogger("leaf.deep")
@@ -79,7 +79,12 @@ async def _ignore(_: dict[str, Any]) -> None:
 CRITIC_ESCALATES_BELOW = 0.5
 
 
-def deep_decision(case: Case, confidence: Confidence, critic: CriticOpinion | None) -> Decision:
+def deep_decision(
+    case: Case,
+    confidence: Confidence,
+    critic: CriticOpinion | None,
+    vision_model: str | None = None,
+) -> Decision:
     """Deep's verdict: the shared rules, scored on the combined confidence."""
     disagreement = ""
     hyps = case.differential
@@ -99,7 +104,7 @@ def deep_decision(case: Case, confidence: Confidence, critic: CriticOpinion | No
     return decide(
         [(h.name, h.probability) for h in hyps],
         quality,
-        DEEP,
+        deep_thresholds(vision_model),
         also_named=also,
         top_score=confidence.value,
         disagreement=disagreement,
@@ -530,7 +535,10 @@ class DeepLeaf:
         flags += check_summary(plan, sources_text)
         apply_garden(plan, case.garden)  # before the verdict, so an emptied plan is not Confident
         decision = self._with_regional(
-            case, confidence, critic, deep_decision(case, confidence, critic)
+            case,
+            confidence,
+            critic,
+            deep_decision(case, confidence, critic, self.leaf.vision_model),
         )
         if plan_failed:  # as in Quick: no plan at all, so a lab or extension office decides
             decision = Decision(
@@ -627,7 +635,7 @@ class DeepLeaf:
         if case.regional is None:
             return raw
         case.differential.sort(key=lambda h: h.probability, reverse=True)
-        return more_cautious(raw, deep_decision(case, confidence, critic))
+        return more_cautious(raw, deep_decision(case, confidence, critic, self.leaf.vision_model))
 
     def _response(
         self,

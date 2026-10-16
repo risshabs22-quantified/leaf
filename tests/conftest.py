@@ -278,7 +278,7 @@ def settings() -> Settings:
     return Settings(
         nebius_api_key="test",
         tavily_api_key="test",
-        vision_model="nvidia/fake-vl",
+        vision_model="vendor/fake-vl",
         deep_blend_first=0.0,
     )
 

@@ -62,7 +62,7 @@ async def test_diagnose_happy_path_routes_models(settings):
     assert res.diagnosis.candidates[0].name == "Early blight"
     # Routing: vision model, then Ultra with reasoning, then Lightning for writing.
     assert llm.calls == [
-        ("vision", "nvidia/fake-vl"),
+        ("vision", "vendor/fake-vl"),
         ("diagnose", NEMOTRON_ULTRA),
         ("plan", NEMOTRON_LIGHTNING),
     ]

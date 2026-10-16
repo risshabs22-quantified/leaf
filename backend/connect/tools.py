@@ -1,8 +1,8 @@
-"""What Leaf can do for a caller, once: the REST API, MCP and Telegram all call these.
+"""What Leaf can do for a caller, once: the REST API and MCP both call these.
 
 Each function takes the request (for app state), the `Caller` (garden, limits identity) and
 plain arguments, and returns plain JSON-able data. Model-spending tools also apply the shared
-per-identity limiter, so a key, a Telegram chat and a web visitor are limited the same way.
+per-identity limiter, so a key and a web visitor are limited the same way.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from backend.schemas import DiagnoseResponse, Garden
 from backend.season.service import PlanUnavailable, link_diagnosis
 
 MAX_STEPS = 8
-GARDEN_MODEL_CALLS_PER_DAY = 30  # across every key and Telegram chat of one garden
+GARDEN_MODEL_CALLS_PER_DAY = 30  # across every key of one garden
 
 
 def base_url(request: Request) -> str:
@@ -81,7 +81,7 @@ def diagnosis_summary(
 
 async def spend_model_call(request: Request, garden: Garden | Any) -> None:
     """One call that may spend model credits, against the garden's own daily budget: five
-    keys and a few chats of one garden still share these, so a single garden cannot use up the
+    keys of one garden still share these, so a single garden cannot use up the
     day's diagnoses for everyone (the shared limiter and the spend cap sit above this)."""
     repo = request.app.state.data.repo
     service = f"model_calls:{garden.id}"
@@ -89,7 +89,7 @@ async def spend_model_call(request: Request, garden: Garden | Any) -> None:
         raise HTTPException(
             429,
             f"This garden has used its {GARDEN_MODEL_CALLS_PER_DAY} model calls for today, "
-            "across all its keys and chats. Try again tomorrow.",
+            "across all its keys. Try again tomorrow.",
         )
     await repo.add_api_usage(service, 1)
 

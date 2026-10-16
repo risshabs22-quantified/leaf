@@ -9,7 +9,7 @@ import { WAKING_HTML } from "./waking";
 export { ContainerProxy } from "@cloudflare/containers";
 
 // Worker secrets (deployed with `--secrets-file`), passed to the container and nowhere else.
-const SECRETS = ["NEBIUS_API_KEY", "TAVILY_API_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "VAPID_PRIVATE_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_WEBHOOK_SECRET"] as const;
+const SECRETS = ["NEBIUS_API_KEY", "TAVILY_API_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "VAPID_PRIVATE_KEY"] as const;
 // Plain settings from `vars` in wrangler.jsonc.
 const SETTINGS = [
   "LEAF_DAILY_CAP",

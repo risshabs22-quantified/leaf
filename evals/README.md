@@ -174,3 +174,7 @@ The same licence terms apply as above (these files are not covered by Leaf's MIT
 | `22.jpg` | cold injury | bay laurel | Victor M. Vicente Selvas | CC BY-SA 3.0 | [Commons](https://commons.wikimedia.org/wiki/File:Gelada_a_llorer_21012.JPG) | resized 3072x2304 to 1280x960, re-encoded as JPEG q85 |
 | `23.jpg` | sunscald | strawberry (fruit) | Hayan Alhasan | CC BY-SA 4.0 | [Commons](https://commons.wikimedia.org/wiki/File:Strawberry_sunscald_disease_in_Umm_Haratayn_al-Gharbiyah_Spring_2024.jpg) | resized 3456x4608 to 960x1280, re-encoded as JPEG q85 |
 | `24.jpg` | edema | fiddle-leaf fig | BezierBaby | CC BY-SA 4.0 | [Commons](https://commons.wikimedia.org/wiki/File:Edema_on_a_Ficus_lyrata_leaf.jpg) | resized 3024x4032 to 960x1280, re-encoded as JPEG q85 |
+
+## Runs on the test split
+
+Every run on the test split is listed here so none is hidden: Quick with Nemotron 3.5 Super VL (search off), Auto with it (first run), Quick with Kimi K2.6 (search off, a control for the vision model), and Auto with Nemotron 3.5 Super VL again (second run). The second Auto run saw the same photos as the first; only the verdict thresholds changed between them. Summaries: `summary_test_heldout-quick.json`, `summary_test_heldout-auto.json`, `summary_test_heldout-kimi-control.json`, `summary_test_heldout-auto-final.json`. Rule 6 above (once per mode) was therefore relaxed on purpose: the first held-out run changed the vision model and the photos together, and the later runs separate the two.

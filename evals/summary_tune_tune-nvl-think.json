@@ -1,0 +1,77 @@
+{
+ "split": "tune",
+ "label": "tune-nvl-think",
+ "summary": {
+  "quick": {
+   "cases": 52,
+   "errors": 0,
+   "top1": 0.404,
+   "top3": 0.519,
+   "brier": 0.296,
+   "escalated": 0.135,
+   "escalation_precision": 0.429,
+   "escalation_recall": 0.097,
+   "mean_cost_usd": 0.0078,
+   "mean_tavily_credits": null,
+   "mean_seconds": 13.4,
+   "lab_rate": 0.135,
+   "verdicts": {
+    "confident": {
+     "cases": 6,
+     "top1_right": 4,
+     "top3_right": 4
+    },
+    "likely": {
+     "cases": 39,
+     "top1_right": 13,
+     "top3_right": 19
+    },
+    "lab": {
+     "cases": 7,
+     "top1_right": 4,
+     "top3_right": 4,
+     "warranted": 4
+    }
+   },
+   "investigated": null,
+   "reliability": [
+    {
+     "bin": "0.0-0.5",
+     "cases": 9,
+     "mean_confidence": 0.406,
+     "accuracy": 0.222
+    },
+    {
+     "bin": "0.5-0.6",
+     "cases": 13,
+     "mean_confidence": 0.548,
+     "accuracy": 0.538
+    },
+    {
+     "bin": "0.6-0.7",
+     "cases": 9,
+     "mean_confidence": 0.65,
+     "accuracy": 0.333
+    },
+    {
+     "bin": "0.7-0.8",
+     "cases": 13,
+     "mean_confidence": 0.732,
+     "accuracy": 0.385
+    },
+    {
+     "bin": "0.8-0.9",
+     "cases": 6,
+     "mean_confidence": 0.838,
+     "accuracy": 0.333
+    },
+    {
+     "bin": "0.9-1.0",
+     "cases": 2,
+     "mean_confidence": 0.91,
+     "accuracy": 1.0
+    }
+   ]
+  }
+ }
+}

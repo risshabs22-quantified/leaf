@@ -31,7 +31,7 @@ from backend.schemas import (
     Observation,
 )
 from backend.search import PAUSED_NOTICE, Searcher, search_all, search_paused
-from backend.verdict import QUICK, Decision, decide, more_cautious
+from backend.verdict import Decision, decide, more_cautious, quick_thresholds
 from backend.vision import describe
 
 log = logging.getLogger("leaf.pipeline")
@@ -108,8 +108,9 @@ class Leaf:
             repair_model=s.repair_model,
         )
         diagnosis.candidates.sort(key=lambda c: c.confidence, reverse=True)
+        thresholds = quick_thresholds(self.vision_model)
         decision = decide(
-            [(c.name, c.confidence) for c in diagnosis.candidates], obs.image_quality, QUICK
+            [(c.name, c.confidence) for c in diagnosis.candidates], obs.image_quality, thresholds
         )
         regional = None
         for c in diagnosis.candidates:
@@ -126,7 +127,7 @@ class Leaf:
                 decide(
                     [(c.name, c.confidence) for c in diagnosis.candidates],
                     obs.image_quality,
-                    QUICK,
+                    thresholds,
                 ),
             )
 

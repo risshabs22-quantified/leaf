@@ -694,7 +694,7 @@ def api(responses=None):
     s = Settings(
         nebius_api_key="test",
         tavily_api_key="test",
-        vision_model="nvidia/fake-vl",
+        vision_model="vendor/fake-vl",
         deep_blend_first=0.0,
         public_url="https://leaf.test",
     )

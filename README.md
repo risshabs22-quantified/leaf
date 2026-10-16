@@ -2,7 +2,7 @@
 
 **A garden intelligence platform. Leaf plans your garden's day and year from your own weather, diagnoses what goes wrong, and shows the source for everything it says.**
 
-Give Leaf your plants and a place. Each morning it works out what to water, protect, feed or check, from your local forecast, National Weather Service alerts and the published rules for each crop. It writes a week-by-week plan for the next year, checked against your frost dates. When something goes wrong, you send a photo and it works the case like a plant clinic: ranks the likely causes, reads extension-service guides, and either gives a cited care plan or hands you a case summary for your state's plant diagnostic lab. It reaches you in the browser, on Telegram, through an API, and from any MCP-capable AI agent.
+Give Leaf your plants and a place. Each morning it works out what to water, protect, feed or check, from your local forecast, National Weather Service alerts and the published rules for each crop. It writes a week-by-week plan for the next year, checked against your frost dates. When something goes wrong, you send a photo and it works the case like a plant clinic: ranks the likely causes, reads extension-service guides, and either gives a cited care plan or hands you a case summary for your state's plant diagnostic lab. It reaches you in the browser, through an API, and from any MCP-capable AI agent.
 
 Built for the [Nebius x NVIDIA Global AI Hackathon](https://nebiusglobalaihackathon.devpost.com/), Best Apps and Agents track, with Tavily at runtime.
 
@@ -14,11 +14,11 @@ One intelligence core (a climate engine, a plant knowledge graph, a data layer, 
 
 | Product | What it does | Where |
 | --- | --- | --- |
-| **Care** | A daily plan per garden: water or skip (the FAO-56 water balance outdoors, a separate model indoors), frost, heat, wind and flood protection from the forecast and NWS alerts, feeding, pest scouting timed by degree days. Notifications by Web Push (an installable PWA) and Telegram, with quiet hours, dedupe and limits | `/today` |
+| **Care** | A daily plan per garden: water or skip (the FAO-56 water balance outdoors, a separate model indoors), frost, heat, wind and flood protection from the forecast and NWS alerts, feeding, pest scouting timed by degree days. Notifications by Web Push (an installable PWA), with quiet hours, dedupe and limits | `/today` |
 | **Season Plan** | Nemotron Ultra writes 52 weeks of sowing, planting out, feeding, pruning, protection and harvest. Code rules check every item against your frost dates, temperature limits, organic and pet choices; Nemotron Super then verifies and can only remove. A frost, a diagnosis or a spreading disease replans only the affected weeks and says what changed and why. Calendar export, printable | `/season` |
 | **Doctor** | Photos and notes in, a ranked differential, a cited plan and one of three verdicts (Confident, Likely, Send to a lab) out. Quick, Deep (an investigator agent with tools) and Auto. Check-ins compare new photos with old ones | `/app` |
 | **Radar** | What university extension services say is being seen right now, state by state. Each report is a sentence copied from the page, checked in code, with its date and link. A matching report nudges a diagnosis by at most 5 points and can never be the reason for Confident | `/radar` |
-| **Connect** | A REST API with OpenAPI, API keys with scopes and per-key limits, an MCP server, a Home Assistant webhook where a soil-moisture sensor overrides the water estimate, and a Telegram bot | `/connect` |
+| **Connect** | A REST API with OpenAPI, API keys with scopes and per-key limits, an MCP server, and a Home Assistant webhook where a soil-moisture sensor overrides the water estimate | `/connect` |
 
 Also: **Identify** (name a plant from a photo, checked against cited sources, `/identify`) and **`/ops`**, a public dashboard of what the platform is doing (counts and sums only: no secrets, no personal data).
 
@@ -28,7 +28,6 @@ Also: **Identify** (name a plant from a photo, checked against cited sources, `/
 flowchart LR
   subgraph You
     WEB[Web app and PWA]
-    TG[Telegram]
     API[REST API v1]
     MCP[MCP server]
     HA[Home Assistant]
@@ -96,8 +95,8 @@ Every model call goes through `backend/models.py` to Nebius Token Factory. The r
 
 | Test | Result |
 | --- | --- |
-| **Diagnosis, 24 held-out photos** (never tuned on, one run) | Auto right first time **33%**, in the top three **50%**; when it said Confident it was right **6 of 9** times; 10 of 24 went to a lab and 9 of those were warranted. Quick: 33% and 46%, but Confident only 3 of 7. Details below |
-| Diagnosis, 52 licensed photos (tune split: tuned on, so optimistic) | Auto right first time 58%, in the top three 73%; Confident right 14 of 16 |
+| **Diagnosis, 24 held-out photos** (never tuned on) | Auto, Nemotron 3.5 Super VL reading the photos: right first time **33%** then **46%** (two runs, same photos), in the top three **50%**. With Kimi K2.6 reading the photos, Quick scored 50% and 67% on the same 24. Leaf with the NVIDIA vision model never says Confident (see below). Details below |
+| Diagnosis, 52 licensed photos (tune split: tuned on, so optimistic) | With Kimi K2.6: Auto right first time 58%, top three 73%, Confident right 14 of 16. With Nemotron 3.5 Super VL, Quick: 36% and 62% (52% and 75% with Kimi) |
 | Plant identification, 40 licensed photos | 92.5% right with the vision model alone, 95% after the check against sources. Well-lit, well-framed Commons photos likely seen in training, so a ceiling rather than what a phone photo gets |
 | Front-door router, 65 labelled messages (attacks, toxicity questions, real garden questions) | 0 false refusals, 0 of 6 harmful requests missed, 0 to 1 of 7 prompt injections missed, intent 97% (Lightning) |
 | Hardiness zone from 30 years of ERA5-Land, five US cities | Within half a zone of the USDA map in all five, exact in none |
@@ -107,7 +106,7 @@ Every model call goes through `backend/models.py` to Nebius Token Factory. The r
 
 **Tests:** 820+ offline tests with scripted fake models and search (`make test`; they never spend credits), a type check of the Worker, lint. CI runs `make check`; while GitHub Actions billing is broken it is run locally before every push.
 
-**Not yet verified live:** the Telegram bot with a real bot token, the MCP server from a real MCP client (it is tested with the raw JSON-RPC calls such a client sends, in both protocol versions), the Home Assistant webhook from a real Home Assistant, and a Web Push notification on a real phone. Each is built, tested offline and, where it could be, checked against the real services.
+**Not yet verified live:** the MCP server from a real MCP client (it is tested with the raw JSON-RPC calls such a client sends, in both protocol versions), the Home Assistant webhook from a real Home Assistant, and a Web Push notification on a real phone. Each is built, tested offline and, where it could be, checked against the real services.
 
 ## Leaf Doctor
 
@@ -146,14 +145,20 @@ flowchart TD
 
 The investigator's tools are all read-only: `look_closer`, `get_conditions` (14 days from Open-Meteo through published rules: TOMCAST for tomato; Hutton, Smith and Wallin for potato, each threshold cited in `backend/disease_rules.py`), `search_sources`, `read_source` (only URLs this case's own searches returned; no URL a model writes is ever fetched), `check_alerts`, `ask_user` and `update_differential`/`finish`. **Enforced in code:** 8 counted tool calls, per-tool caps, a dollar budget, a hard 90-second clock with a forced finish, an Ultra-to-Super fallback per turn, and a fall back to Quick if the investigation fails. Probabilities are capped at 0.9.
 
-**Held-out accuracy, 24 photos** (12 diseases, 6 pests, 6 nutrient, weather or other problems; `evals/README.md` lists every photo, author, licence and the rules that keep the split clean). Nothing was tuned on these, and each mode was run once on 15 October 2026 (Auto was started once with too small a search allowance, stopped before any result was written, and run again with 80 credits; no result from the first start was seen). Deep was not run on this split, to keep Tavily credits for live diagnoses.
+**Held-out accuracy, 24 photos** (12 diseases, 6 pests, 6 nutrient, weather or other problems; `evals/README.md` lists every photo, author, licence and the rules that keep the split clean). Quick runs have search off (the diagnosis and its confidence come before the search, so scores are the same and no Tavily credits are spent). Deep was not run on this split.
 
-| Mode | Top-1 | Top-3 | When it said Confident | Likely right | Sent to a lab | Brier | Cost / case | Time / case |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Quick | 33% (8 of 24) | 46% | right 3 of 7 | 4 of 16 | 1 (4%) | 0.363 | $0.007 | 10.5 s |
-| **Auto** | **33%** (8 of 24) | **50%** | **right 6 of 9** | 1 of 5 | 10 (42%; 9 warranted) | **0.183** | $0.031 | 27 s |
+| Run | Vision model | Top-1 | Top-3 | When it said Confident | Brier | Cost / case |
+| --- | --- | --- | --- | --- | --- | --- |
+| Quick | Nemotron 3.5 Super VL | 33% (8 of 24) | 46% | right 3 of 7 | 0.363 | $0.007 |
+| Quick (control) | Kimi K2.6 | **50%** (12 of 24) | **67%** | right 6 of 9 | 0.295 | $0.008 |
+| Auto, first run | Nemotron 3.5 Super VL | 33% | 50% | right 6 of 9 | 0.183 | $0.031 |
+| Auto, second run (final setup) | Nemotron 3.5 Super VL | 46% (11 of 24) | 50% | right 2 of 4 | 0.282 | $0.042 |
 
-Read plainly: Leaf gets about a third of these hard photos right first time and half within three answers, much lower than on the photos it was tuned on. Auto's edge is not accuracy (a tie on the first answer) but honesty: it is far better calibrated (Brier 0.18 against 0.36), its "Confident" held up more often than Quick's (6 of 9 against 3 of 7), and it sent the cases it got wrong to a lab (in 9 of its 10 lab referrals the top answer was wrong). Auto investigated 67% of the photos and spent 1.1 Tavily credits per case on average. By group, Auto was right first time on 4 of 12 diseases, 3 of 6 pests and 1 of 6 other problems. Answers are scored by name, so some near-misses count as wrong ("Iron deficiency" for iron chlorosis, "Septoria" for cercospora); the scoring was not changed after seeing results. 24 photos is small: one photo is about 4 points.
+**The second Auto run saw the same 24 photos as the first.** Between the two runs the only change was to the verdict thresholds (below), which can change which cases get investigated but not what the vision model sees, so it is a second look at the same photos, not a fresh test. Earlier in the project repeat runs of the same mode varied by several points, and one photo here is about 4 points, so the gain from 33% to 46% should not be read as an improvement. Read the two runs together, not the better one. Auto's first run investigated 67% of cases; the second investigated all of them (Quick can no longer say Confident), at 0.9 Tavily credits per case. The Kimi row is a control for the vision model: same photos, same code, search off, run on 15 October.
+
+**What the numbers say.** The drop from the tune split to the held-out split was mostly the vision model, not overfitting. With Kimi, Quick scored 52% on the tune split and 50% on the held-out photos, about the same. With Nemotron 3.5 Super VL it scored 36% and 33%, about 16 points lower on both. Its observations are shorter and miss specifics the diagnosis needs (for example "concentric rings" on early blight). On the tune split only, we tried to close the gap with: thinking on for the vision step (40% top-1, 52% top-3), larger images, 1568 px (33%, 58%), and a prompt that demands specifics (31%, 50%); none beat the default (36%, 62%) beyond noise, so the defaults stayed.
+
+**"Confident" with the NVIDIA vision model.** Tuned on the tune split only, no Quick threshold reaches 85% right when it says Confident with Nemotron 3.5 Super VL (2 of 4 at 0.8 or 0.85; 0 of 1 at 0.9), so Quick never says Confident with it. Deep's investigation could not be validated the same way inside the credit budget (a Deep run on 52 photos costs about 130 Tavily credits), and on the held-out photos its Confident was right only 2 of 4 times, so Deep never says Confident with it either. Leaf still says Likely or Send a sample to a lab; a confidently wrong answer is the worst outcome. With Kimi, Quick's Confident was right 11 of 12 on tune (the thresholds were fitted there) but 6 of 9 on held-out, so even those thresholds over-claim on new photos. The vision model is chosen at startup (`LEAF_VISION_MODEL` pins it) and the thresholds follow it (`backend/verdict.py`).
 
 **Tune split, 52 licensed photos** (31 diseases, 15 abiotic problems, 6 pests). These were used to tune Leaf, including the verdict thresholds, so the numbers are optimistic. One run per mode, 13 October 2026:
 
@@ -198,7 +203,7 @@ A report nudges a diagnosis only through `backend/radar/prior.py`: two points pe
 - **REST API v1** (`/api/v1`, OpenAPI at `/api/v1/openapi.json`): garden, today, season plan, readings, diagnose, identify, weather risk. Keys belong to a garden, are shown once, stored only as a hash, and carry scopes (`read`, `readings`, `tools`) and limits per hour, per day and for calls that spend model credits, counted in D1.
 - **MCP** (`/mcp`, Streamable HTTP, no sessions): `diagnose`, `identify`, `care_plan`, `season_plan`, `weather_risk`. It serves both the 2025 `initialize` handshake and the current stateless 2026-07-28 protocol, written from the specification pages.
 - **Home Assistant**: `POST /api/v1/readings`. A reading under 12 hours old replaces the weather estimate for its plant. A test reading is labelled TEST wherever Leaf uses it.
-- **Telegram**: link a chat with a one-time code, then `/today`, `/season`, photo diagnosis, and the same notifications as Web Push. It is off, and hidden, until a bot token is set (`scripts/telegram_setup.py`).
+- A Telegram bot was built and then cancelled by the maintainer on 2026-10-15; its code was removed.
 
 ## Platform engineering
 
@@ -240,15 +245,15 @@ backend/    FastAPI app (app.py); Token Factory client (models.py); routing tabl
   care/       the daily planner, pests, sensor override
   season/     season plans: rules, writing, verification, replanning, Doctor wiring
   radar/      regions, collection, regional prior
-  connect/    API keys, REST API v1, MCP, Telegram, management endpoints
-  notify/     the notifications service, Web Push, Telegram client
+  connect/    API keys, REST API v1, MCP, management endpoints
+  notify/     the notifications service, Web Push
   pipeline.py, deep.py, agent.py, tools.py, critic.py, claims.py   Leaf Doctor
   jobs.py, platform_api.py, metering.py, router.py, cache.py        platform
 frontend/   static pages and scripts, no build step
 cloudflare/ the Worker (cron fan-out, queue consumer, data bridge) and its config
 migrations: backend/data/migrations/0001 to 0007
 tests/      offline tests with scripted fake models, tools and search
-scripts/    smoke test, evals, calibration, deploy, Telegram and VAPID setup
+scripts/    smoke test, evals, calibration, deploy, VAPID setup
 evals/      labelled photo cases and their licences; the front-door router eval
 docs/       LEAF_PLATFORM.md (architecture, limits, decisions, milestones), PROGRESS.md
 ```

@@ -452,7 +452,7 @@ def test_blend_weight_zero_is_the_investigator_alone():
 async def test_the_final_ranking_blends_the_first_look_with_the_investigation():
     from backend.config import Settings
 
-    blended = Settings(nebius_api_key="t", vision_model="nvidia/fake-vl", deep_blend_first=0.7)
+    blended = Settings(nebius_api_key="t", vision_model="vendor/fake-vl", deep_blend_first=0.7)
     # first differential (DIAG_HIGH): Early blight 0.82, Septoria 0.1
     deep, _, _ = deep_for(
         blended,

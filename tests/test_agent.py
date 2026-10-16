@@ -159,7 +159,7 @@ async def test_the_crop_comes_from_the_notes_first(settings):
 
 
 async def test_the_tool_call_limit_forces_finish(settings):
-    limited = Settings(nebius_api_key="t", vision_model="nvidia/fake-vl", deep_max_calls=3)
+    limited = Settings(nebius_api_key="t", vision_model="vendor/fake-vl", deep_max_calls=3)
     script = [turn(search(f"query {i}")) for i in range(3)] + [
         turn(finish(("Early blight", 0.7, [])))
     ]
@@ -173,7 +173,7 @@ async def test_the_tool_call_limit_forces_finish(settings):
 
 
 async def test_parallel_calls_each_count_and_the_overflow_is_skipped(settings):
-    limited = Settings(nebius_api_key="t", vision_model="nvidia/fake-vl", deep_max_calls=2)
+    limited = Settings(nebius_api_key="t", vision_model="vendor/fake-vl", deep_max_calls=2)
     script = [
         turn(search("a b c"), search("d e f"), search("g h i")),
         turn(finish(("Early blight", 0.7, []))),
@@ -201,7 +201,7 @@ async def test_an_identical_call_twice_in_one_turn_runs_once_and_is_refunded(set
 
 
 async def test_the_cost_budget_forces_finish(settings):
-    cheap = Settings(nebius_api_key="t", vision_model="nvidia/fake-vl", deep_budget_usd=0.10)
+    cheap = Settings(nebius_api_key="t", vision_model="vendor/fake-vl", deep_budget_usd=0.10)
     script = [
         turn(search("a b c")),
         turn(search("d e f")),
@@ -246,7 +246,7 @@ async def test_a_hanging_model_cannot_outlast_the_wall_clock(settings, seed):
             await asyncio.sleep(60)
 
     quick = Settings(
-        nebius_api_key="t", vision_model="nvidia/fake-vl", deep_wall_s=4, deep_seed=seed
+        nebius_api_key="t", vision_model="vendor/fake-vl", deep_wall_s=4, deep_seed=seed
     )
     leaf, _, _ = make_leaf(quick, RESP)
     leaf.llm = HangingLLM(RESP)
@@ -263,7 +263,7 @@ async def test_a_hanging_model_cannot_outlast_the_wall_clock(settings, seed):
 async def test_a_model_that_ignores_the_forced_finish_still_ends_with_its_last_differential(
     settings,
 ):
-    limited = Settings(nebius_api_key="t", vision_model="nvidia/fake-vl", deep_max_calls=1)
+    limited = Settings(nebius_api_key="t", vision_model="vendor/fake-vl", deep_max_calls=1)
     script = [turn(search(), diff(("Early blight", 0.65, ["E1"])))] + [turn(search("again"))] * 12
     deep, _, _ = deep_for(limited, script)
     res, _ = await collect(deep)
@@ -272,7 +272,7 @@ async def test_a_model_that_ignores_the_forced_finish_still_ends_with_its_last_d
 
 
 async def test_a_rejected_named_tool_choice_falls_back_to_auto_with_only_finish(settings):
-    limited = Settings(nebius_api_key="t", vision_model="nvidia/fake-vl", deep_max_calls=1)
+    limited = Settings(nebius_api_key="t", vision_model="vendor/fake-vl", deep_max_calls=1)
 
     def strict_server(messages, tools, tool_choice):
         if isinstance(tool_choice, dict):
@@ -393,7 +393,7 @@ async def test_a_prose_reply_gets_one_nudge_then_the_case_continues(settings):
 
 @pytest.mark.parametrize("seed", [True, False])
 async def test_an_agent_that_never_finishes_still_answers(settings, seed):
-    cfg = Settings(nebius_api_key="t", vision_model="nvidia/fake-vl", deep_seed=seed)
+    cfg = Settings(nebius_api_key="t", vision_model="vendor/fake-vl", deep_seed=seed)
     deep, _, _ = deep_for(cfg, ["Hmm.", "Still thinking.", "No.", "Nothing."])
     res, events = await collect(deep, notes="tomato spots")
     assert res.diagnosis.candidates  # the gardener always gets an answer
@@ -686,7 +686,7 @@ def test_health_reports_how_many_deep_cases_are_left(settings):
 
 
 async def test_one_turn_of_many_calls_cannot_overshoot_the_dollar_budget(settings):
-    budget = Settings(nebius_api_key="t", vision_model="nvidia/fake-vl", deep_budget_usd=0.10)
+    budget = Settings(nebius_api_key="t", vision_model="vendor/fake-vl", deep_budget_usd=0.10)
     many = turn(*[search(f"query number {i}") for i in range(6)])
     # The first turn alone pushes spend past 80% of the budget, mid-turn.
     deep, _, _ = deep_for(budget, [many, turn(finish(("Early blight", 0.7, [])))], turn_cost=0.0799)
@@ -846,7 +846,7 @@ async def test_overlong_text_is_trimmed_not_refused(settings):
 
 
 async def test_estimates_add_up_across_calls_prepared_in_the_same_turn(settings):
-    budget = Settings(nebius_api_key="t", vision_model="nvidia/fake-vl", deep_budget_usd=0.10)
+    budget = Settings(nebius_api_key="t", vision_model="vendor/fake-vl", deep_budget_usd=0.10)
     regions = [{"x": 0.1 * i, "y": 0.1, "w": 0.3, "h": 0.3} for i in range(3)]
     many = turn(*[look(region=r) for r in regions])
     # After turn 1 the spend is 0.0005 (first look) + 0.072 = 0.0725; at the $0.004 estimate
@@ -860,7 +860,7 @@ async def test_estimates_add_up_across_calls_prepared_in_the_same_turn(settings)
 
 async def test_a_forced_finish_that_times_out_keeps_the_recorded_differential(settings):
     limited = Settings(
-        nebius_api_key="t", vision_model="nvidia/fake-vl", deep_max_calls=1, deep_blend_first=0.0
+        nebius_api_key="t", vision_model="vendor/fake-vl", deep_max_calls=1, deep_blend_first=0.0
     )
 
     def hang_on_finish(messages, tools, tool_choice):

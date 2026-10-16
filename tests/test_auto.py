@@ -10,7 +10,14 @@ from fastapi.testclient import TestClient
 from backend.app import DailyCap, RateLimiter, app
 from backend.deep import DeepLeaf
 from backend.store import MemoryCaseStore
-from backend.verdict import DEEP, HIGH_STAKES_ANYWHERE, HIGH_STAKES_FLOOR, QUICK, decide
+from backend.verdict import (
+    DEEP,
+    HIGH_STAKES_ANYWHERE,
+    HIGH_STAKES_FLOOR,
+    QUICK,
+    decide,
+    quick_thresholds,
+)
 from tests.conftest import DIAG_HIGH, DIAG_LOW, make_leaf
 from tests.test_agent import RESP, finish, photo_bytes, photos, search, turn
 
@@ -287,3 +294,20 @@ def test_api_auto_stream_reports_the_decision_before_the_result(settings):
         with c.stream("POST", "/api/auto/stream", data={"notes": "tomato"}) as r:
             text = "".join(r.iter_text())
     assert text.index('"type": "auto"') < text.index('"type": "result"')
+
+
+def test_quick_never_says_confident_with_the_nvidia_vision_model_it_could_not_validate():
+    clear = [("Early blight", 0.9), ("Septoria", 0.05)]
+    assert quick_thresholds("moonshotai/Kimi-K2.6") is QUICK
+    assert decide(clear, "good", quick_thresholds("moonshotai/Kimi-K2.6")).verdict == "confident"
+    assert (
+        decide(clear, "good", quick_thresholds("nvidia/Nemotron-3.5-Super-VL")).verdict == "likely"
+    )
+    assert quick_thresholds(None) is QUICK
+
+
+def test_deep_never_says_confident_with_the_nvidia_vision_model_it_could_not_validate():
+    from backend.verdict import DEEP, deep_thresholds
+
+    assert deep_thresholds("moonshotai/Kimi-K2.6") is DEEP and deep_thresholds(None) is DEEP
+    assert deep_thresholds("nvidia/Nemotron-3.5-Super-VL").confident_at > 1

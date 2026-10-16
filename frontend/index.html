@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Leaf · garden intelligence</title>
-<meta name="description" content="Leaf plans your garden's day and year from your own weather, diagnoses what goes wrong like a plant clinic, and shows the source for everything it says. In the browser, on Telegram, through an API and from AI agents.">
+<meta name="description" content="Leaf plans your garden's day and year from your own weather, diagnoses what goes wrong like a plant clinic, and shows the source for everything it says. In the browser, through an API and from AI agents.">
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M6 26C6 14 13 7 26 6c0 13-7 20-18 20z' fill='none' stroke='%2318793a' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M6 26C12 19 17 14 22 10' fill='none' stroke='%2318793a' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="manifest" href="/manifest.webmanifest">
@@ -15,8 +15,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=2026101905">
-<link rel="stylesheet" href="/static/landing.css?v=2026101905">
+<link rel="stylesheet" href="/static/style.css?v=2026101906">
+<link rel="stylesheet" href="/static/landing.css?v=2026101906">
 </head>
 <body class="landing">
 <canvas id="forest" aria-hidden="true"></canvas>
@@ -96,11 +96,11 @@
   <h2 id="products-h" class="section-h">Five things Leaf does</h2>
   <p class="section-sub">One core underneath: a climate engine, a plant knowledge graph, model routing and guardrails. Each product is a page you can open now.</p>
   <div class="product-grid">
-    <a class="product" href="/today"><h3>Care</h3><p>What to water, protect, feed or check today, from the forecast, weather alerts and each plant's needs. Notifications by Web Push or Telegram.</p><span class="p-link">Open Today</span></a>
+    <a class="product" href="/today"><h3>Care</h3><p>What to water, protect, feed or check today, from the forecast, weather alerts and each plant's needs. Notifications by Web Push.</p><span class="p-link">Open Today</span></a>
     <a class="product" href="/season"><h3>Season Plan</h3><p>Fifty-two weeks of sowing, planting out, feeding, pruning and harvest, checked against your frost dates and verified before you see it. It replans when a frost or a disease changes things.</p><span class="p-link">Open the plan</span></a>
     <a class="product" href="/app"><h3>Doctor</h3><p>Photos in, a ranked list of causes and a cited care plan out, or a case summary for your state's plant clinic. Check-ins compare new photos with old ones.</p><span class="p-link">Diagnose a plant</span></a>
     <a class="product" href="/radar"><h3>Radar</h3><p>What university extension services say is being seen in your state this month. Each report is the page's own sentence, with its date and link.</p><span class="p-link">Open Radar</span></a>
-    <a class="product" href="/connect"><h3>Connect</h3><p>A REST API, an MCP server for AI agents, a Home Assistant soil-moisture webhook, and a Telegram bot. Your own keys, with limits.</p><span class="p-link">Open Connect</span></a>
+    <a class="product" href="/connect"><h3>Connect</h3><p>A REST API, an MCP server for AI agents, and a Home Assistant soil-moisture webhook. Your own keys, with limits.</p><span class="p-link">Open Connect</span></a>
     <a class="product" href="/identify"><h3>Identify</h3><p>Name a plant from a photo, checked against cited sources, then add it to your garden with one tap.</p><span class="p-link">Identify a plant</span></a>
   </div>
 </section>
@@ -236,23 +236,25 @@
 <!-- ============================================================== accuracy -->
 <section id="accuracy" class="accuracy wrap panel" aria-labelledby="acc-h">
   <h2 id="acc-h" class="section-h">How often the doctor is right</h2>
-  <p class="section-sub">24 photos Leaf was never tuned on: 12 diseases, 6 pests, 6 nutrient, weather or other problems. One run, 15 October 2026.</p>
+  <p class="section-sub">24 photos Leaf was never tuned on: 12 diseases, 6 pests, 6 nutrient, weather or other problems. Two runs of Auto on the same photos, 15 October 2026.</p>
   <div class="acc-grid">
     <div class="acc-bars" id="acc-bars">
       <p class="acc-k">Right first time</p>
-      <div class="ab"><span class="ab-n">Quick</span><span class="ab-bar"><span style="--v:33"></span></span><span class="ab-v">33%</span></div>
-      <div class="ab lead"><span class="ab-n">Auto</span><span class="ab-bar"><span style="--v:33"></span></span><span class="ab-v">33%</span></div>
+      <div class="ab"><span class="ab-n">Quick, NVIDIA vision</span><span class="ab-bar"><span style="--v:33"></span></span><span class="ab-v">33%</span></div>
+      <div class="ab lead"><span class="ab-n">Auto, NVIDIA vision</span><span class="ab-bar"><span style="--v:46"></span></span><span class="ab-v">46%</span></div>
+      <div class="ab"><span class="ab-n">Quick, Kimi vision</span><span class="ab-bar"><span style="--v:50"></span></span><span class="ab-v">50%</span></div>
       <p class="acc-k">Right answer in the top three</p>
-      <div class="ab"><span class="ab-n">Quick</span><span class="ab-bar"><span style="--v:46"></span></span><span class="ab-v">46%</span></div>
-      <div class="ab lead"><span class="ab-n">Auto</span><span class="ab-bar"><span style="--v:50"></span></span><span class="ab-v">50%</span></div>
+      <div class="ab"><span class="ab-n">Quick, NVIDIA vision</span><span class="ab-bar"><span style="--v:46"></span></span><span class="ab-v">46%</span></div>
+      <div class="ab lead"><span class="ab-n">Auto, NVIDIA vision</span><span class="ab-bar"><span style="--v:50"></span></span><span class="ab-v">50%</span></div>
+      <div class="ab"><span class="ab-n">Quick, Kimi vision</span><span class="ab-bar"><span style="--v:67"></span></span><span class="ab-v">67%</span></div>
     </div>
     <div class="acc-notes">
-      <p class="big-stat"><span>6 of 9</span> times Auto said "Confident", it was right.</p>
-      <p>These are hard photos: fruit, insects and odd problems from public-domain archives, not tidy leaf shots. Auto was right first time on 4 of 12 diseases, 3 of 6 pests and 1 of 6 other problems. It sent 10 of 24 to a lab, and in 9 of those the top answer was wrong. Quick said "Confident" on 7 and was right on only 3, which is why Auto is the default.</p>
+      <p class="big-stat"><span>No "Confident"</span> with the NVIDIA vision model: it only says "Likely" or "Send a sample".</p>
+      <p>"Confident" was right just 2 of 4 times in the last run, and on the photos we tuned on no threshold made it right 85% of the time, so we switched it off rather than risk a confidently wrong answer. These are hard photos: fruit, insects and odd problems from public-domain archives, not tidy leaf shots.</p>
       <details><summary>The caveats</summary><ul>
-        <li>Held out means nothing was tuned on these 24 photos and the run was done once. On the 52 photos Leaf was tuned on, Auto scored 58%, so the held-out number is the honest one.</li>
-        <li>24 photos is small: one photo is about 4 points, and Quick and Auto tied on the first answer. Deep was not run on this split.</li>
-        <li>Answers are scored by name, so some near-misses count as wrong: "Iron deficiency" for iron chlorosis, "Septoria" for cercospora.</li>
+        <li>Held out means nothing was tuned on these 24 photos. The second Auto run saw the same photos as the first (33% first time, then 46%); only the verdict thresholds changed between them, so read the two runs together. One photo is about 4 points, and repeat runs of the same mode vary by several.</li>
+        <li>Leaf reads photos with Nvidia's Nemotron 3.5 Super VL. The Kimi K2.6 row is a control on the same photos: it is about 16 points better first time, on these photos and on the 52 we tuned on (52% against 36%). We tried thinking, larger images and a more detailed prompt for the NVIDIA model on the tuning photos; none helped.</li>
+        <li>Deep was not run on this split. Answers are scored by name, so some near-misses count as wrong: "Iron deficiency" for iron chlorosis, "Septoria" for cercospora.</li>
         <li>Late blight was missed again: the vision model sometimes reports a coating on it that isn't there.</li>
       </ul><p class="small"><a href="https://github.com/risshabs22-quantified/leaf#numbers-measured-unless-it-says-estimated">Every run and the method</a></p></details>
     </div>
@@ -274,7 +276,7 @@
         <tr><td>The front door's safety screen, 65 messages</td><td>0 false refusals, no harmful request missed, 97% routed to the right place, median 0.4 seconds</td></tr>
         <tr><td>Radar, real runs</td><td>Most states have little current: Minnesota's pages had none, Michigan's site blocks the page reader, and Pennsylvania's final run kept none. A first run stored a wrongly attributed report; the real test found it and the check was tightened. Radar says "nothing current" rather than guess</td></tr>
         <tr><td>Cost per active user per day</td><td>About half a cent, estimated from the per-call costs above. Not measured: there are too few users to average, and the <a href="/ops">dashboard</a> says so</td></tr>
-        <tr><td>Not yet checked live</td><td>The Telegram bot with a real token, the MCP server from a real MCP client, Home Assistant itself, and a push notification on a real phone</td></tr>
+        <tr><td>Not yet checked live</td><td>The MCP server from a real MCP client, Home Assistant itself, and a push notification on a real phone</td></tr>
       </tbody>
     </table>
   </div>
@@ -304,7 +306,7 @@
     <details><summary>Does it replace my extension office?</summary><p>No. It tells you when you need one, and hands you a case summary to take along.</p></details>
     <details><summary>What happens to my photos and location?</summary><p>Only small thumbnails are kept, for 30 days, under a private link. Your browser location is rounded before it is sent: to about 10 km for a diagnosis, and to about 1 km for a garden, which Leaf keeps to fetch your weather. You can delete a garden from its Today page, and gardens nobody opens for four months are deleted. A shared link never shows your notes, though the written summary of a case may repeat what they said.</p></details>
     <details><summary>Which plants does it know?</summary><p>Common vegetables, fruit, roses and garden ornamentals. Weather-based disease rules cover tomato and potato. For anything unusual, expect "Likely" or a lab referral.</p></details>
-    <details><summary>Where does it not work yet?</summary><p>Radar covers US states only and often finds little, because extension sites mostly publish evergreen guides. Pest scouting by degree days is northern hemisphere only. Weather alerts are US only. Telegram needs a bot token that has not been set up yet, so it is hidden until it is.</p></details>
+    <details><summary>Where does it not work yet?</summary><p>Radar covers US states only and often finds little, because extension sites mostly publish evergreen guides. Pest scouting by degree days is northern hemisphere only. Weather alerts are US only.</p></details>
     <details><summary>Where do the numbers on this page come from?</summary><p>From real runs, written down in the <a href="https://github.com/risshabs22-quantified/leaf">README</a> and <code>docs/LEAF_PLATFORM.md</code>, with the date and what was tested. Estimates are labelled as estimates.</p></details>
     <details><summary>Is it free?</summary><p>Yes. The project pays for the model and search calls, so the public demo has a daily limit. The code is MIT licensed.</p></details>
   </div>
@@ -323,7 +325,7 @@
   <span><a href="https://open-meteo.com/" target="_blank" rel="noopener">Weather data by Open-Meteo.com</a></span>
   <span>Guidance, not certainty. For food crops and any chemical, follow the product label.</span>
 </footer>
-<script src="/static/rainforest.js?v=2026101905"></script>
-<script src="/static/landing.js?v=2026101905"></script>
+<script src="/static/rainforest.js?v=2026101906"></script>
+<script src="/static/landing.js?v=2026101906"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-// Connect: API keys, Home Assistant, Telegram, MCP and the REST API for this garden.
+// Connect: API keys, Home Assistant, MCP and the REST API for this garden.
 // Every string from the server goes through textContent or esc().
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const $ = (id) => document.getElementById(id);
@@ -136,28 +136,6 @@ $("test-form").addEventListener("submit", async (e) => {
   } catch (err) { $("test-result").textContent = err.message; }
 });
 
-// ---------- Telegram ----------
-
-async function loadTelegram() {
-  const t = await api(gpath("/telegram"));
-  $("tg-out").textContent = t.linked_chats ? `${t.linked_chats} chat${t.linked_chats > 1 ? "s" : ""} connected.` : "";
-  show("tg-unlink", t.linked_chats > 0);
-}
-$("tg-link").addEventListener("click", async () => {
-  $("tg-out").textContent = "Making your link…";
-  try {
-    const l = await api(gpath("/telegram/link"), { method: "POST" });
-    const a = document.createElement("a");
-    a.href = l.url; a.target = "_blank"; a.rel = "noopener"; a.textContent = "Open Telegram and tap Start";
-    $("tg-out").textContent = "";
-    $("tg-out").append(a, document.createTextNode(" (the link works once, for 15 minutes)."));
-  } catch (err) { $("tg-out").textContent = err.message; }
-});
-$("tg-unlink").addEventListener("click", async () => {
-  if (!confirm("Stop Telegram messages for this garden?")) return;
-  try { await api(gpath("/telegram"), { method: "DELETE" }); await loadTelegram(); } catch (err) { $("tg-out").textContent = err.message; }
-});
-
 // ---------- start ----------
 
 async function start() {
@@ -170,9 +148,8 @@ async function start() {
     $("t-plant").innerHTML = plants.map((p) => `<option value="${esc(p.id)}">${esc(p.nickname || p.common_name || p.species || "Plant")}</option>`).join("");
     ["c-keys", "c-ha", "c-mcp", "c-api"].forEach((id) => show(id));
     show("test-form", plants.length > 0);
-    show("c-tg", !!conn.telegram);  // hidden, not shown, until the bot is set up
     renderSnippets();
-    await Promise.all([loadKeys(), loadApiTable(), conn.telegram ? loadTelegram() : null]);
+    await Promise.all([loadKeys(), loadApiTable()]);
   } catch (err) {
     status(err.message);
     if (/No garden at this link/.test(err.message)) show("c-none");

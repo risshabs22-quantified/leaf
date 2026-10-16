@@ -386,7 +386,7 @@ async def test_super_reranks_only_the_vision_candidates_with_real_sources():
     )
     trace: list = []
     out = await identify(
-        llm, Settings(nebius_api_key="x"), FakeSearcher(), "nvidia/fake-vl", "aW1n", "", trace
+        llm, Settings(nebius_api_key="x"), FakeSearcher(), "vendor/fake-vl", "aW1n", "", trace
     )
     assert [c["key"] for c in out["candidates"]] == ["digitalis purpurea", "symphytum officinale"]
     top = out["candidates"][0]
@@ -400,7 +400,7 @@ async def test_if_the_check_fails_the_vision_ranking_stands_unconfirmed():
         {"identify": SEEN}, failing_models={NEMOTRON_SUPER, "nvidia/Nemotron-3-Ultra-550b-a55b"}
     )
     out = await identify(
-        llm, Settings(nebius_api_key="x"), FakeSearcher(), "nvidia/fake-vl", "aW1n", "", []
+        llm, Settings(nebius_api_key="x"), FakeSearcher(), "vendor/fake-vl", "aW1n", "", []
     )
     assert not out["checked"] and out["candidates"][0]["probability"] == 0.55
     assert not out["confident"]
@@ -409,7 +409,7 @@ async def test_if_the_check_fails_the_vision_ranking_stands_unconfirmed():
 async def test_no_plant_in_the_photo():
     llm = FakeLLM({"identify": {"plant_visible": False, "candidates": []}})
     out = await identify(
-        llm, Settings(nebius_api_key="x"), FakeSearcher(), "nvidia/fake-vl", "aW1n", "", []
+        llm, Settings(nebius_api_key="x"), FakeSearcher(), "vendor/fake-vl", "aW1n", "", []
     )
     assert out["candidates"] == [] and not out["plant_visible"] and len(llm.calls) == 1
 
@@ -646,14 +646,14 @@ async def test_without_sources_an_identification_is_never_checked_or_confident()
         }
     )
     out = await identify(
-        llm, Settings(nebius_api_key="x"), Nothing(), "nvidia/fake-vl", "aW1n", "", []
+        llm, Settings(nebius_api_key="x"), Nothing(), "vendor/fake-vl", "aW1n", "", []
     )
     assert not out["checked"] and not out["confident"]
     skipped = await identify(
         llm,
         Settings(nebius_api_key="x"),
         FakeSearcher(),
-        "nvidia/fake-vl",
+        "vendor/fake-vl",
         "aW1n",
         "",
         [],
@@ -672,7 +672,7 @@ async def test_a_candidate_the_check_left_out_cannot_win_on_the_vision_score():
         }
     )
     out = await identify(
-        llm, Settings(nebius_api_key="x"), FakeSearcher(), "nvidia/fake-vl", "aW1n", "", []
+        llm, Settings(nebius_api_key="x"), FakeSearcher(), "vendor/fake-vl", "aW1n", "", []
     )
     assert out["candidates"][0]["key"] == "symphytum officinale"
     assert out["candidates"][1]["probability"] == 0.0

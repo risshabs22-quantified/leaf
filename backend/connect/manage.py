@@ -1,5 +1,5 @@
-"""The garden's own controls for Connect (garden key, from the Connect page): API keys, the
-Telegram link, and a test soil-moisture reading."""
+"""The garden's own controls for Connect (garden key, from the Connect page): API keys and a
+test soil-moisture reading."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from backend.connect.api_v1 import ReadingIn, record_reading
 from backend.connect.auth import MAX_KEYS_PER_GARDEN, SCOPES
 from backend.connect.tools import base_url
 from backend.data.repo import ApiKey, Reading
-from backend.notify.telegram import TelegramError
 from backend.platform_api import Key, _open
 
 router = APIRouter(tags=["Connect"])
@@ -37,7 +36,6 @@ async def status(request: Request) -> dict[str, Any]:
     """What this Leaf offers (no secrets)."""
     base = base_url(request)
     return {
-        "telegram": getattr(request.app.state, "telegram", None) is not None,
         "api": {"base": f"{base}/api/v1", "openapi": f"{base}/api/v1/openapi.json"},
         "mcp": {"url": f"{base}/mcp"},
         "scopes": list(SCOPES),
@@ -104,44 +102,3 @@ async def send_reading(
 async def readings(request: Request, garden_id: str, key: Key = None) -> list[Reading]:
     garden = await _open(request, garden_id, key)
     return await request.app.state.data.repo.list_readings(garden.id)
-
-
-# ---------- Telegram ----------
-
-
-@router.get("/api/gardens/{garden_id}/telegram")
-async def telegram_state(request: Request, garden_id: str, key: Key = None) -> dict[str, Any]:
-    garden = await _open(request, garden_id, key)
-    api = getattr(request.app.state, "telegram", None)
-    chats = await request.app.state.data.repo.list_telegram_chats(garden.id)
-    return {"enabled": api is not None, "linked_chats": len(chats)}
-
-
-@router.post("/api/gardens/{garden_id}/telegram/link")
-async def telegram_link(request: Request, garden_id: str, key: Key = None) -> dict[str, Any]:
-    """A one-time link (15 minutes) that connects a Telegram chat to this garden."""
-    garden = await _open(request, garden_id, key)
-    api = getattr(request.app.state, "telegram", None)
-    if api is None:
-        raise HTTPException(503, "Telegram is not set up on this Leaf yet.")
-    try:
-        username = await api.username()
-    except TelegramError as exc:
-        raise HTTPException(503, "Telegram did not answer. Please try again.") from exc
-    code = await request.app.state.data.repo.create_telegram_link(garden.id)
-    return {"url": f"https://t.me/{username}?start={code}", "expires_in": 900}
-
-
-@router.delete("/api/gardens/{garden_id}/telegram")
-async def telegram_unlink(request: Request, garden_id: str, key: Key = None) -> dict[str, int]:
-    """Disconnect every Telegram chat from this garden."""
-    garden = await _open(request, garden_id, key)
-    repo = request.app.state.data.repo
-    chats = await repo.list_telegram_chats(garden.id)
-    for c in chats:
-        await repo.delete_telegram_chat(c["chat_id"], garden.id)
-    settings = await repo.get_notifications(garden.id)
-    if "telegram" in settings.channels:
-        settings.channels = [c for c in settings.channels if c != "telegram"]
-        await repo.put_notifications(garden.id, settings)
-    return {"unlinked": len(chats)}

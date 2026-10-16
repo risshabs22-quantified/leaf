@@ -659,7 +659,7 @@ async def identify_plant(
 
 
 async def identify_photo(request: Request, data: bytes, notes: str) -> dict[str, Any]:
-    """Identify a plant from photo bytes (the web page, the API, MCP and Telegram share this).
+    """Identify a plant from photo bytes (the web page, the API and MCP share this).
     The caller has already applied its own rate limit."""
     from backend.app import MAX_UPLOAD_BYTES, run_limited
 
@@ -765,7 +765,7 @@ async def today(request: Request, garden_id: str, key: Key = None) -> dict[str, 
 
 
 async def today_view(request: Request, garden: Garden) -> dict[str, Any]:
-    """Today for a garden (shared by the web page, the API, MCP and Telegram)."""
+    """Today for a garden (shared by the web page, the API and MCP)."""
     ctx = REQUEST.get()
     plan = await plan_garden(_care_ctx(request), garden, trace_id=ctx.trace_id if ctx else "")
     day = local_today(garden).isoformat()
@@ -873,7 +873,6 @@ async def push_test(request: Request, garden_id: str, key: Key = None) -> dict[s
         request.app.state.queue,
         getattr(request.app.state, "pusher", None),
         garden,
-        telegram=getattr(request.app.state, "telegram", None),
         kind="test",
         title="Leaf notifications are on",
         body="This is how Leaf will tell you about frost, heat and today's garden tasks.",

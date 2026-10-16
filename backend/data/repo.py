@@ -812,7 +812,6 @@ class Repo:
                         "h" + (today - timedelta(days=2)).strftime("%Y%m%d") + "00",
                     ),
                 ),
-                ("DELETE FROM telegram_links WHERE expires_at < ?", (now_s(),)),
                 (
                     "DELETE FROM radar_reports WHERE reported_on < ?",
                     ((today - timedelta(days=RADAR_KEEP_DAYS)).isoformat(),),
@@ -839,7 +838,6 @@ class Repo:
             "sensor_readings",
             "model_calls_by_garden",
             "api_key_hits",
-            "telegram_links",
             "radar_reports",
             "radar_pages",
             "idle_gardens",
@@ -1461,7 +1459,7 @@ class Repo:
         )
         return int(rows[0]["n"]) if rows else 0
 
-    # ---------- Connect (M6): API keys, sensor readings, Telegram ----------
+    # ---------- Connect (M6): API keys, sensor readings ----------
 
     @staticmethod
     def _api_key(row: dict[str, Any]) -> ApiKey:
@@ -1623,78 +1621,6 @@ class Repo:
             kind,
             day,
         )
-
-    async def create_telegram_link(self, garden_id: str, ttl_s: int = 900) -> str:
-        """A one-time code for `/start <code>`; the garden's older unused codes are dropped."""
-        code = secrets.token_urlsafe(12)
-        await self.db.batch(
-            [
-                ("DELETE FROM telegram_links WHERE garden_id = ?", (garden_id,)),
-                (
-                    "INSERT INTO telegram_links (code_hash, garden_id, expires_at)"
-                    " VALUES (?, ?, ?)",
-                    (hash_key(code), garden_id, now_s() + ttl_s),
-                ),
-            ]
-        )
-        return code
-
-    async def consume_telegram_link(self, code: str, chat_id: str) -> str | None:
-        """Bind a chat to the garden a live code belongs to; the code works once. Returns the
-        garden id, or None for an unknown or expired code."""
-        now = now_s()
-        h = hash_key(code[:64])
-        res = await self.db.batch(
-            [
-                (
-                    "INSERT OR REPLACE INTO telegram_chats (chat_id, garden_id, created_at)"
-                    " SELECT ?, garden_id, ? FROM telegram_links WHERE code_hash = ?"
-                    " AND expires_at > ?",
-                    (chat_id, now, h, now),
-                ),
-                ("DELETE FROM telegram_links WHERE code_hash = ?", (h,)),
-                ("SELECT garden_id FROM telegram_chats WHERE chat_id = ?", (chat_id,)),
-            ]
-        )
-        if res[0].changes == 0:
-            return None
-        return res[2].rows[0]["garden_id"] if res[2].rows else None
-
-    async def telegram_chat(self, chat_id: str) -> dict[str, Any] | None:
-        rows = await query(self.db, "SELECT * FROM telegram_chats WHERE chat_id = ?", chat_id)
-        return rows[0] if rows else None
-
-    async def list_telegram_chats(self, garden_id: str) -> list[dict[str, Any]]:
-        return await query(self.db, "SELECT * FROM telegram_chats WHERE garden_id = ?", garden_id)
-
-    async def delete_telegram_chat(self, chat_id: str, garden_id: str | None = None) -> bool:
-        sql, params = "DELETE FROM telegram_chats WHERE chat_id = ?", [chat_id]
-        if garden_id:
-            sql, params = sql + " AND garden_id = ?", [chat_id, garden_id]
-        return await execute(self.db, sql, *params) > 0
-
-    async def telegram_result(self, chat_id: str, ok: bool, gone: bool = False) -> None:
-        """Record a send: success clears the failures; a chat that blocked the bot is removed,
-        and any other failure counts (ten in a row remove it too)."""
-        if gone:
-            await execute(self.db, "DELETE FROM telegram_chats WHERE chat_id = ?", chat_id)
-        elif ok:
-            await execute(
-                self.db,
-                "UPDATE telegram_chats SET last_ok = ?, failures = 0 WHERE chat_id = ?",
-                now_s(),
-                chat_id,
-            )
-        else:
-            await self.db.batch(
-                [
-                    (
-                        "UPDATE telegram_chats SET failures = failures + 1 WHERE chat_id = ?",
-                        (chat_id,),
-                    ),
-                    ("DELETE FROM telegram_chats WHERE chat_id = ? AND failures >= 10", (chat_id,)),
-                ]
-            )
 
     # ---------- Radar (M7): regions, reports, runs ----------
 

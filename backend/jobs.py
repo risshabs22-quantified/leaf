@@ -365,7 +365,6 @@ async def _notify(ctx: JobContext, garden: Garden, **kw: Any) -> str:
         ctx.queue,
         ctx.extra.get("pusher"),
         garden,
-        telegram=ctx.extra.get("telegram"),
         **kw,
     )
 
@@ -653,7 +652,6 @@ async def notify_send(ctx: JobContext, payload: dict[str, Any]) -> dict[str, Any
             ctx.extra.get("pusher"),
             garden,
             row["id"],
-            telegram=ctx.extra.get("telegram"),
         )
     }
 

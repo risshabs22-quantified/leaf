@@ -35,8 +35,6 @@ from backend.config import ULTRA, Settings, get_settings
 from backend.connect.api_v1 import router as api_v1_router
 from backend.connect.manage import router as connect_router
 from backend.connect.mcp import router as mcp_router
-from backend.connect.telegram import drain as drain_telegram
-from backend.connect.telegram import router as telegram_router
 from backend.context import REQUEST, RequestContext
 from backend.data import open_data
 from backend.data.driver import DataError
@@ -45,7 +43,6 @@ from backend.jobs import BridgeQueue, JobContext, JobRunner, LocalQueue, S3Objec
 from backend.journal import JournalEntry, open_journal, public_view, thumbnail
 from backend.metering import Meter, MeteredLLM
 from backend.models import ModelError, SpendCapReached, TokenFactory
-from backend.notify.telegram import TelegramApi
 from backend.notify.webpush import WebPush
 from backend.pipeline import Leaf
 from backend.platform_api import refusal_for
@@ -69,7 +66,7 @@ from backend.store import MemoryCaseStore
 from backend.vision import discover_vision_model, prepare_image, prepare_photo
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
-# httpx logs "POST <url>" for every request, and a Telegram Bot API URL contains the bot token.
+# httpx logs "POST <url>" for every request; keep request URLs out of the INFO log.
 for _noisy in ("httpx", "httpcore"):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
 log = logging.getLogger("leaf.app")
@@ -289,7 +286,6 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        await drain_telegram()  # messages still being answered get a moment to finish
         flusher.cancel()
         for task in background:
             task.cancel()
@@ -361,13 +357,6 @@ async def start_platform(app: FastAPI, s: Settings) -> None:
         except Exception:  # noqa: BLE001 - a bad key disables push, never the app
             log.error("VAPID private key is unusable; Web Push is off")
     pusher = getattr(app.state, "pusher", None)
-    if getattr(app.state, "telegram", None) is None and (
-        s.telegram_bot_token and s.telegram_webhook_secret
-    ):
-        app.state.telegram = TelegramApi(s.telegram_bot_token)
-    app.state.tg_seen = deque(maxlen=2000)
-    app.state.tg_limiter = RateLimiter(40, 100_000)  # messages per chat per hour
-    app.state.tg_warned = {}  # chat id -> when it was last told to slow down
     runner = JobRunner(
         JobContext(
             data.repo,
@@ -379,7 +368,6 @@ async def start_platform(app: FastAPI, s: Settings) -> None:
                 "climate": app.state.climate,
                 "leaf": app.state.leaf,
                 "pusher": pusher,
-                "telegram": getattr(app.state, "telegram", None),
                 "region_lookup": region_for_point,
             },
         )
@@ -399,7 +387,6 @@ app.include_router(platform_router)
 app.include_router(api_v1_router)
 app.include_router(connect_router)
 app.include_router(mcp_router)
-app.include_router(telegram_router)
 app.include_router(radar_router)
 
 
@@ -578,8 +565,8 @@ async def diagnose_photo(
     answers: str,
     garden: Garden,
 ) -> DiagnoseResponse:
-    """A Quick diagnosis from a photo (raw bytes) and/or notes; the web form, the API, MCP and
-    Telegram all come through here. The caller has already applied its own rate limit."""
+    """A Quick diagnosis from a photo (raw bytes) and/or notes; the web form, the API and MCP
+    all come through here. The caller has already applied its own rate limit."""
     if data is None and not notes.strip():
         raise HTTPException(400, "Add a photo or describe what you see.")
     image_b64 = mime = None

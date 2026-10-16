@@ -36,9 +36,34 @@ class Thresholds:
 # Quick, fitted on 52 tune photos (scripts/fit_verdicts.py, run sprint-q0): Confident was right
 # 11 of 12 times at 0.8, and 5 of 5 on a second run with a different vision prompt.
 QUICK = Thresholds(confident_at=0.8, lab_below=0.4, margin=0.15)
+# Quick with an NVIDIA vision model (Nemotron 3.5 Super VL), fitted on the same 52 tune photos
+# (run tune-nvl0, Oct 16): Confident was right only 2 of 4 times at 0.8 or 0.85 and 0 of 1 at
+# 0.9, so no threshold reaches the 85% target. Quick never says Confident with it (scores are
+# capped at 0.9); Auto then investigates, and the investigation's own verdict can be Confident.
+QUICK_NVIDIA_VL = Thresholds(confident_at=2.0, lab_below=0.4, margin=0.15)
+
+
+def quick_thresholds(vision_model: str | None) -> Thresholds:
+    """Quick's thresholds depend on the vision model that wrote the observation."""
+    if vision_model and vision_model.lower().startswith("nvidia/"):
+        return QUICK_NVIDIA_VL
+    return QUICK
+
+
 # Deep, fitted on the same photos (run sprint-deep, replayed): Confident was right 7 of 8 times
 # at a combined confidence of 0.6. No case fell below 0.35, so lab_below rarely decides.
 DEEP = Thresholds(confident_at=0.6, lab_below=0.3, margin=0.15)
+# Deep with the NVIDIA vision model has not been validated: a Deep tune run costs about 130
+# Tavily credits, more than the 60 set aside. On the held-out photos, the first two runs with
+# it said Confident and were right 2 of 4 times, so it never says Confident until a tune run
+# shows 85%. Lab referrals still work.
+DEEP_NVIDIA_VL = Thresholds(confident_at=2.0, lab_below=0.3, margin=0.15)
+
+
+def deep_thresholds(vision_model: str | None) -> Thresholds:
+    if vision_model and vision_model.lower().startswith("nvidia/"):
+        return DEEP_NVIDIA_VL
+    return DEEP
 
 
 @dataclass(frozen=True)

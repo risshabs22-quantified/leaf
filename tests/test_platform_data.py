@@ -199,11 +199,11 @@ async def test_deleting_a_garden_removes_everything_in_it(repo: Repo):
 async def test_notification_settings_default_then_upsert(repo: Repo):
     garden, _ = await make_garden(repo)
     assert await repo.get_notifications(garden.id) == NotificationSettings()
-    s = NotificationSettings(channels=["push", "telegram"], quiet_start="22:30", max_per_day=5)
+    s = NotificationSettings(channels=["push"], quiet_start="22:30", max_per_day=5)
     await repo.put_notifications(garden.id, s)
     await repo.put_notifications(garden.id, s.model_copy(update={"max_per_day": 2}))
     got = await repo.get_notifications(garden.id)
-    assert got.channels == ["push", "telegram"] and got.max_per_day == 2
+    assert got.channels == ["push"] and got.max_per_day == 2
     with pytest.raises(ValueError):
         NotificationSettings(quiet_start="25:00")
 
