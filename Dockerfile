@@ -8,8 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 # only passed by the Worker: a deploy restarts the running container with the environment the
 # previous Worker version gave it, so a new variable would be missing until the next cold
 # start (seen on the M1 deploy). `make docker-run` clears it to use local SQLite.
-ENV LEAF_PLATFORM_URL=http://leaf-platform.internal \
-    LEAF_TAVILY_DAY_ALLOWANCE=2026-10-16:60,2026-10-17:30
+ENV LEAF_PLATFORM_URL=http://leaf-platform.internal
 WORKDIR /app
 
 COPY pyproject.toml README.md ./
